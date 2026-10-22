@@ -4,6 +4,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from agents.agent_harness.core.timeouts import DEFAULT_EXECUTION_TIMEOUT_SECONDS
+from agents.agent_harness.model_limits import (
+    DEFAULT_MODEL_INPUT_CHARS, DEFAULT_MODEL_OUTPUT_CHARS, DEFAULT_STREAM_CHUNKS,
+    positive_integer,
+)
 
 
 @dataclass(frozen=True)
@@ -27,8 +31,13 @@ class GovernancePolicy:
     max_input_tokens: int | None = None
     max_output_tokens: int | None = None
     max_total_tokens: int | None = None
+    max_model_input_chars: int = DEFAULT_MODEL_INPUT_CHARS
+    max_model_output_chars: int = DEFAULT_MODEL_OUTPUT_CHARS
+    max_stream_chunks: int = DEFAULT_STREAM_CHUNKS
 
     def __post_init__(self) -> None:
+        for name in ("max_model_input_chars", "max_model_output_chars", "max_stream_chunks"):
+            positive_integer(name, getattr(self, name))
         if self.default_execution_mode not in {"dry_run", "live"}:
             raise ValueError("default_execution_mode must be dry_run or live")
         if self.max_context_chars <= 0:

@@ -28,6 +28,11 @@ from .model_execution import (
     ModelBudgetExceededError,
     ModelUnavailableError,
 )
+from .model_limits import (
+    DEFAULT_MODEL_INPUT_CHARS, DEFAULT_MODEL_OUTPUT_CHARS, DEFAULT_STREAM_CHUNKS,
+    ModelInputLimitError, ModelLimitError, bound_model_messages, model_input_chars,
+    positive_integer,
+)
 from .persistence import TranscriptStore
 from .state_persistence import AgentStatePersistence, TranscriptPersistenceError
 from .redaction import redact_for_persistence
@@ -128,6 +133,9 @@ class Agent:
         max_input_tokens: int | None = None,
         max_output_tokens: int | None = None,
         max_total_tokens: int | None = None,
+        max_model_input_chars: int = DEFAULT_MODEL_INPUT_CHARS,
+        max_model_output_chars: int = DEFAULT_MODEL_OUTPUT_CHARS,
+        max_stream_chunks: int = DEFAULT_STREAM_CHUNKS,
         max_stream_delta_chars: int = 4096,
         max_tool_result_chars: int = 32_000,
         max_interaction_chars: int = 256_000,
@@ -220,6 +228,9 @@ class Agent:
         self.max_input_tokens = max_input_tokens
         self.max_output_tokens = max_output_tokens
         self.max_total_tokens = max_total_tokens
+        self.max_model_input_chars = positive_integer("max_model_input_chars", max_model_input_chars)
+        self.max_model_output_chars = positive_integer("max_model_output_chars", max_model_output_chars)
+        self.max_stream_chunks = positive_integer("max_stream_chunks", max_stream_chunks)
         self.max_stream_delta_chars = int(max_stream_delta_chars)
         self.max_tool_result_chars = int(max_tool_result_chars)
         self.max_interaction_chars = int(max_interaction_chars)
@@ -269,6 +280,8 @@ class Agent:
                 max_input_tokens=self.max_input_tokens,
                 max_output_tokens=self.max_output_tokens,
                 max_total_tokens=self.max_total_tokens,
+                max_model_output_chars=self.max_model_output_chars,
+                max_stream_chunks=self.max_stream_chunks,
             ),
             providers=self._model_providers_for_current_run,
             prepare=self._model_inputs,
@@ -734,8 +747,23 @@ class Agent:
                 if message.role != "system"
             ),
         ]
+        if not any(
+            message.role == "user" and message.turn_id == request.turn_id
+            for message in transcript
+        ):
+            raise ModelInputLimitError()
+        bounded = bound_model_messages(
+            messages, tools, max_chars=self.max_model_input_chars,
+        )
+        if len(bounded) < len(messages):
+            self._emit(
+                "model_input_trimmed", request,
+                removed_messages=len(messages) - len(bounded),
+                input_chars=model_input_chars(bounded, tools),
+                input_limit_chars=self.max_model_input_chars,
+            )
         model_request = self._apply_model_limits(model_request)
-        return messages, tools, model_request
+        return bounded, tools, model_request
 
     @staticmethod
     def _recent_user_inputs(
@@ -857,6 +885,8 @@ class Agent:
         if self.model_timeout_seconds is not None:
             context["model_timeout_seconds"] = self.model_timeout_seconds
         for name, value in (
+            ("max_model_input_chars", self.max_model_input_chars),
+            ("max_model_output_chars", self.max_model_output_chars),
             ("max_input_tokens", self.max_input_tokens),
             ("max_output_tokens", self.max_output_tokens),
             ("max_total_tokens", self.max_total_tokens),
@@ -1028,6 +1058,10 @@ class Agent:
                     ],
                 } if request.input_media else {},
             )
+            if len(str(user_message.content)) > min(
+                self.max_transcript_chars, self.max_model_input_chars,
+            ):
+                raise ModelInputLimitError()
             self._state_io.append_message(state, user_message, request=request)
             self._emit("message_end", request, message=user_message.to_dict())
             tool_results: list[dict[str, Any]] = []
@@ -1344,6 +1378,23 @@ class Agent:
                 data={
                     "messages": [item.to_dict() for item in state.messages],
                     "error": "model_not_configured",
+                    "usage": dict(state.usage),
+                },
+            )
+            self._emit("agent_end", request, status=result.status.value)
+            return result
+        except ModelLimitError as error:
+            state.error_message = type(error).__name__
+            result = RunResult(
+                run_id=str(request.run_id or ""),
+                turn_id=str(request.turn_id or ""),
+                status=RunStatus.FAILED,
+                reply=error.public_reply,
+                runtime_signals={error.safe_reason_code: True},
+                data={
+                    "messages": [item.to_dict() for item in state.messages],
+                    "error": error.safe_reason_code,
+                    "tool_results": list(all_tool_results),
                     "usage": dict(state.usage),
                 },
             )

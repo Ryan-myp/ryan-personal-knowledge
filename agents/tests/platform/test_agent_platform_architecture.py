@@ -306,6 +306,9 @@ def test_platform_governance_is_applied_to_the_real_harness():
         max_context_chars=64,
         max_tools=3,
         max_turns=2,
+        max_model_input_chars=40_000,
+        max_model_output_chars=20_000,
+        max_stream_chunks=500,
     ))
     platform.register_agent(AgentDefinition(
         agent_id="default-agent",
@@ -328,6 +331,9 @@ def test_platform_governance_is_applied_to_the_real_harness():
         assert application.skills.max_context_chars == 64
         assert application.agent.max_tools == 3
         assert application.agent.max_turns == 2
+        assert application.agent.max_model_input_chars == 40_000
+        assert application.agent._models.options.max_model_output_chars == 20_000
+        assert application.agent._models.options.max_stream_chunks == 500
         assert application.prompt("mode").reply == "live"
     finally:
         application.close()

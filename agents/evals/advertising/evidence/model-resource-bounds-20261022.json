@@ -1,0 +1,99 @@
+{
+  "schema_version": "agent-quality-evidence/v1",
+  "recorded_date": "2026-10-22",
+  "source_revision": "998d9f3 plus model resource boundary working-tree changes",
+  "model_requests_were_real": false,
+  "advertising_provider_calls_in_this_iteration": 0,
+  "production_capacity_attested": false,
+  "defaults": {
+    "max_model_input_chars": 256000,
+    "max_model_output_chars": 128000,
+    "max_stream_chunks": 10000,
+    "default_execution_timeout_seconds_unchanged": 500
+  },
+  "input_measurement": {
+    "unit": "serialized_characters_not_tokens",
+    "includes_tool_schemas_and_arguments": true,
+    "sdk_rechecks_document_text_and_internal_repairs": true,
+    "embedded_binary_images_excluded_from_text_budget": true,
+    "attachment_transport_limits_are_separate": true,
+    "does_not_attest_arbitrary_adapter_extra_context": true
+  },
+  "calibration": {
+    "initial_input_limit_chars": 120000,
+    "existing_regressions_rejected_at_initial_limit": 19,
+    "observed_cross_channel_prepared_input_chars": 191881,
+    "observed_tool_count": 32,
+    "affected_original_regressions_passed_after_calibration": 19,
+    "existing_assertions_weakened": false
+  },
+  "automated_tests": {
+    "focused_passed": 97,
+    "full_suite_passed": 2734,
+    "full_suite_final_rerun_pending": false,
+    "warnings": 1,
+    "compile_passed": true,
+    "provider_contract_audit_passed": true,
+    "tool_contract_snapshot_count": 321,
+    "knowledge_audits_passed": true,
+    "diff_check_passed": true
+  },
+  "focused_statement_coverage": {
+    "percent": 92,
+    "covered_statements": 143,
+    "total_statements": 156,
+    "modules": [
+      "agents.agent_harness.model_limits",
+      "agents.agent_harness.model_stream"
+    ],
+    "is_framework_wide": false
+  },
+  "verified_behaviors": [
+    "whole_old_turn_eviction_without_transcript_rewrite",
+    "current_request_and_system_policy_not_sliced",
+    "oversized_user_message_preserves_existing_memory_window",
+    "tool_schema_and_call_arguments_count_toward_input",
+    "large_stream_delta_split_without_text_loss",
+    "cumulative_output_and_empty_chunk_bounds",
+    "over_limit_turn_tool_calls_not_executed",
+    "no_automatic_retry_for_local_output_overrun",
+    "timed_out_stream_no_late_delta_or_event_sequence_recreation",
+    "cancelled_stream_closed_without_retry",
+    "streamed_tool_argument_bindings_preserved",
+    "safe_size_only_model_events",
+    "trusted_governance_propagated_to_real_harness"
+  ],
+  "synthetic_window_benchmark": {
+    "iterations": 100,
+    "messages_before": 321,
+    "messages_after": 185,
+    "tool_count": 32,
+    "chars_before": 140881,
+    "chars_after": 89561,
+    "limit_chars": 90000,
+    "p50_ms": 2.836,
+    "p95_ms": 3.132,
+    "provider_calls": 0,
+    "is_end_to_end_latency": false
+  },
+  "repository_qguard": {
+    "status": "failed",
+    "score": 0,
+    "files_scanned": 739,
+    "findings": 4967,
+    "includes_generated_build_duplicates": true,
+    "rules_disabled": false
+  },
+  "known_limits": [
+    "some_selected_tool_catalogs_remain_large",
+    "does_not_improve_or_attest_semantic_intent_accuracy",
+    "cannot_force_upstream_cancellation_or_rollback",
+    "uncooperative_provider_keeps_bounded_slot_until_return",
+    "no_real_model_latency_or_advertising_api_verification_this_iteration"
+  ],
+  "raw_checks_log": "outputs/agent-model-bounds-20261022/checks-final.log",
+  "service_restarted": false,
+  "database_schema_changed": false,
+  "business_template_or_knowledge_data_changed": false,
+  "changes_committed": false
+}

@@ -230,6 +230,8 @@ class AgentPlatform:
         factory_options.setdefault(
             "max_total_tokens", self.governance.max_total_tokens,
         )
+        for name in ("max_model_input_chars", "max_model_output_chars", "max_stream_chunks"):
+            factory_options.setdefault(name, getattr(self.governance, name))
         if "skill_catalog" not in factory_options:
             factory_options["skill_catalog"] = InMemorySkillCatalog(
                 max_context_chars=self.governance.max_context_chars,

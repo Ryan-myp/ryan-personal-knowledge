@@ -10,6 +10,9 @@ from .core.timeouts import DEFAULT_EXECUTION_TIMEOUT_SECONDS
 from .agent_runtime import AgentRuntime
 from .context import ContextProvider
 from .observability import AlertSink, MetricsSink, TraceSink
+from .model_limits import (
+    DEFAULT_MODEL_INPUT_CHARS, DEFAULT_MODEL_OUTPUT_CHARS, DEFAULT_STREAM_CHUNKS,
+)
 from .run_store import RunStore
 from .skills import InMemorySkillCatalog, SkillCatalog, SkillSource
 from .tool_catalog import InMemoryToolCatalog, ToolCatalog
@@ -65,6 +68,9 @@ class AgentApplication:
         max_input_tokens: int | None = None,
         max_output_tokens: int | None = None,
         max_total_tokens: int | None = None,
+        max_model_input_chars: int = DEFAULT_MODEL_INPUT_CHARS,
+        max_model_output_chars: int = DEFAULT_MODEL_OUTPUT_CHARS,
+        max_stream_chunks: int = DEFAULT_STREAM_CHUNKS,
         max_tool_result_chars: int = 32_000,
         max_interaction_chars: int = 256_000,
         session_ttl_seconds: float = 3600.0,
@@ -119,6 +125,9 @@ class AgentApplication:
             max_input_tokens=max_input_tokens,
             max_output_tokens=max_output_tokens,
             max_total_tokens=max_total_tokens,
+            max_model_input_chars=max_model_input_chars,
+            max_model_output_chars=max_model_output_chars,
+            max_stream_chunks=max_stream_chunks,
             max_tool_result_chars=max_tool_result_chars,
             max_interaction_chars=max_interaction_chars,
             session_ttl_seconds=session_ttl_seconds,

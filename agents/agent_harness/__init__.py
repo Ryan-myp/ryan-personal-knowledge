@@ -17,6 +17,7 @@ from .agent import (
     AgentLeaseLostError,
 )
 from .model_execution import ModelBudgetExceededError, ModelTimeoutError, ModelCapacityError
+from .model_limits import ModelInputLimitError, ModelLimitError, ModelOutputLimitError
 from .state_persistence import TranscriptPersistenceError
 from .agent_runtime import AgentRuntime
 from .context import BoundedContextProvider, ContextProvider
@@ -123,6 +124,9 @@ __all__ = [
     "ModelBudgetExceededError",
     "ModelTimeoutError",
     "ModelCapacityError",
+    "ModelLimitError",
+    "ModelInputLimitError",
+    "ModelOutputLimitError",
     "TranscriptPersistenceError",
     "AgentCancelledError",
     "AgentLeaseLostError",

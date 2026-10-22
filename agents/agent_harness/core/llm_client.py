@@ -16,6 +16,10 @@ from contextvars import ContextVar
 from typing import Optional, Dict, Any
 
 from ..messages import AgentMessage, ModelTurn, ToolCall
+from ..model_limits import (
+    DEFAULT_MODEL_INPUT_CHARS, ModelInputLimitError, positive_integer,
+    provider_input_chars,
+)
 from .timeouts import DEFAULT_EXECUTION_TIMEOUT_SECONDS
 
 logger = logging.getLogger(__name__)
@@ -160,6 +164,7 @@ class _CompletionState:
     provider_tools: list[dict[str, Any]]
     kwargs: dict[str, Any]
     attempt_messages: list[dict[str, Any]]
+    max_input_chars: int = DEFAULT_MODEL_INPUT_CHARS
     usage_totals: dict[str, int] = field(default_factory=lambda: {
         "input_tokens": 0,
         "output_tokens": 0,
@@ -334,12 +339,19 @@ class LLMClient:
             )
 
         self._apply_request_limits(kwargs, request)
+        context = getattr(request, "context", None)
+        max_input_chars = positive_integer(
+            "max_model_input_chars",
+            context.get("max_model_input_chars", DEFAULT_MODEL_INPUT_CHARS)
+            if isinstance(context, dict) else DEFAULT_MODEL_INPUT_CHARS,
+        )
         return _CompletionState(
             provider_messages=provider_messages,
             active_tools=active_tools,
             provider_tools=provider_tools,
             kwargs=kwargs,
             attempt_messages=provider_messages,
+            max_input_chars=max_input_chars,
         )
 
     def _apply_request_limits(
@@ -362,6 +374,10 @@ class LLMClient:
 
     def _request_completion(self, state: _CompletionState, collector: Any) -> Any:
         state.kwargs["messages"] = state.attempt_messages
+        if provider_input_chars(
+            state.attempt_messages, state.kwargs.get("tools"),
+        ) > state.max_input_chars:
+            raise ModelInputLimitError()
         if collector is not None:
             collector.add({"llm_requests": 1})
         try:

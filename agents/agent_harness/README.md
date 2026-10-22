@@ -85,6 +85,25 @@ retries, provider fallback for retryable failures, timeout signalling, streaming
 deltas and cumulative token budgets. Persistence, lease, idempotency and audit
 failures are returned as `recovery_required` with structured runtime signals.
 
+`max_model_input_chars` bounds prepared messages plus Tool schemas (default
+256000 serialized characters). The model window evicts complete older user
+turns, never slices the current request, Tool arguments or system instructions,
+and does not rewrite the durable transcript. Necessary context that still
+exceeds the limit fails with `model_input_limit_exceeded` and a user-facing
+explanation. `LLMClient.complete` rechecks the final text/schema payload,
+including document text and each internal response-repair attempt. Embedded
+image bytes are not text context; attachment transport limits remain separate.
+These character counts are not model-specific token estimates.
+
+`max_model_output_chars` (default 128000) bounds model text, Tool calls and
+context updates; `max_stream_chunks` (default 10000) also bounds empty chunks.
+Overruns fail with `model_output_limit_exceeded` without executing that model
+turn's Tool calls or retrying it. Large valid deltas are split into observer
+events rather than truncated. A cancelled/timed-out stream cannot continue
+emitting deltas, and its iterator is closed when its worker can advance.
+An uncooperative provider can still occupy its bounded slot until it returns;
+local cancellation does not attest upstream cancellation or rollback.
+
 The generic Runtime accepts only `dry_run` and `live` execution modes. A
 platform may choose the default mode through governance, but live Tool writes
 still require the Tool policy's explicit approval, permission, confirmation,
@@ -121,10 +140,13 @@ can mark a trusted binding with `metadata={"always_on": True}` for cross-cutting
 guidance. Neither option grants execution permissions.
 
 `model_start` events include message character/count and visible Tool count,
+plus serialized `input_chars` including Tool schemas,
 plus context preparation time; `model_end` and `model_error` include attempt
 duration. These are adapter-attempt diagnostics, not provider billing counts.
 Use reported `usage.llm_requests` for adapter-internal HTTP retries where available.
 No prompt text or credentials are included in these diagnostic fields.
+`model_input_trimmed` records removed message count and remaining input size,
+not discarded conversation text.
 
 The Harness can also be built as a standalone wheel:
 

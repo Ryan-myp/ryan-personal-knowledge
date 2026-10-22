@@ -246,6 +246,7 @@ def test_model_start_measures_input_size_without_recording_content():
         app.close()
     started = next(event for event in events if event["type"] == "model_start")
     assert started["message_chars"] >= len("PRIVATE USER MESSAGE")
+    assert started["input_chars"] > started["message_chars"]
     assert started["message_count"] >= 1
     assert started["tool_count"] == 0
     assert started["prepare_duration_ms"] >= 0

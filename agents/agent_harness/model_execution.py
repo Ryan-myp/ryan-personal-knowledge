@@ -13,6 +13,11 @@ from dataclasses import dataclass, replace
 from typing import Any, Callable, Mapping, Optional, Sequence, TYPE_CHECKING
 
 from .messages import AgentMessage, ModelTurn, ToolCall
+from .model_limits import (
+    DEFAULT_MODEL_OUTPUT_CHARS, DEFAULT_STREAM_CHUNKS,
+    ModelOutputLimitError, model_input_chars, model_output_chars, positive_integer,
+)
+from .model_stream import consume_model_stream
 from .core.timeouts import DEFAULT_EXECUTION_TIMEOUT_SECONDS
 from .runtime_kernel import TurnRequest
 
@@ -53,8 +58,12 @@ class ModelExecutionOptions:
     max_input_tokens: int | None = None
     max_output_tokens: int | None = None
     max_total_tokens: int | None = None
+    max_model_output_chars: int = DEFAULT_MODEL_OUTPUT_CHARS
+    max_stream_chunks: int = DEFAULT_STREAM_CHUNKS
 
     def __post_init__(self) -> None:
+        for name in ("max_model_output_chars", "max_stream_chunks"):
+            positive_integer(name, getattr(self, name))
         for name in ("max_inflight", "max_stream_delta_chars"):
             if getattr(self, name) <= 0:
                 raise ValueError(f"{name} must be positive")
@@ -91,6 +100,7 @@ class _ModelInvocation:
     attempt_started_at: float | None = None
     model_call_id: str = ""
     prepare_duration_ms: float = 0.0
+    input_chars: int = 0
 
 
 class ModelExecutionCoordinator:
@@ -230,16 +240,29 @@ class ModelExecutionCoordinator:
         # Consume the iterator inside the bounded worker. A timeout around
         # only ``stream(...)`` is insufficient because most providers return
         # a lazy iterator whose next chunk can block indefinitely.
-        return self.invoke(
-            lambda: self._consume_stream(
-                stream(messages, tools, request),
-                request,
-                abort_event,
-                on_output,
-            ),
-            timeout_seconds=timeout_seconds,
-            interrupt_check=interrupt_check,
-        )
+        stopped = threading.Event()
+        timeout = self.options.timeout_seconds if timeout_seconds is None else timeout_seconds
+        deadline = time.monotonic() + timeout if timeout is not None else None
+
+        def check_stream() -> None:
+            if stopped.is_set() or (deadline is not None and time.monotonic() >= deadline):
+                raise ModelTimeoutError("model stream invocation has ended")
+            interrupt_check()
+
+        def consume() -> ModelTurn:
+            check_stream()
+            return self._consume_stream(
+                stream(messages, tools, request), request, abort_event,
+                on_output, check_stream,
+            )
+
+        try:
+            return self.invoke(
+                consume, timeout_seconds=timeout_seconds,
+                interrupt_check=interrupt_check,
+            )
+        finally:
+            stopped.set()
 
     def _consume_stream(
         self,
@@ -247,46 +270,24 @@ class ModelExecutionCoordinator:
         request: TurnRequest,
         abort_event: Optional[threading.Event] = None,
         on_output: Optional[Callable[[], None]] = None,
+        interrupt_check: Optional[Callable[[], None]] = None,
     ) -> ModelTurn:
-        parts: list[str] = []
-        final: Optional[ModelTurn] = None
-        calls: list[ToolCall] = []
-        for chunk in iterator:
-            self.assert_not_interrupted(request, abort_event)
-            if isinstance(chunk, ModelTurn):
-                final = chunk
-                if chunk.tool_calls:
-                    calls.extend(chunk.tool_calls)
-                continue
-            if isinstance(chunk, str):
-                delta = chunk
-            elif isinstance(chunk, Mapping):
-                delta = chunk.get("delta", chunk.get("content", ""))
-                calls.extend(self._stream_calls(chunk.get("tool_calls") or ()))
-            else:
-                delta = ""
-            if delta not in (None, ""):
-                if on_output is not None:
-                    on_output()
-                safe_delta = str(delta)[: self.options.max_stream_delta_chars]
-                parts.append(safe_delta)
-                self.emit(
-                    "model_delta",
-                    request,
-                    delta=safe_delta,
-                )
-        if final is None:
-            final = ModelTurn(
-                content="".join(parts),
-                tool_calls=tuple(calls),
-            )
-        elif parts:
-            final = replace(
-                final,
-                content="".join(parts),
-                tool_calls=tuple(final.tool_calls or calls),
-            )
-        return final
+        def emit_delta(delta: str) -> None:
+            if on_output is not None:
+                on_output()
+            self.emit("model_delta", request, delta=delta)
+
+        return consume_model_stream(
+            iterator,
+            max_chars=self.options.max_model_output_chars,
+            max_chunks=self.options.max_stream_chunks,
+            delta_chars=self.options.max_stream_delta_chars,
+            parse_calls=self._stream_calls,
+            check=interrupt_check or (
+                lambda: self.assert_not_interrupted(request, abort_event)
+            ),
+            emit_delta=emit_delta,
+        )
 
     @staticmethod
     def _stream_calls(items: Sequence[Any]) -> list[ToolCall]:
@@ -301,6 +302,7 @@ class ModelExecutionCoordinator:
                         name=str(item.get("name") or ""),
                         arguments=dict(item.get("arguments") or item.get("args") or {}),
                         depends_on=tuple(item.get("depends_on") or ()),
+                        argument_bindings=tuple(item.get("argument_bindings") or ()),
                     )
                 )
         return calls
@@ -346,7 +348,10 @@ class ModelExecutionCoordinator:
             )
         )
         self.assert_not_interrupted(request, abort_event)
-        return self.normalize(value)
+        turn = self.normalize(value)
+        if model_output_chars(turn) > self.options.max_model_output_chars:
+            raise ModelOutputLimitError()
+        return turn
 
     def complete(
         self,
@@ -381,6 +386,7 @@ class ModelExecutionCoordinator:
             ),
             deadline=deadline,
             prepare_duration_ms=prepare_duration_ms,
+            input_chars=model_input_chars(messages, tools),
         )
         for provider_index, provider in enumerate(providers):
             complete = getattr(provider, "complete", None)
@@ -445,6 +451,7 @@ class ModelExecutionCoordinator:
                     len(str(message.content or "")) for message in invocation.messages
                 ),
                 tool_count=len(invocation.tools),
+                input_chars=invocation.input_chars,
                 prepare_duration_ms=(
                     invocation.prepare_duration_ms
                     if attempt == 0 and invocation.provider_index == 0
