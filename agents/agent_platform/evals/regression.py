@@ -1,12 +1,31 @@
 """Closed, non-executable assertions for conversation regression evidence."""
 
-from typing import Annotated, Any, Mapping
+from typing import Annotated, Any, Literal, Mapping
 
 from pydantic import BaseModel, ConfigDict, Field, StrictBool
 
 
 _Text = Annotated[str, Field(min_length=1, max_length=200)]
 _ToolName = Annotated[str, Field(min_length=1, max_length=200, pattern=r"^[\w.:-]+$")]
+
+
+class _DeliveredDocument(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    document_id: _Text
+    sha256: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
+    excerpt_chars: int = Field(gt=0, le=1200)
+    source_ref: str = Field(default="", max_length=500)
+    version: str = Field(default="", max_length=100)
+
+
+class _KnowledgeDelivery(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    source: Literal["automatic_rag"]
+    documents: list[_DeliveredDocument] = Field(max_length=8)
+    prompt_chars: int = Field(ge=0, le=4000)
+    claims_answer_grounded: Literal[False]
 
 
 class RegressionAssertions(BaseModel):
@@ -21,6 +40,8 @@ class RegressionAssertions(BaseModel):
     intent_type: _Text | None = None
     needs_input: StrictBool | None = None
     needs_confirmation: StrictBool | None = None
+    knowledge_context_present: StrictBool | None = None
+    required_context_documents: list[_Text] = Field(default_factory=list, max_length=8)
 
     @property
     def executable(self) -> bool:
@@ -79,6 +100,25 @@ def evaluate_regression(
         expected = getattr(assertions, name)
         if expected is not None:
             check(name in response and response[name] is expected, name)
+    if (
+        assertions.knowledge_context_present is not None
+        or assertions.required_context_documents
+    ):
+        raw_delivery = response.get("knowledge_context")
+        delivery = _KnowledgeDelivery.model_validate(raw_delivery) if raw_delivery else None
+        if delivery is not None and delivery.documents and delivery.prompt_chars == 0:
+            raise ValueError("knowledge delivery requires nonempty model context")
+        delivered_ids = {
+            document.document_id for document in delivery.documents
+        } if delivery is not None else set()
+        if assertions.knowledge_context_present is not None:
+            check(
+                delivery is not None
+                and bool(delivered_ids) is assertions.knowledge_context_present,
+                "knowledge_context_present",
+            )
+        for name in assertions.required_context_documents:
+            check(name in delivered_ids, f"required_context_document:{name}")
     failures = [label for passed, label in zip(checks, labels) if not passed]
     return {
         "status": "failed" if failures else "passed",

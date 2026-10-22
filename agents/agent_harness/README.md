@@ -108,11 +108,22 @@ from agents.agent_harness import AgentApplication, SkillBinding, StaticSkillSour
 app = AgentApplication.create(model=my_model)
 app.register_skill_source(StaticSkillSource(
     "support",
-    [SkillBinding(name="support", instructions="...")],
+    [SkillBinding(name="support", description="Support ticket triage", instructions="...")],
 ))
 app.register_tool_source(my_tool_source)
 result = app.prompt("Help me with a ticket")
 ```
+
+The catalog injects matching Skills, not the first entries that fit its budget.
+Use meaningful names and descriptions. An integration can select `skill_source_ids`
+explicitly, or mark a trusted binding with `metadata={"always_on": True}` for
+cross-cutting guidance. Neither option grants execution permissions.
+
+`model_start` events include message character/count and visible Tool count,
+plus context preparation time; `model_end` and `model_error` include attempt
+duration. These are adapter-attempt diagnostics, not provider billing counts.
+Use reported `usage.llm_requests` for adapter-internal HTTP retries where available.
+No prompt text or credentials are included in these diagnostic fields.
 
 The Harness can also be built as a standalone wheel:
 

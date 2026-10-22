@@ -39,11 +39,12 @@ class AdvertisingRuntimeContext:
         )
         if not isinstance(context, dict):
             context = {}
-        raw_platforms = context.get("platforms")
+        namespaces = context.get("namespaces")
+        namespaces = namespaces if isinstance(namespaces, (list, tuple)) else ()
         provider_scope = [
             item.strip()
-            for item in str(raw_platforms or "").split(",")
-            if item.strip()
+            for item in namespaces
+            if isinstance(item, str) and item.strip()
         ]
         provider_key = tuple(sorted(set(provider_scope)))
         publisher_context = self._blueprint_context_cache.get(provider_key)

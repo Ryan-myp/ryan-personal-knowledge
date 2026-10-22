@@ -65,7 +65,7 @@ def test_builtin_skill_catalog_lists_standard_packages_as_read_only():
     landing_page = catalog.get_version("paid-landing-page-review", "1.0.0")
     assert landing_page["location"] == "practices/paid-landing-page-review"
     assert "references/post-click-audit.md" in landing_page["files"]
-    knowledge_explainer = catalog.get_version("knowledge-explainer", "1.0.4")
+    knowledge_explainer = catalog.get_version("knowledge-explainer", "1.0.5")
     assert knowledge_explainer["location"] == "practices/knowledge-explainer"
     assert "references/answer-structure.md" in knowledge_explainer["files"]
     web_research = catalog.get_version("web-research", "1.0.4")

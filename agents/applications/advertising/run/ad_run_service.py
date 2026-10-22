@@ -130,6 +130,7 @@ class AdvertisingRunService:
             ("tool_selection", None),
             ("memory", []),
             ("memory_updates", []),
+            ("knowledge_context", {}),
             ("execution_plan", {}),
             ("workflow_id", None),
             ("ui", {}),

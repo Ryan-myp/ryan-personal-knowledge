@@ -203,3 +203,50 @@ def test_llm_adapter_passes_the_remaining_deadline_to_the_sdk():
         user_input="hello", context={"model_timeout_seconds": 0.25},
     ))
     assert calls[0]["timeout"] == 0.25
+
+
+def test_enqueued_model_call_cannot_execute_when_submit_failed(monkeypatch):
+    from agents.agent_harness import AgentApplication
+    from agents.agent_harness import model_execution
+
+    class QueuedThenFailed:
+        def submit(self, method, *args):
+            self.pending = lambda: method(*args)
+            raise RuntimeError("failed to start worker")
+
+        def shutdown(self, **_kwargs):
+            pass
+
+    executor = QueuedThenFailed()
+    calls = []
+    app = AgentApplication.create(model=lambda *_: "done", max_inflight_model_invocations=1)
+    try:
+        with monkeypatch.context() as patch:
+            patch.setattr(model_execution, "ThreadPoolExecutor", lambda **_kwargs: executor)
+            with pytest.raises(RuntimeError):
+                app.agent._models.invoke(lambda: calls.append("unadmitted"))
+        executor.pending()
+        assert calls == []
+        assert app.agent._models.invoke(lambda: "recovered") == "recovered"
+        assert app.agent._models.invoke(lambda: "still available") == "still available"
+    finally:
+        app.close()
+
+
+def test_model_start_measures_input_size_without_recording_content():
+    from agents.agent_harness import AgentApplication
+
+    events = []
+    app = AgentApplication.create(
+        model=lambda *_: "done", event_callback=events.append,
+    )
+    try:
+        app.prompt("PRIVATE USER MESSAGE")
+    finally:
+        app.close()
+    started = next(event for event in events if event["type"] == "model_start")
+    assert started["message_chars"] >= len("PRIVATE USER MESSAGE")
+    assert started["message_count"] >= 1
+    assert started["tool_count"] == 0
+    assert started["prepare_duration_ms"] >= 0
+    assert "PRIVATE USER MESSAGE" not in str(started)

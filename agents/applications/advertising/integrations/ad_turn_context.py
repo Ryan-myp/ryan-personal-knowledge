@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from dataclasses import dataclass, field
 from typing import Any
+
+from agents.agent_platform.data.knowledge_context import render_knowledge_context
 
 logger = logging.getLogger(__name__)
 
@@ -31,7 +34,6 @@ class AdTurnContextService:
         "conversation_digest": 2400,
     }
     _MAX_MEMORY_RECORDS = 5
-    _MAX_KNOWLEDGE_RECORDS = 8
     _AGGREGATE_CONTEXT_LIMIT = 20_000
     _CONTEXT_TRIM_PRIORITY = (
         "conversation_digest",
@@ -60,7 +62,7 @@ class AdTurnContextService:
             return [], bool(records)
         bounded: list[dict[str, Any]] = []
         truncated = len(records) > max_items
-        total_chars = 0
+        total_chars = 2
         for item in records[:max_items]:
             if not isinstance(item, dict):
                 truncated = True
@@ -74,7 +76,9 @@ class AdTurnContextService:
                 excerpt = str(value.get("excerpt") or "")
                 value["excerpt"] = excerpt[:item_excerpt_chars]
                 truncated = truncated or len(excerpt) > item_excerpt_chars
-            encoded_length = sum(len(str(part)) for part in value.values())
+            encoded_length = len(json.dumps(
+                value, ensure_ascii=False, separators=(",", ":"),
+            )) + int(bool(bounded))
             if total_chars + encoded_length > max_chars:
                 truncated = True
                 break
@@ -89,11 +93,15 @@ class AdTurnContextService:
         truncated: dict[str, bool],
     ) -> int:
         """Trim lower-priority advisory fields to one total model budget."""
-        fields = tuple(
-            key for key in cls._CONTEXT_LIMITS
-            if isinstance(skill_context.get(key), str)
-        )
-        total = sum(len(skill_context[key]) for key in fields)
+        fields = tuple(key for key in cls._CONTEXT_LIMITS if key in skill_context)
+
+        def size(key: str) -> int:
+            value = skill_context[key]
+            return len(value) if isinstance(value, str) else len(
+                json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+            )
+
+        total = sum(size(key) for key in fields)
         overflow = max(0, total - cls._AGGREGATE_CONTEXT_LIMIT)
         for key in cls._CONTEXT_TRIM_PRIORITY:
             if overflow <= 0:
@@ -105,7 +113,7 @@ class AdTurnContextService:
             skill_context[key] = value[:len(value) - trim]
             truncated[key] = True
             overflow -= trim
-        return sum(len(skill_context[key]) for key in fields)
+        return sum(size(key) for key in fields)
 
     @staticmethod
     def _budget_snapshot(session: Any) -> dict[str, Any]:
@@ -191,6 +199,7 @@ class AdTurnContextService:
                 "request_length": len(safe_user_input),
             },
         )
+        session.ctx.metadata["skill_context"] = {}
         try:
             self._store_skill_context(
                 runtime=runtime,
@@ -252,10 +261,13 @@ class AdTurnContextService:
             skill_context[key] = value
             truncated[key] = was_truncated
 
-        knowledge, knowledge_truncated = cls._bounded_records(
-            skill_context.get("knowledge"),
-            max_items=cls._MAX_KNOWLEDGE_RECORDS,
-            max_chars=budget["knowledge"],
+        raw_knowledge = skill_context.get("knowledge")
+        raw_knowledge = raw_knowledge if isinstance(raw_knowledge, list) else []
+        rendered = render_knowledge_context(raw_knowledge, max_chars=budget["knowledge"])
+        knowledge = json.loads(rendered.text) if rendered.text else []
+        knowledge_truncated = len(knowledge) < len(raw_knowledge) or any(
+            len(str(raw.get("excerpt") or "")) > len(item["excerpt"])
+            for raw, item in zip(raw_knowledge, knowledge) if isinstance(raw, dict)
         )
         skill_context["knowledge"] = knowledge
         truncated["knowledge"] = knowledge_truncated
@@ -294,7 +306,8 @@ class AdTurnContextService:
             "used": {
                 key: (
                     len(value) if isinstance(value, str)
-                    else len(value) if isinstance(value, list)
+                    else len(json.dumps(value, ensure_ascii=False, separators=(",", ":")))
+                    if isinstance(value, list)
                     else 0
                 )
                 for key, value in skill_context.items()

@@ -79,3 +79,51 @@ def test_missing_boolean_evidence_cannot_prove_false(field):
     expectation = RegressionAssertions.model_validate({field: False})
     assert evaluate_regression({"reply": "answer"}, expectation)["status"] == "failed"
     assert evaluate_regression({field: False}, expectation)["status"] == "passed"
+
+
+def test_context_delivery_is_distinct_from_actual_tool_execution():
+    response = {
+        "reply": "answer", "results": [],
+        "knowledge_context": {
+            "source": "automatic_rag", "prompt_chars": 100,
+            "claims_answer_grounded": False,
+            "documents": [{
+                "document_id": "doc", "source_ref": "local/doc", "version": "1",
+                "sha256": "a" * 64, "excerpt_chars": 20,
+            }],
+        },
+    }
+    assert evaluate_regression(response, RegressionAssertions(
+        knowledge_context_present=True, required_context_documents=["doc"],
+    ))["status"] == "passed"
+    assert evaluate_regression(response, RegressionAssertions(
+        required_tools=["agent_knowledge_search"],
+    ))["status"] == "failed"
+    assert evaluate_regression(response, RegressionAssertions(
+        required_context_documents=["not-delivered"],
+    ))["status"] == "failed"
+    assert evaluate_regression({}, RegressionAssertions(
+        knowledge_context_present=False,
+    ))["status"] == "failed"
+
+
+@pytest.mark.parametrize("change", [
+    {"source": "model_claim"},
+    {"claims_answer_grounded": True},
+    {"prompt_chars": 0},
+    {"documents": [{"document_id": "doc"}]},
+])
+def test_malformed_automatic_context_cannot_prove_delivery(change):
+    evidence = {
+        "source": "automatic_rag", "prompt_chars": 100,
+        "claims_answer_grounded": False,
+        "documents": [{
+            "document_id": "doc", "sha256": "a" * 64, "excerpt_chars": 4,
+        }],
+        **change,
+    }
+    with pytest.raises(ValueError):
+        evaluate_regression(
+            {"knowledge_context": evidence},
+            RegressionAssertions(knowledge_context_present=True),
+        )

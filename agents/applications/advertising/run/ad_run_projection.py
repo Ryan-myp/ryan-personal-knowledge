@@ -133,6 +133,12 @@ class AdvertisingRunProjection:
             if isinstance(metadata, Mapping) else {}
         )
         skill_context = skill_context if isinstance(skill_context, Mapping) else {}
+        current_knowledge_context = (
+            dict(skill_context.get("knowledge_context") or {})
+            if payload.get("run_id") and payload["run_id"] == skill_context.get(
+                "knowledge_context_run_id",
+            ) else {}
+        )
         confirmation = next((
             item.get("confirmation_payload") for item in results
             if isinstance(item.get("confirmation_payload"), Mapping)
@@ -162,6 +168,7 @@ class AdvertisingRunProjection:
                 "tools": [name for name, _namespace in planned_tools]
             },
             "memory": list(skill_context.get("memory") or []),
+            "knowledge_context": current_knowledge_context,
             "memory_updates": list(metadata.get("memory_updates") or [])
             if isinstance(metadata, Mapping) else [],
             "needs_input": bool(

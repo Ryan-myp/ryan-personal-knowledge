@@ -249,6 +249,8 @@ class InMemorySkillCatalog:
             token.casefold()
             for token in re.findall(r"[\w-]{2,}", str(user_input or ""))
         }
+        for run in re.findall(r"[\u3400-\u9fff]+", str(user_input or "")):
+            terms.update(run[index:index + 2] for index in range(len(run) - 1))
         allowed_sources = (
             {str(item).strip() for item in source_ids if str(item).strip()}
             if source_ids is not None else None
@@ -265,13 +267,19 @@ class InMemorySkillCatalog:
             skills = sorted(
                 (
                     skill for skill in self._skills.values()
-                    if allowed_names is None or skill.name in allowed_names
+                    if (
+                        skill.name in allowed_names
+                        if allowed_names is not None else
+                        skill.metadata.get("always_on") is True or self._score(skill, terms) > 0
+                    )
                 ),
                 key=lambda item: (-self._score(item, terms), item.name),
             )[:self.max_skills]
         chunks: list[str] = []
         remaining = self.max_context_chars
         for skill in skills:
+            separator_chars = int(bool(chunks))
+            remaining -= separator_chars
             if remaining <= 0:
                 break
             header = f"## Skill: {skill.name} (v{skill.version})\n"

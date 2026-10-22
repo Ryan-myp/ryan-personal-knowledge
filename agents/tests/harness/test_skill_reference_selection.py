@@ -9,6 +9,8 @@ from agents.agent_harness.core.tool_selector import (
 from agents.agent_harness.skills import (
     InMemorySkillCatalog,
     MarkdownSkillSource,
+    SkillBinding,
+    StaticSkillSource,
 )
 
 
@@ -52,6 +54,53 @@ def test_reference_selection_is_bounded_and_skips_unmatched_documents():
         max_documents=2,
         max_chars=80,
     )) <= 80
+
+
+def test_catalog_does_not_fill_unused_budget_with_unrelated_skills():
+    catalog = InMemorySkillCatalog()
+    catalog.register_source(StaticSkillSource("domain", [
+        SkillBinding(
+            name="billing", description="Billing invoices",
+            instructions="UNRELATED BILLING INSTRUCTIONS",
+        ),
+        SkillBinding(
+            name="measurement", description="Measurement attribution",
+            instructions="RELEVANT ATTRIBUTION INSTRUCTIONS",
+        ),
+    ]))
+    context = catalog.build_context("measurement attribution")
+    assert "RELEVANT ATTRIBUTION" in context
+    assert "UNRELATED BILLING" not in context
+    assert catalog.build_context("unmatched subject") == ""
+
+
+def test_explicit_sources_and_declared_always_on_skills_are_not_dropped():
+    catalog = InMemorySkillCatalog()
+    catalog.register_source(StaticSkillSource("selected", [
+        SkillBinding(name="invoice", instructions="EXPLICIT GUIDANCE"),
+    ]))
+    catalog.register_source(StaticSkillSource("global", [
+        SkillBinding(
+            name="policy", instructions="ALWAYS ON GUIDANCE", metadata={"always_on": True},
+        ),
+    ]))
+    assert "EXPLICIT GUIDANCE" in catalog.build_context("unmatched", source_ids=["selected"])
+    assert "ALWAYS ON GUIDANCE" in catalog.build_context("unmatched")
+    assert catalog.build_context("unmatched", source_ids=[]) == ""
+
+
+def test_catalog_matches_chinese_topics_inside_a_longer_question():
+    catalog = InMemorySkillCatalog()
+    catalog.register_source(StaticSkillSource("domain", [
+        SkillBinding(
+            name="creative-fatigue", description="创意疲劳分析",
+            instructions="RELEVANT CREATIVE GUIDANCE",
+        ),
+        SkillBinding(name="billing", instructions="UNRELATED INVOICE GUIDANCE"),
+    ]))
+    context = catalog.build_context("请帮我分析一下创意疲劳")
+    assert "RELEVANT CREATIVE" in context
+    assert "UNRELATED INVOICE" not in context
 
 
 def test_triggered_skill_context_uses_relevant_reference_instead_of_first_file():

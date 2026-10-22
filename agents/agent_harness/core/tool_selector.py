@@ -155,8 +155,6 @@ class DynamicToolSelector:
         knowledge = self._query_knowledge(
             user_input, namespaces, intent_type=intent_type, tenant_id=tenant_id
         )
-        if knowledge:
-            selection.expert_knowledge = self._format_knowledge(knowledge)
         triggered_context = self._triggered_skill_context(
             user_input,
             skill_refs=self._associated_skill_refs(selection.selected_tools),

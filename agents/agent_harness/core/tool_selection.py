@@ -923,6 +923,20 @@ class ToolSelector:
                 *priority_tools,
                 *(tool for tool in ranked_tools if id(tool) not in priority_ids),
             ]
+        if (
+            not active_namespaces
+            and not explicitly_named
+            and not explicitly_aliased_reads
+            and not explicitly_aliased_writes
+            and not read_only_request
+            and not _has_unnegated_write_cue(verb_text)
+        ):
+            discovery = _semantic_discovery_tools(available_tools)
+            discovery_ids = {id(tool) for tool in discovery}
+            ranked_tools = [
+                *discovery,
+                *(tool for tool in ranked_tools if id(tool) not in discovery_ids),
+            ]
         return ranked_tools[:effective_limit]
 
     @staticmethod
@@ -987,6 +1001,14 @@ class ToolSelector:
             return True
         if (
             read_request and not historical_summary
+            and (
+                _is_knowledge_explanation_request(user_input, selected_tools)
+                or any(
+                    _contains_cue(verb_text, cue)
+                    for cue in _READ_ACTION_CUES
+                    if cue not in {"有哪些", "有啥", "哪几个", "哪些"}
+                )
+            )
             and any(_is_web_search_tool(tool) for tool in (selected_tools or ()))
         ):
             return True

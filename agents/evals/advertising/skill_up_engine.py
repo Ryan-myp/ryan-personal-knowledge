@@ -161,6 +161,9 @@ def _structured_evidence(runtime_result: Mapping[str, Any]) -> dict[str, Any]:
         "needs_confirmation": bool(runtime_result.get("needs_confirmation", False)),
         "tool_plan": runtime_result.get("tool_plan") or {},
         "results": safe_rows,
+        "knowledge_context": runtime_result.get("knowledge_context") or {},
+        "usage": runtime_result.get("usage") or {},
+        "model_metrics": runtime_result.get("model_metrics") or {},
     }
 
 
@@ -325,6 +328,9 @@ def run(
         if (skills_root / "SKILL.md").is_file():
             runtime.load_managed_skill(str(skills_root), tenant_id="skill-up")
     started = time.monotonic()
+    from agents.agent_platform.evals.model_metrics import ModelMetrics
+
+    model_metrics = ModelMetrics()
     try:
         runtime_result = {}
         session_id = "skill-up:" + str(session_input.get("case_id") or "case")
@@ -336,11 +342,13 @@ def run(
                 user_id="skill-up-eval",
                 tenant_id="skill-up",
                 principal=principal,
+                event_callback=model_metrics,
             )
             reply = str(runtime_result.get("reply") or "")
             if reply:
                 transcript.append({"role": "assistant", "content": reply})
         duration_ms = max(int((time.monotonic() - started) * 1000), 0)
+        runtime_result["model_metrics"] = model_metrics.snapshot()
     finally:
         # Evaluation is often run repeatedly by the management API. Release
         # the Runtime-owned lifecycle and in-memory SQLite connection after

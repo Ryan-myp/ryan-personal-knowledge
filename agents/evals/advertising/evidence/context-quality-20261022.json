@@ -1,0 +1,60 @@
+{
+  "schema_version": "agent-quality-evidence/v1",
+  "recorded_date": "2026-10-22",
+  "source_revision": "d68e420 plus context followup",
+  "model": "agnes-3.0-flash",
+  "model_requests_were_real": true,
+  "advertising_provider_calls": 0,
+  "web_search_evidence": "explicit_offline_fixture",
+  "production_capacity_attested": false,
+  "conversation_assertions_changed_to_pass": false,
+  "intermediate_smoke": {
+    "passed": 8,
+    "failed": 0,
+    "report": "outputs/agent-quality-20261022/context-final-recheck/smoke-regression.json",
+    "is_final_revision_recheck": false
+  },
+  "reworded_regression": {
+    "successive_pass_counts": [1, 2, 2, 3],
+    "cases": 4,
+    "passed": 3,
+    "failed": 1,
+    "failures": [
+      {"id": "holdout-capabilities", "assertions": ["reply_contains:1"]}
+    ],
+    "latest_latency_p50_ms": 13973.069,
+    "latest_latency_p95_ms": 34685.466,
+    "is_unseen_holdout": false,
+    "report": "outputs/agent-quality-20261022/tool-choice-final/model-regression.json"
+  },
+  "retrieval_delivery": {
+    "bound_to_current_run": true,
+    "whole_record_json": true,
+    "content_hashes": true,
+    "delivery_does_not_prove_answer_grounded": true,
+    "does_not_substitute_for_tool_execution": true
+  },
+  "focused_statement_coverage_percent": 94,
+  "automated_tests": {
+    "full_suite_passed": 2581,
+    "warnings": 1,
+    "focused_context_and_memory_passed": 62,
+    "compile_passed": true,
+    "provider_contract_audit_passed": true,
+    "tool_contract_snapshot_count": 321,
+    "knowledge_audits_passed": true
+  },
+  "focused_coverage_modules": [
+    "agent_platform.data.knowledge_context",
+    "agent_platform.evals.model_metrics",
+    "agent_platform.evals.regression"
+  ],
+  "repository_qguard": {"status": "failed", "score": 0, "findings": 4960},
+  "limitations": [
+    "Capability summaries can omit registered services and overgeneralize across namespaces",
+    "Reworded regression is not universally reliable",
+    "End-to-end model latency and prompt size remain substantial",
+    "No production capacity or provider E2E claim",
+    "The existing 8766 service was not restarted"
+  ]
+}

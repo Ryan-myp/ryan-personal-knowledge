@@ -8,7 +8,7 @@ import threading
 import uuid
 from contextvars import copy_context
 import time
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
+from concurrent.futures import Future, ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 from dataclasses import dataclass, replace
 from typing import Any, Callable, Mapping, Optional, Sequence, TYPE_CHECKING
 
@@ -90,6 +90,7 @@ class _ModelInvocation:
     stream_output_started: bool = False
     attempt_started_at: float | None = None
     model_call_id: str = ""
+    prepare_duration_ms: float = 0.0
 
 
 class ModelExecutionCoordinator:
@@ -149,17 +150,25 @@ class ModelExecutionCoordinator:
             finally:
                 self._model_slots.release()
         executor = None
+        admitted: Future[bool] = Future()
+
+        def admitted_invoke() -> Any:
+            return invoke() if admitted.result() else None
+
         try:
             executor = ThreadPoolExecutor(
                 max_workers=1, thread_name_prefix="agent-model"
             )
-            future = executor.submit(copy_context().run, invoke)
-        except (RuntimeError, OSError, MemoryError):
+            future = executor.submit(copy_context().run, admitted_invoke)
+        except BaseException:
+            # submit() can enqueue work before thread creation fails.
+            admitted.set_result(False)
             self._model_slots.release()
             if executor is not None:
                 executor.shutdown(wait=False, cancel_futures=True)
             raise
         future.add_done_callback(lambda _completed: self._model_slots.release())
+        admitted.set_result(True)
         deadline = time.monotonic() + timeout if timeout is not None else None
         try:
             while True:
@@ -349,7 +358,9 @@ class ModelExecutionCoordinator:
             time.monotonic() + self.options.timeout_seconds
             if self.options.timeout_seconds is not None else None
         )
+        prepared_at = time.monotonic()
         messages, tools, model_request = self.prepare(request, state)
+        prepare_duration_ms = round((time.monotonic() - prepared_at) * 1000, 2)
         providers = tuple(
             provider for provider in self.providers() if provider is not None
         )
@@ -369,6 +380,7 @@ class ModelExecutionCoordinator:
                 or len(providers) > 1
             ),
             deadline=deadline,
+            prepare_duration_ms=prepare_duration_ms,
         )
         for provider_index, provider in enumerate(providers):
             complete = getattr(provider, "complete", None)
@@ -428,6 +440,16 @@ class ModelExecutionCoordinator:
                 provider=provider_name,
                 provider_index=invocation.provider_index,
                 attempt=attempt + 1,
+                message_count=len(invocation.messages),
+                message_chars=sum(
+                    len(str(message.content or "")) for message in invocation.messages
+                ),
+                tool_count=len(invocation.tools),
+                prepare_duration_ms=(
+                    invocation.prepare_duration_ms
+                    if attempt == 0 and invocation.provider_index == 0
+                    else 0.0
+                ),
             )
         try:
             model_turn = self._call_provider(
