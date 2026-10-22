@@ -22,6 +22,7 @@ function environment() {
     const context = {
         sessionId: 'session', selectedConversationId: 'session',
         isSending: false, pendingRequest: null, pendingCreationReview: null,
+        pendingBlueprintRequest: null,
         workspaceMode: { mode: 'live', liveAvailable: true, saving: false, loading: false },
         document: {
             getElementById: id => nodes[id] || null,
@@ -61,14 +62,22 @@ function environment() {
         return { session_id: 'session', status: 'succeeded', content: 'Done', results: [] };
     };
     context.refreshConversationHistory = async () => {};
+    context.creationContextForCard = card => ({
+        account_id: card.account_id,
+        platform_params: card.platform_params,
+        creation_blueprint_id: card.blueprint_id,
+        creation_blueprint_version: card.blueprint_version,
+        creation_template_id: card.template_id,
+    });
     return { context, requests, displayed, nodes, node };
 }
 
-const approval = () => ({
+const approval = (overrides = {}) => ({
     type: 'confirm_write_plan', session_id: 'session',
     account_id: '9055507554', platform: 'google-ads',
     confirmation_token: 'one-time-approval', expires_at: '2099-01-01T00:00:00Z',
     tools: ['google_create_campaign', 'google_create_ad_group'],
+    ...overrides,
 });
 
 const original = () => ({
@@ -182,6 +191,108 @@ test('a confirmation from another conversation cannot be submitted in the curren
     await context.executeConfirm();
     assert.equal(requests.length, 0);
     assert.match(displayed.at(-1)[0], /对话/);
+});
+
+test('a rendered creation draft is carried into the next message in the same session', () => {
+    const { context } = environment();
+    const draft = {
+        type: 'ad_creation_form',
+        account_id: 'tiktok-test-account',
+        blueprint_id: 'tiktok.product-sales',
+        blueprint_version: '1.0.0',
+        template_id: 'tiktok.test.product-sales',
+        platform_params: {
+            tiktok: { campaign_name: 'Paused test campaign', daily_budget: 20 },
+        },
+    };
+
+    context.renderStreamResult({
+        session_id: 'session',
+        status: 'awaiting_input',
+        content: '已加载模板草稿。',
+        results: [],
+        ui: { cards: [draft] },
+    }, { session_id: 'session' });
+
+    const queued = context.captureChatMessage('创建吧', []);
+    assert.equal(queued.requestParams.account_id, 'tiktok-test-account');
+    assert.equal(queued.requestParams.creation_blueprint_id, 'tiktok.product-sales');
+    assert.equal(queued.requestParams.creation_template_id, 'tiktok.test.product-sales');
+    assert.deepEqual(
+        JSON.parse(JSON.stringify(queued.requestParams.platform_params)),
+        draft.platform_params,
+    );
+});
+
+test('a chat continuation keeps the draft attached to the signed confirmation request', async () => {
+    const { context, requests } = environment();
+    const draft = {
+        type: 'ad_creation_form',
+        account_id: 'tiktok-test-account',
+        blueprint_id: 'tiktok.product-sales',
+        blueprint_version: '1.0.0',
+        template_id: 'tiktok.test.product-sales',
+        platform_params: {
+            tiktok: { campaign_name: 'Paused test campaign', daily_budget: 20 },
+        },
+    };
+    context.renderStreamResult({
+        session_id: 'session',
+        status: 'awaiting_input',
+        content: '已加载模板草稿。',
+        results: [],
+        ui: { cards: [draft] },
+    }, { session_id: 'session' });
+
+    const continuation = context.captureChatMessage('创建吧', []);
+    context.showConfirm(approval({
+        account_id: 'tiktok-test-account',
+        platform: 'tiktok',
+        tools: ['tiktok_create_campaign', 'tiktok_create_ad_group'],
+    }), continuation.requestParams);
+    await context.executeConfirm();
+
+    assert.equal(requests.length, 1);
+    assert.equal(requests[0].account_id, 'tiktok-test-account');
+    assert.equal(requests[0].creation_template_id, 'tiktok.test.product-sales');
+    assert.deepEqual(
+        JSON.parse(JSON.stringify(requests[0].platform_params)),
+        draft.platform_params,
+    );
+    assert.equal(requests[0].confirmed, true);
+    assert.equal(requests[0].confirmation_payload.confirmation_token, 'one-time-approval');
+});
+
+test('a creation draft from another conversation is not copied into a new message', () => {
+    const { context } = environment();
+    context.pendingBlueprintRequest = {
+        session_id: 'old-session',
+        account_id: 'old-account',
+        creation_template_id: 'old-template',
+        platform_params: { tiktok: { campaign_name: 'old draft' } },
+    };
+
+    const queued = context.captureChatMessage('查询 Google campaign', []);
+
+    assert.equal('account_id' in queued.requestParams, false);
+    assert.equal('creation_template_id' in queued.requestParams, false);
+    assert.equal('platform_params' in queued.requestParams, false);
+});
+
+test('an unrelated query in the same conversation does not inherit a creation draft', () => {
+    const { context } = environment();
+    context.pendingBlueprintRequest = {
+        session_id: 'session',
+        account_id: 'tiktok-test-account',
+        creation_template_id: 'tiktok.test.product-sales',
+        platform_params: { tiktok: { campaign_name: 'draft' } },
+    };
+
+    const queued = context.captureChatMessage('查询 Google campaign 列表', []);
+
+    assert.equal('account_id' in queued.requestParams, false);
+    assert.equal('creation_template_id' in queued.requestParams, false);
+    assert.equal('platform_params' in queued.requestParams, false);
 });
 
 test('a live response launcher keeps the usable approval rather than its redacted history copy', () => {

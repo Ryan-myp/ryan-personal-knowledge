@@ -789,10 +789,28 @@
                 || `queued-${Date.now()}-${Math.random().toString(16).slice(2)}`;
         }
 
+        function isCreationDraftContinuation(text) {
+            const normalized = String(text || '').trim().toLowerCase();
+            if (!normalized) return false;
+            if (/(?:不要|别|先不|暂不|不再).{0,5}(?:创建|新建|提交|执行)/.test(normalized)) {
+                return false;
+            }
+            return [
+                '创建', '新建', '提交', '执行', '继续', '确认',
+                '修改', '调整', '改成', '改为', '调到', 'change',
+                'update', 'edit', 'submit', 'create', 'continue', 'confirm',
+            ].some(cue => normalized.includes(cue));
+        }
+
         function captureChatMessage(text, submittedAttachments) {
             const targetSessionId = sessionId || ensureChatMediaSession();
+            const pendingContext = pendingBlueprintRequest;
+            const matchesSession = !pendingContext?.session_id
+                || pendingContext.session_id === targetSessionId;
+            if (pendingContext && !matchesSession) pendingBlueprintRequest = null;
+            const continueDraft = matchesSession && isCreationDraftContinuation(text);
             const requestParams = {
-                ...(pendingBlueprintRequest || {}),
+                ...(continueDraft ? pendingContext || {} : {}),
                 user_input: text,
                 session_id: targetSessionId,
             };

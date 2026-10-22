@@ -1,6 +1,8 @@
+import json
+
 import pytest
 
-from agents.agent_harness import ModelTurn, ToolCall, TurnRequest
+from agents.agent_harness import AgentMessage, ModelTurn, ToolCall, TurnRequest
 from agents.agent_harness.core.interfaces import ToolContext
 from agents.agent_harness.core.tool_registry import validate_tool_input
 from agents.agent_harness.core.tool_selection import ToolSelector
@@ -11,6 +13,7 @@ from agents.applications.advertising.persistence.store import AdAgentStore
 from agents.applications.advertising.execution.ad_tool_policy_factory import AdvertisingToolPolicyFactory
 from agents.tools.advertising.providers.google import create_google_tool_source
 from agents.tools.advertising.providers.meta import create_meta_tool_source
+from agents.tools.advertising.providers.tiktok import create_tiktok_tool_source
 
 
 ACCOUNT = "9055507554"
@@ -226,3 +229,84 @@ def test_template_query_uses_trusted_principal_scope_through_the_real_run(runtim
             for row in result["results"]
         )
         assert any("permission" in str(row.get("content", "")).lower() for row in result["tool_results"])
+
+
+def test_template_confirmation_choice_routes_to_blueprint_writes_not_template_preview():
+    account_id = "7397068114548195329"
+    owner = AdvertisingComposition(
+        require_llm=False,
+        offline_mode=True,
+        persistence_store=AdAgentStore(":memory:"),
+        start_background_workers=False,
+    )
+    try:
+        owner.register_tool_source(create_tiktok_tool_source())
+        options = [
+            "确认按上述 4 项创建",
+            "我要修改",
+            "先不创建",
+        ]
+        transcript = [
+            AgentMessage.user("创建吧", turn_id="confirmation-prompt"),
+            AgentMessage.tool(
+                json.dumps({
+                    "success": True,
+                    "data": {"choices": options},
+                    "needs_input": True,
+                    "interaction": {
+                        "type": "action_clarification",
+                        "payload": {
+                            "options": [
+                                {"label": option, "value": option}
+                                for option in options
+                            ],
+                        },
+                    },
+                }),
+                tool_call_id="confirmation-choice",
+                name="agent_request_input",
+                turn_id="confirmation-prompt",
+            ),
+        ]
+        request = TurnRequest(
+            user_input=options[0],
+            session_id="template-confirmation-routing",
+            turn_id="confirmation-answer",
+            user_id="operator",
+            principal=RequestPrincipal(
+                user_id="operator",
+                tenant_id="tenant",
+                permissions=frozenset({"ads.read", "ads.write"}),
+                account_scope={"tiktok": {account_id}},
+            ),
+            context={
+                "account_id": account_id,
+                "creation_blueprint_id": "tiktok.product_sales_video",
+                "creation_blueprint_version": "2.3.0",
+                "creation_template_id": "builtin_f24270752ed0b43298ac45d8",
+                "platform_params": {"tiktok": {"campaign_name": "test"}},
+            },
+            execution_mode="live",
+            initial_tool_choice="required",
+        )
+
+        agent = owner.platform_application.agent
+        tools, _required = agent._tools_for_turn(request, transcript)
+        selected_names = {tool.name for tool in tools}
+
+        assert {
+            "tiktok_smart_plus_create_campaign",
+            "tiktok_smart_plus_create_adgroup",
+            "tiktok_smart_plus_create_ad",
+        } <= selected_names
+        assert "tiktok_get_creation_template" not in selected_names
+        selection_request, catalog_target = agent._tool_selection_request(
+            request,
+            transcript,
+            agent.tool_catalog.list_tools(),
+        )
+        assert selection_request.user_input == "创建吧\n确认按上述 4 项创建"
+        assert catalog_target == ""
+        assert request.initial_tool_choice == "required"
+    finally:
+        owner.close(wait=True)

@@ -165,6 +165,21 @@
                     feedback: { turnId: data.turn_id },
                 },
             );
+            const creationDraft = [...(data.ui?.cards || [])].reverse().find(
+                card => card?.type === 'ad_creation_form' && card.blueprint_id,
+            );
+            if (
+                !runFailed
+                && creationDraft
+                && typeof creationContextForCard === 'function'
+            ) {
+                pendingBlueprintRequest = {
+                    ...creationContextForCard(creationDraft),
+                    session_id: String(
+                        requestParams?.session_id || data.session_id || sessionId || '',
+                    ),
+                };
+            }
             const awaitingInteraction = data.status === 'awaiting_input'
                 || data.needs_confirmation
                 || ui?.confirmation?.payload
@@ -693,6 +708,7 @@
                     if (message.turn_id) loadedConversationTurnIds.add(message.turn_id);
                 }
                 pendingRequest = null;
+                pendingBlueprintRequest = null;
                 document.getElementById('confirmCard')?.remove();
                 if (typeof resetCreationWorkbench === 'function') resetCreationWorkbench();
                 const container = document.getElementById('chatContainer');

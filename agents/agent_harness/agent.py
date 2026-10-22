@@ -18,6 +18,10 @@ from typing import Any, Callable, Mapping, Optional, Protocol, Sequence
 
 from .context import ContextProvider, context_prompt
 from .core.agent_profile import CORE_AGENT_SYSTEM_PROMPT
+from .core.conversation_selection import (
+    catalog_selection_input,
+    clarification_origin,
+)
 from .core.security import canonical_json
 from .messages import AgentMessage, ModelTurn, ToolArgumentBinding, ToolCall
 from .model_execution import (
@@ -792,6 +796,49 @@ class Agent:
                 break
         return tuple(reversed(recent))
 
+    def _tool_selection_request(
+        self,
+        request: TurnRequest,
+        transcript: Sequence[AgentMessage],
+        tools: Sequence[Any],
+    ) -> tuple[TurnRequest, str]:
+        selection_context = dict(request.context or {})
+        recent_inputs = self._recent_user_inputs(request, transcript)
+        if recent_inputs:
+            selection_context["_agent_tool_selection_context"] = recent_inputs
+        origin = clarification_origin(
+            request.user_input, request.turn_id, transcript,
+        )
+        catalog_selection, target_name = (
+            catalog_selection_input(
+                request.user_input, request.turn_id, transcript, tools,
+            )
+            if not origin else ("", "")
+        )
+        selection_input = (
+            f"{origin}\n{request.user_input}"
+            if origin else catalog_selection or request.user_input
+        )
+        if catalog_selection:
+            selection_context["_agent_tool_choice_required"] = True
+        return (
+            replace(request, user_input=selection_input, context=selection_context),
+            target_name,
+        )
+
+    @staticmethod
+    def _restrict_to_catalog_target(
+        tools: Sequence[Any],
+        target_name: str,
+    ) -> list[Any]:
+        if not target_name:
+            return list(tools)
+        return [
+            tool for tool in tools
+            if str(getattr(tool, "name", "") or "") == target_name
+            or "clarification" in (getattr(tool, "traits", ()) or ())
+        ]
+
     def _tools_for_turn(
         self,
         request: TurnRequest,
@@ -800,12 +847,12 @@ class Agent:
         tools = self.tool_catalog.list_tools() if self.tool_catalog else []
         require_tool_call = False
         if callable(self.tool_selector):
-            selection_context = dict(request.context or {})
-            recent_inputs = self._recent_user_inputs(request, transcript)
-            if recent_inputs:
-                selection_context["_agent_tool_selection_context"] = recent_inputs
-            selection_request = replace(request, context=selection_context)
+            selection_request, catalog_target_name = self._tool_selection_request(
+                request, transcript, tools,
+            )
+            selection_context = selection_request.context
             tools = list(self.tool_selector(selection_request, tuple(tools)))
+            tools = self._restrict_to_catalog_target(tools, catalog_target_name)
             require_tool_call = bool(
                 selection_context.pop("_agent_tool_choice_required", False)
             )

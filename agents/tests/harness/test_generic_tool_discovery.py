@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import json
 from types import MappingProxyType, SimpleNamespace
 
 from agents.agent_harness import (
-    AgentApplication,
+    AgentApplication, AgentMessage,
     StaticToolSource,
     ToolBinding,
     TurnRequest,
@@ -953,6 +954,200 @@ def test_explicit_write_uses_required_tool_choice_only_for_initial_model_turn():
 
         assert result.status.value == "succeeded"
         assert model.tool_choices == ["required", None]
+    finally:
+        app.close()
+
+
+def test_clarification_choice_restores_original_tool_intent_without_web_discovery():
+    selector = ToolSelector()
+    selected_inputs = []
+
+    def select_tools(request, tools):
+        selected_inputs.append(request.user_input)
+        selected = selector.select_relevant(request.user_input, tools)
+        if selector.requires_tool_call(request.user_input, selected):
+            request.context["_agent_tool_choice_required"] = True
+        return selected
+
+    render = _definition(
+        "render_visual", namespace="creative", action="generate",
+        resource="visual_asset", description="生成视觉素材",
+        intent_aliases=("生成视觉素材",),
+    )
+    discovery = ToolDefinition(
+        name="external_lookup", skill="research", namespace="research",
+        description="搜索外部网页", input_schema=ToolSchema(properties={}),
+        action="search", resource_type="web", intent_types=["web_search"],
+        intent_aliases=["搜索网页"], effect_class=ToolEffect.READ,
+        traits=["semantic_discovery", "web_search"],
+    )
+    app = AgentApplication.create(
+        model=SimpleNamespace(complete=lambda *_args: ModelTurn(content="")),
+        tool_selector=select_tools,
+    )
+    app.register_tool_source(StaticToolSource(
+        "test", [
+            ToolBinding(render, lambda *_args: {"success": True}),
+            ToolBinding(discovery, lambda *_args: {"success": True}),
+        ],
+    ))
+    transcript = [
+        AgentMessage.user("生成视觉素材", turn_id="previous"),
+        AgentMessage.tool(
+            json.dumps({
+                "success": True, "needs_input": True,
+                "data": {"choices": ["深蓝背景", "暖色背景"]},
+            }),
+            tool_call_id="clarify", name="request_input", turn_id="previous",
+        ),
+    ]
+    try:
+        choice = TurnRequest("深蓝背景", turn_id="current", session_id="same")
+        tools, required = app.agent._tools_for_turn(choice, transcript)
+        assert [tool.name for tool in tools] == ["render_visual"]
+        assert required is True
+        assert selected_inputs[-1] == "生成视觉素材\n深蓝背景"
+        assert choice.user_input == "深蓝背景"
+
+        new_topic = TurnRequest("暖色数据报表", turn_id="other", session_id="same")
+        app.agent._tools_for_turn(new_topic, transcript)
+        assert selected_inputs[-1] == "暖色数据报表"
+    finally:
+        app.close()
+
+
+def test_clarification_only_uses_the_immediately_previous_offered_choice():
+    selector = ToolSelector()
+    seen = []
+
+    def select_tools(request, tools):
+        seen.append(request.user_input)
+        return selector.select_relevant(request.user_input, tools)
+
+    app = AgentApplication.create(
+        model=SimpleNamespace(complete=lambda *_args: ModelTurn(content="")),
+        tool_selector=select_tools,
+    )
+    app.register_tool_source(StaticToolSource("test", [
+        ToolBinding(_definition(
+            "render_visual", namespace="creative", action="generate",
+            resource="visual_asset", description="生成视觉素材",
+            intent_aliases=("生成视觉素材",),
+        ), lambda *_args: {"success": True}),
+    ]))
+    origin = AgentMessage.user("生成视觉素材", turn_id="origin")
+    clarification = AgentMessage.tool(
+        {"needs_input": True, "data": {"choices": ["深蓝背景"]}},
+        tool_call_id="clarify", name="request_input", turn_id="origin",
+    )
+    try:
+        app.agent._tools_for_turn(
+            TurnRequest("深蓝背景", turn_id="reply"),
+            [origin, clarification, AgentMessage.assistant(
+                "请选择背景", turn_id="origin",
+            )],
+        )
+        assert seen[-1] == "生成视觉素材\n深蓝背景"
+
+        for response in (
+            {"needs_input": False, "data": {"choices": ["深蓝背景"]}},
+            {"needs_input": True, "data": {"choices": ["其他选项"]}},
+            "{malformed",
+        ):
+            app.agent._tools_for_turn(
+                TurnRequest("深蓝背景", turn_id="reply"),
+                [origin, AgentMessage.tool(
+                    response, tool_call_id="clarify", name="request_input",
+                    turn_id="origin",
+                )],
+            )
+            assert seen[-1] == "深蓝背景"
+
+        app.agent._tools_for_turn(
+            TurnRequest("深蓝背景", turn_id="new"),
+            [origin, clarification, AgentMessage.user(
+                "另一个问题", turn_id="intervening",
+            )],
+        )
+        assert seen[-1] == "深蓝背景"
+    finally:
+        app.close()
+
+
+def test_selecting_a_recent_list_item_routes_to_its_registered_detail_tool():
+    selector = ToolSelector()
+    list_tool = ToolDefinition(
+        name="tiktok_list_creation_templates",
+        skill="tiktok",
+        namespace="tiktok",
+        description="List available creation templates",
+        input_schema=ToolSchema(properties={}),
+        action="list",
+        resource_type="creation_template",
+        intent_types=["list_creation_templates"],
+        effect_class=ToolEffect.READ,
+        result_items_key="templates",
+        result_id_fields=["template_id"],
+    )
+    get_tool = ToolDefinition(
+        name="tiktok_get_creation_template",
+        skill="tiktok",
+        namespace="tiktok",
+        description="Read a selected creation template",
+        input_schema=ToolSchema(
+            properties={"template_id": {"type": "string"}},
+            required=["template_id"],
+        ),
+        action="get",
+        resource_type="creation_template",
+        intent_types=["get_creation_template"],
+        intent_aliases=["使用模板", "选择模板", "预览模板"],
+        effect_class=ToolEffect.READ,
+    )
+
+    def select_tools(request, tools):
+        selected = selector.select_relevant(request.user_input, tools)
+        if selector.requires_tool_call(request.user_input, selected):
+            request.context["_agent_tool_choice_required"] = True
+        return selected
+
+    app = AgentApplication.create(
+        model=SimpleNamespace(complete=lambda *_args: ModelTurn(content="")),
+        tool_selector=select_tools,
+    )
+    app.register_tool_source(StaticToolSource("catalog", [
+        ToolBinding(list_tool, lambda *_args: {"success": True}),
+        ToolBinding(get_tool, lambda *_args: {"success": True}),
+    ]))
+    transcript = [
+        AgentMessage.user("创建 TikTok 广告系列", turn_id="catalog-turn"),
+        AgentMessage.tool(
+            {
+                "success": True,
+                "data": {
+                    "templates": [{
+                        "template_id": "tiktok.product-sales",
+                        "name": "TikTok 测试账号 · 商品目录销售",
+                    }],
+                },
+            },
+            tool_call_id="catalog-call",
+            name=list_tool.name,
+            turn_id="catalog-turn",
+        ),
+        AgentMessage.assistant("找到一个模板。", turn_id="catalog-turn"),
+    ]
+    try:
+        tools, required = app.agent._tools_for_turn(
+            TurnRequest(
+                "TikTok 测试账号 · 商品目录销售",
+                turn_id="selection-turn",
+                session_id="catalog-session",
+            ),
+            transcript,
+        )
+        assert [tool.name for tool in tools] == [get_tool.name]
+        assert required is True
     finally:
         app.close()
 
