@@ -127,3 +127,21 @@ def test_malformed_automatic_context_cannot_prove_delivery(change):
             {"knowledge_context": evidence},
             RegressionAssertions(knowledge_context_present=True),
         )
+
+
+@pytest.mark.parametrize("status", ["failed", "cancelled", "recovery_required", "partially_failed"])
+def test_error_reply_cannot_pass_as_a_successful_conversation(status):
+    response = {"status": status, "reply": "An error explanation.", "results": []}
+    result = evaluate_regression(
+        response, RegressionAssertions(reply_nonempty=True, max_tool_calls=0),
+    )
+    assert result["status"] == "failed"
+    assert "run_status" in result["failures"]
+
+
+def test_expected_failure_is_explicit_and_requires_actual_status_evidence():
+    expectation = RegressionAssertions(run_status="failed", reply_nonempty=True)
+    assert evaluate_regression(
+        {"status": "failed", "reply": "rejected"}, expectation,
+    )["status"] == "passed"
+    assert evaluate_regression({"reply": "rejected"}, expectation)["status"] == "failed"

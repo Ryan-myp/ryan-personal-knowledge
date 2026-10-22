@@ -69,8 +69,8 @@ def test_advertising_skills_are_exportable_without_ad_runtime():
     names = catalog.register_source(source)
 
     assert names
-    assert "meta" in names
-    assert "cross-channel" in names
+    assert "meta-marketing-api-expert" in names
+    assert "cross-channel-campaign-manager" in names
     assert "creative-strategy" in names
     assert "account-diagnostics" in names
     assert "experimentation-design" in names

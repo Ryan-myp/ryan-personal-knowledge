@@ -22,7 +22,6 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Mapping
 
-
 def _repository_root() -> Path:
     """Find the repository root without depending on the process cwd."""
     # The adapter is nested under agents/evals/advertising.
@@ -61,7 +60,11 @@ def configured_model_adapter() -> Any:
         raise ValueError(
             "AD_AGENT_EVAL_MODEL or LLM_MODEL is required when an eval API key is set"
         )
-    raw_timeout = os.environ.get("AD_AGENT_EVAL_TIMEOUT_SECONDS", "60")
+    from agents.agent_harness.core.timeouts import DEFAULT_EXECUTION_TIMEOUT_SECONDS
+
+    raw_timeout = os.environ.get(
+        "AD_AGENT_EVAL_TIMEOUT_SECONDS", str(DEFAULT_EXECUTION_TIMEOUT_SECONDS),
+    )
     try:
         timeout_seconds = min(500.0, max(1.0, float(raw_timeout)))
     except (TypeError, ValueError) as exc:
@@ -130,6 +133,10 @@ def _safe_json(value: Any) -> str:
 
 def _structured_evidence(runtime_result: Mapping[str, Any]) -> dict[str, Any]:
     """Keep only non-sensitive facts needed by the platform-owned judge."""
+    from agents.agent_platform.evals.execution_evidence import (
+        boolean_evidence, execution_ledger, run_status_evidence,
+    )
+
     raw_intent = runtime_result.get("intent")
     intent = dict(raw_intent) if isinstance(raw_intent, Mapping) else {}
     # The Runtime contract uses the provider-neutral term ``namespaces``.
@@ -140,31 +147,42 @@ def _structured_evidence(runtime_result: Mapping[str, Any]) -> dict[str, Any]:
         intent["platforms"] = list(intent.get("namespaces") or [])
     rows = runtime_result.get("results")
     safe_rows = []
+    if rows is not None and (not isinstance(rows, list) or len(rows) > 64):
+        raise ValueError("Runtime results must be a bounded list")
     if isinstance(rows, list):
         for row in rows:
             if not isinstance(row, Mapping):
-                continue
+                raise ValueError("Runtime result must be an object")
             data = row.get("data") if isinstance(row.get("data"), Mapping) else {}
             safe_rows.append({
                 "tool": row.get("tool"),
                 "platform": row.get("platform"),
-                "success": bool(row.get("success")),
+                "success": boolean_evidence(row, "success"),
                 "data": {
                     "data_status": data.get("data_status"),
-                    "simulated": bool(data.get("simulated")),
+                    "simulated": boolean_evidence(data, "simulated") if "simulated" in data else False,
                 },
             })
-    return {
-        "reply": str(runtime_result.get("reply") or "")[:16_000],
+    reply = runtime_result.get("reply", "")
+    if not isinstance(reply, str):
+        raise ValueError("Runtime reply must be text")
+    evidence = {
+        "reply": reply[:16_000],
         "intent": intent,
-        "needs_input": bool(runtime_result.get("needs_input", False)),
-        "needs_confirmation": bool(runtime_result.get("needs_confirmation", False)),
         "tool_plan": runtime_result.get("tool_plan") or {},
         "results": safe_rows,
         "knowledge_context": runtime_result.get("knowledge_context") or {},
         "usage": runtime_result.get("usage") or {},
         "model_metrics": runtime_result.get("model_metrics") or {},
     }
+    for key in ("needs_input", "needs_confirmation"):
+        if key in runtime_result:
+            evidence[key] = boolean_evidence(runtime_result, key)
+    if "status" in runtime_result:
+        evidence["status"] = run_status_evidence(runtime_result["status"])
+    if "tool_results" in runtime_result:
+        evidence["tool_executions"] = execution_ledger(runtime_result["tool_results"])
+    return evidence
 
 
 def _session_result(
@@ -177,6 +195,10 @@ def _session_result(
     model_name: str,
 ) -> Dict[str, Any]:
     """Build the stable skill-up result while retaining structured evidence."""
+    from agents.agent_harness.redaction import redact_for_persistence
+
+    runtime_result = redact_for_persistence(dict(runtime_result))
+    messages = redact_for_persistence(list(messages))
     reply = str(runtime_result.get("reply") or "")
     evidence = _safe_json(runtime_result)
     final_message = reply
@@ -190,7 +212,7 @@ def _session_result(
 
     transcript = list(messages)
     transcript.append({"role": "assistant", "content": final_message})
-    return {
+    return redact_for_persistence({
         "engine": "ad-agent-runtime",
         "model": model_name,
         "exit_code": 0,
@@ -215,7 +237,7 @@ def _session_result(
             # result redaction; it is not model/tool execution tool_source.
             "runtime_result": _structured_evidence(runtime_result),
         },
-    }
+    })
 
 
 def _trusted_eval_identity(root: Path):

@@ -76,6 +76,11 @@ _PROCESS_CUES = (
 _PROCESS_CLAUSE_SEPARATORS = re.compile(
     r"(?:[，,。；;]|并且|然后|同时|并|以及|\b(?:and|then|also|but)\b)"
 )
+_NEGATED_ACTION_PREFIX = re.compile(
+    "不\\s*(?=(?:" + "|".join(
+        re.escape(cue) for cue in (*_READ_ACTION_CUES, *_WRITE_CUES)
+    ) + "))"
+)
 _READ_ACTIONS = frozenset({
     "find", "get", "list", "read", "search", "query", "fetch", "retrieve",
 })
@@ -134,6 +139,26 @@ def _contains_cue(text: str, cue: str) -> bool:
     return next(_cue_matches(text, cue), None) is not None
 
 
+def _action_is_negated(text: str, start: int, matched_text: str) -> bool:
+    prefix = text[max(0, start - 32):start]
+    prefix = _PROCESS_CLAUSE_SEPARATORS.split(prefix)[-1]
+    positions = [
+        prefix.rfind(negation) for negation in _WRITE_NEGATIONS
+        if prefix.rfind(negation) >= 0
+    ]
+    positions.extend(
+        match.start() for match in _NEGATED_ACTION_PREFIX.finditer(prefix + matched_text)
+        if match.start() < len(prefix)
+    )
+    if prefix.rstrip().endswith("不"):
+        positions.append(len(prefix.rstrip()) - 1)
+    if not positions:
+        return False
+    return not any(
+        reversal in prefix[max(positions) + 1:] for reversal in _INTENT_REVERSALS
+    )
+
+
 def _request_verbs(user_input: str, tools: Sequence[Any]) -> str:
     """Remove compound resource nouns before classifying request verbs."""
     text = str(user_input or "").casefold()
@@ -149,30 +174,14 @@ def _request_verbs(user_input: str, tools: Sequence[Any]) -> str:
 
 def _is_read_only_request(user_input: str) -> bool:
     text = str(user_input or "").casefold()
-    if not any(_contains_cue(text, cue) for cue in _READ_CUES):
-        return False
-    for cue in _WRITE_CUES:
-        for match in _cue_matches(text, cue):
-            prefix = text[max(0, match.start() - 32):match.start()]
-            negation_positions = [
-                prefix.rfind(negation)
-                for negation in _WRITE_NEGATIONS
-                if prefix.rfind(negation) >= 0
-            ]
-            if not negation_positions:
-                return False
-            last_negation = max(negation_positions)
-            if any(
-                reversal in prefix[last_negation + 1:]
-                for reversal in _INTENT_REVERSALS
-            ):
-                return False
-    return True
+    return (
+        _has_unnegated_action_cue(text, _READ_CUES)
+        and not _has_unnegated_action_cue(text, _WRITE_CUES)
+    )
 
 
 def _has_explicit_read_action(user_input: str) -> bool:
-    text = str(user_input or "").casefold()
-    return any(_contains_cue(text, cue) for cue in _READ_ACTION_CUES)
+    return _has_unnegated_action_cue(user_input, _READ_ACTION_CUES)
 
 
 def _is_explicit_list_request(user_input: str) -> bool:
@@ -182,23 +191,10 @@ def _is_explicit_list_request(user_input: str) -> bool:
 
 def _has_unnegated_action_cue(user_input: str, cues: Sequence[str]) -> bool:
     text = str(user_input or "").casefold()
-    for cue in cues:
-        for match in _cue_matches(text, cue):
-            prefix = text[max(0, match.start() - 32):match.start()]
-            negation_positions = [
-                prefix.rfind(negation)
-                for negation in _WRITE_NEGATIONS
-                if prefix.rfind(negation) >= 0
-            ]
-            if not negation_positions:
-                return True
-            last_negation = max(negation_positions)
-            if any(
-                reversal in prefix[last_negation + 1:]
-                for reversal in _INTENT_REVERSALS
-            ):
-                return True
-    return False
+    return any(
+        not _action_is_negated(text, match.start(), match.group())
+        for cue in cues for match in _cue_matches(text, cue)
+    )
 
 
 def _has_unnegated_write_cue(user_input: str) -> bool:
@@ -342,11 +338,16 @@ def _matches_tool_alias(text: str, tool: Any) -> bool:
     aliases = _tool_field(tool, "intent_aliases", ()) or ()
     if isinstance(aliases, str):
         aliases = (aliases,)
-    return any(
-        len(alias_text := str(alias).strip()) >= 3
-        and alias_text.casefold() in normalized
-        for alias in aliases
-    )
+    for alias in aliases:
+        alias_text = str(alias).strip().casefold()
+        if len(alias_text) < 3:
+            continue
+        start = normalized.find(alias_text)
+        while start >= 0:
+            if not _action_is_negated(normalized, start, alias_text):
+                return True
+            start = normalized.find(alias_text, start + len(alias_text))
+    return False
 
 
 def _matches_publisher_target(text: str, tool: Any) -> bool:

@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from typing import Any, Mapping
 
+from agents.agent_harness.core.namespace import normalize_namespace
+from agents.agent_platform.tools.policy import required_tool_permissions
+
 
 class AdvertisingCapabilityCatalog:
     """Render registered Skills and Tool contracts without implying execution."""
@@ -16,8 +19,8 @@ class AdvertisingCapabilityCatalog:
         skills = self._registered_skills(application, request)
         tools = self._registered_tools(application, request)
         tool_lines, has_live_adapter = self._tool_lines(tools)
-        lines = tool_lines + self._skill_lines(skills)
-        lines.extend(self._execution_lines(request, has_live_adapter))
+        lines = self._execution_lines(request, has_live_adapter)
+        lines.extend(tool_lines + self._skill_lines(skills))
         return self._redact_and_bound("\n".join(lines), max_chars)
 
     def read_account_candidates(
@@ -59,7 +62,10 @@ class AdvertisingCapabilityCatalog:
         )
         get_managed = getattr(self.owner, "get_managed_skills", None)
         if callable(get_managed):
-            tenant_id = str(getattr(request, "tenant_id", None) or "default")
+            tenant_id = str(
+                getattr(getattr(request, "principal", None), "tenant_id", None)
+                or getattr(request, "tenant_id", None) or "default"
+            )
             self._add_skills(
                 skills, get_managed(tenant_id), "tenant-published",
             )
@@ -70,13 +76,34 @@ class AdvertisingCapabilityCatalog:
         list_tools = getattr(catalog, "list_tools", None)
         tools = list(list_tools()) if callable(list_tools) else []
         allowlist = getattr(request, "tool_allowlist", None)
-        if allowlist is None:
-            return tools
-        allowed = {str(name) for name in allowlist}
+        allowed = {str(name) for name in allowlist} if allowlist is not None else None
         return [
             tool for tool in tools
-            if self._field(tool, "name", "") in allowed
+            if (allowed is None or self._field(tool, "name", "") in allowed)
+            and self._visible_to_principal(tool, request)
         ]
+
+    def _visible_to_principal(self, tool: Any, request: Any) -> bool:
+        principal = getattr(request, "principal", None)
+        if principal is None:
+            return True
+        mode = getattr(request, "execution_mode", None) or getattr(self.owner, "execution_mode", "dry_run")
+        policy = getattr(self.owner, "policy_engine", None)
+        permission_resolver = getattr(policy, "required_permissions", None)
+        required = frozenset(
+            permission_resolver(tool, mode) if callable(permission_resolver)
+            else required_tool_permissions(tool, mode)
+        )
+        if required - set(getattr(principal, "permissions", ()) or ()):
+            return False
+        if self._field(tool, "scope_required", False) is True:
+            namespace = normalize_namespace(self._field(tool, "namespace", ""))
+            scope = getattr(principal, "account_scope", {}) or {}
+            return any(
+                normalize_namespace(key) == namespace and bool(accounts)
+                for key, accounts in scope.items()
+            )
+        return True
 
     @classmethod
     def _add_from_catalog(
@@ -99,7 +126,7 @@ class AdvertisingCapabilityCatalog:
         ]
         for name, (source, skill) in sorted(skills.items()):
             description = cls._single_line(
-                cls._field(skill, "description", ""), limit=64,
+                cls._field(skill, "description", ""), limit=48,
             )
             suffix = f": {description}" if description else ""
             lines.append(f"- {name} [{source}]{suffix}")
@@ -131,9 +158,9 @@ class AdvertisingCapabilityCatalog:
             )
             if namespace == "agent-platform" and name:
                 description = cls._single_line(
-                    cls._field(tool, "description", ""), limit=180,
+                    cls._field(tool, "description", ""), limit=140,
                 )
-                suffix = f": {description}" if description else ""
+                suffix = f" ({resource}:{action}): {description}" if description else ""
                 platform_tools.add(
                     f"{name}{suffix} [{kind},{support}]"
                 )
@@ -161,7 +188,7 @@ class AdvertisingCapabilityCatalog:
             )
             lines.append(f"- {namespace}: {resource} -> {actions}")
         lines.extend(f"- {name}" for name in sorted(fallback_tools))
-        if not groups and not fallback_tools:
+        if not groups and not fallback_tools and not platform_tools:
             lines.append("- none registered")
         return lines, has_live_adapter
 

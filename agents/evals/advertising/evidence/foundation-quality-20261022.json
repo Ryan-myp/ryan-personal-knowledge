@@ -1,0 +1,91 @@
+{
+  "schema_version": "agent-quality-evidence/v1",
+  "recorded_date": "2026-10-22",
+  "source_revision": "f18a565 plus foundation working-tree changes",
+  "model": "agnes-3.0-flash",
+  "model_requests_were_real": true,
+  "advertising_provider_calls_in_model_evaluations": 0,
+  "web_search_evidence": "explicit_offline_fixture",
+  "production_capacity_attested": false,
+  "automated_tests": {
+    "full_suite_passed": 2706,
+    "warnings": 1,
+    "focused_harness_and_eval_passed": 441,
+    "compile_passed": true,
+    "provider_contract_audit_passed": true,
+    "tool_contract_snapshot_count": 321,
+    "knowledge_audits_passed": true
+  },
+  "focused_statement_coverage_percent": 95,
+  "focused_coverage_modules": [
+    "agent_harness.context",
+    "agent_harness.redaction",
+    "agent_harness.skills.metadata",
+    "agent_platform.evals.execution_evidence",
+    "applications.advertising.integrations.ad_capability_catalog"
+  ],
+  "conversation_assertions": {
+    "weakened": false,
+    "strengthened_case": "diagram-not-query",
+    "requirements": ["mermaid_fence", "needs_input_false", "zero_tool_calls"],
+    "current_smoke_dataset_sha256": "dcfa09edf33416e2fd03c909e5a49e247ebec1c6e03c27c6e1770e1d8a4aab5f",
+    "reworded_dataset_sha256": "5eeb714de3fd2537eb0365e88cd3ae6b42c40768871b45f2ff6fdf55c54e7179"
+  },
+  "model_evaluations": {
+    "intermediate": {"smoke_passed": 7, "smoke_total": 8, "reworded_passed": 4, "reworded_total": 4},
+    "second_batch_original_process_criteria": {
+      "smoke_passed": 8,
+      "smoke_total": 8,
+      "reworded_passed": 4,
+      "reworded_total": 4,
+      "smoke_latency_p50_ms": 24041.077,
+      "smoke_latency_p95_ms": 164464.587,
+      "report": "outputs/agent-foundation-20261022/model-final/smoke-regression.json"
+    },
+    "same_recordings_replayed_with_stricter_process_criteria": {
+      "passed": 7,
+      "failed": 1,
+      "failed_case": "diagram-not-query",
+      "is_new_model_invocation": false,
+      "report": "outputs/agent-foundation-20261022/strict-baseline-replay.json"
+    },
+    "post_fix_strict_process": {
+      "passed": 2,
+      "failed": 0,
+      "languages": ["Chinese", "English"],
+      "tool_calls": 0,
+      "needs_input": false,
+      "mermaid_present": true,
+      "report": "outputs/agent-foundation-20261022/strict-process/regression.json"
+    },
+    "is_unseen_holdout": false,
+    "upstream_520_observed_and_recovered": true,
+    "not_a_factual_accuracy_or_production_slo_attestation": true
+  },
+  "local_skill_context_benchmark": {
+    "registered_skills": 32,
+    "iterations": 100,
+    "context_chars": 12000,
+    "cold_ms": 6.174,
+    "warm_p50_ms": 0.003,
+    "warm_p95_ms": 0.004,
+    "provider_calls": 0,
+    "is_end_to_end_latency": false
+  },
+  "skill_up_cli": {
+    "status": "unavailable",
+    "exit_code": 127,
+    "reason": "skill-up executable not installed",
+    "project_interpreter_and_500_second_defaults_validated": true,
+    "direct_runtime_adapter_was_tested": true
+  },
+  "repository_qguard": {
+    "status": "failed",
+    "score": 0,
+    "last_scan_findings": 4964,
+    "includes_generated_build_duplicates": true
+  },
+  "service_restarted": false,
+  "database_schema_changed": false,
+  "changes_committed_in_this_iteration": false
+}

@@ -2,7 +2,8 @@
 
 from typing import Annotated, Any, Literal, Mapping
 
-from pydantic import BaseModel, ConfigDict, Field, StrictBool
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, field_validator
+from .execution_evidence import regression_calls, run_status_evidence
 
 
 _Text = Annotated[str, Field(min_length=1, max_length=200)]
@@ -42,6 +43,12 @@ class RegressionAssertions(BaseModel):
     needs_confirmation: StrictBool | None = None
     knowledge_context_present: StrictBool | None = None
     required_context_documents: list[_Text] = Field(default_factory=list, max_length=8)
+    run_status: _Text | None = None
+
+    @field_validator("run_status")
+    @classmethod
+    def _validate_run_status(cls, value: str | None) -> str | None:
+        return run_status_evidence(value) if value is not None else None
 
     @property
     def executable(self) -> bool:
@@ -61,11 +68,7 @@ def evaluate_regression(
     for field in ("needs_input", "needs_confirmation"):
         if field in response and type(response[field]) is not bool:
             raise ValueError(f"regression {field} evidence must be boolean")
-    rows = response.get("results", [])
-    if not isinstance(rows, list) or len(rows) > 64:
-        raise ValueError("regression response calls must be a bounded list")
-    if any(not isinstance(row, Mapping) for row in rows):
-        raise ValueError("regression response call must be an object")
+    rows = regression_calls(response)
     tools = [str(row.get("tool") or "") for row in rows]
     successful = {str(row.get("tool") or "") for row in rows if row.get("success") is True}
     checks: list[bool] = []
@@ -75,6 +78,13 @@ def evaluate_regression(
         checks.append(condition)
         labels.append(label)
 
+    if "status" in response or assertions.run_status is not None:
+        actual = run_status_evidence(response["status"]) if "status" in response else None
+        check(
+            actual == assertions.run_status if assertions.run_status is not None
+            else actual in {"succeeded", "awaiting_input"},
+            "run_status",
+        )
     for name in assertions.required_tools:
         check(name in successful, f"required_tool:{name}")
     for name in assertions.forbidden_tools:

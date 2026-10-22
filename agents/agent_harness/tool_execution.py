@@ -34,6 +34,18 @@ class ToolCapacityError(RuntimeError):
     """The bounded Tool invocation pool has no free execution slot."""
 
 
+class ToolOutputContractError(ValueError):
+    """An executor returned malformed Runtime control flags."""
+
+
+class ToolInvocationError(RuntimeError):
+    """An executor was entered, so a raised error may follow an external effect."""
+
+    def __init__(self, error: Exception) -> None:
+        super().__init__(str(error))
+        self.error = error
+
+
 class ToolReadCache:
     """Share bounded replay-safe read results within one Agent Run."""
 
@@ -507,6 +519,7 @@ class ToolExecutionCoordinator:
                             "Tool execution capacity exhausted"
                         )
                     pool = None
+                    admitted: Future[bool] = Future()
                     try:
                         pool = ThreadPoolExecutor(
                             max_workers=1,
@@ -514,11 +527,14 @@ class ToolExecutionCoordinator:
                         )
                         future: Future[Any] = pool.submit(
                             copy_context().run,
+                            self._execute_admitted,
+                            admitted,
                             execute,
                             context,
                             dict(call.arguments),
                         )
-                    except Exception:
+                    except BaseException:
+                        admitted.set_result(False)
                         self._inflight_tool_slots.release()
                         if pool is not None:
                             pool.shutdown(wait=False, cancel_futures=True)
@@ -526,6 +542,7 @@ class ToolExecutionCoordinator:
                     future.add_done_callback(
                         lambda _completed: self._inflight_tool_slots.release()
                     )
+                    admitted.set_result(True)
                     try:
                         deadline = (
                             time.monotonic() + self.tool_timeout_seconds
@@ -613,16 +630,15 @@ class ToolExecutionCoordinator:
                                     ) from error
                     finally:
                         pool.shutdown(wait=False, cancel_futures=True)
-                    if isinstance(output, ToolResult):
-                        output = output.to_dict()
                     return output, retry_count
                 except Exception as error:
+                    cause = error.error if isinstance(error, ToolInvocationError) else error
                     retryable = (
                         isinstance(
-                            error,
+                            cause,
                             (TimeoutError, FutureTimeoutError, ConnectionError),
                         )
-                        or "transient" in type(error).__name__.lower()
+                        or "transient" in type(cause).__name__.lower()
                     )
                     if not retryable or attempt >= max_retries:
                         raise
@@ -633,7 +649,7 @@ class ToolExecutionCoordinator:
                         tool_call_id=call.id,
                         tool_name=call.name,
                         attempt=retry_count,
-                        error_type=type(error).__name__,
+                        error_type=type(cause).__name__,
                     )
                     if self.tool_retry_delay_seconds:
                         time.sleep(self.tool_retry_delay_seconds)
@@ -657,6 +673,32 @@ class ToolExecutionCoordinator:
             invoke,
         )
         return output, retry_count, coalesced_kind if coalesced else None
+
+    def _execute_admitted(
+        self, admitted: Future[bool], execute: Callable[..., Any],
+        context: ToolCallContext, arguments: dict[str, Any],
+    ) -> Any:
+        if not admitted.result():
+            return None
+        self.assert_not_interrupted(context.request)
+        try:
+            return self._normalize_tool_output(execute(context, arguments))
+        except Exception as error:
+            raise ToolInvocationError(error) from error
+
+    @staticmethod
+    def _normalize_tool_output(output: Any) -> Any:
+        if isinstance(output, ToolResult):
+            output = output.to_dict()
+        if not isinstance(output, Mapping):
+            return output
+        for key in (
+            "success", "needs_input", "needs_confirmation", "requires_confirmation",
+            "recovery_required", "terminate", "cancelled", "requires_reconciliation",
+        ):
+            if key in output and type(output[key]) is not bool:
+                raise ToolOutputContractError(f"Tool result {key} must be boolean")
+        return output
 
     def execute_one(
         self,
@@ -748,6 +790,7 @@ class ToolExecutionCoordinator:
                     })
                 return result
             call = context.tool_call
+        invocation_returned = False
         try:
             if self.tool_catalog is None:
                 raise KeyError(f"Tool '{call.name}' not found")
@@ -771,6 +814,7 @@ class ToolExecutionCoordinator:
                 batch_read_cache,
                 write_cache,
             )
+            invocation_returned = True
             interrupted = self.interrupt_reason(request)
             if interrupted is None:
                 self.tool_circuit.record_success(call.name)
@@ -907,16 +951,23 @@ class ToolExecutionCoordinator:
         except Exception as error:
             if not isinstance(error, ToolCapacityError):
                 self.tool_circuit.record_failure(call.name)
+            cause = error.error if isinstance(error, ToolInvocationError) else error
+            invalid_output = isinstance(cause, ToolOutputContractError)
             effect_unknown = (
                 self._tool_is_write(getattr(binding, "definition", None))
-                and isinstance(error, (TimeoutError, FutureTimeoutError))
+                and (
+                    invocation_returned
+                    or isinstance(error, (ToolInvocationError, TimeoutError, FutureTimeoutError))
+                )
             )
             result = {
                 "tool_call_id": call.id,
                 "name": call.name,
-                "content": redact_for_persistence(str(error)),
+                "content": self._bound_tool_value(redact_for_persistence(
+                    str(error)[:self.max_tool_result_chars],
+                )),
                 "is_error": True,
-                "terminate": False,
+                "terminate": invalid_output,
                 "retry_count": 0,
             }
             if effect_unknown:
@@ -924,12 +975,18 @@ class ToolExecutionCoordinator:
                     "recovery_required": True,
                     "effect_state": "unknown",
                     "runtime_signals": {
-                        "tool_timeout": True,
+                        "tool_timeout": isinstance(cause, (TimeoutError, FutureTimeoutError)),
+                        "tool_output_invalid": invalid_output,
                         "effect_state": "unknown",
                     },
                 })
             elif isinstance(error, ToolCapacityError):
                 result["runtime_signals"] = {"tool_capacity_exhausted": True}
+            if invalid_output:
+                result["runtime_signals"] = {
+                    **dict(result.get("runtime_signals") or {}),
+                    "tool_output_invalid": True, "non_retriable_tool_error": True,
+                }
         if callable(self.after_tool_call):
             try:
                 override = self.after_tool_call(context, result)

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from typing import Mapping
+from typing import Collection, Mapping
 
 
 _REFERENCE_STOPWORDS = frozenset({
@@ -16,11 +16,13 @@ _REFERENCE_STOPWORDS = frozenset({
 })
 
 
-def _reference_terms(value: str) -> set[str]:
+def reference_terms(
+    value: str, *, stopwords: Collection[str] = _REFERENCE_STOPWORDS,
+) -> set[str]:
     text = str(value or "").casefold()
     terms = {
-        term for term in re.findall(r"[a-z0-9_]{2,}", text)
-        if term not in _REFERENCE_STOPWORDS
+        term for term in re.findall(r"\w{2,}", text)
+        if term not in stopwords
     }
     for run in re.findall(r"[\u3400-\u9fff]+", text):
         terms.update(run[index:index + 2] for index in range(len(run) - 1))
@@ -37,20 +39,20 @@ def select_reference_excerpts(
     """Choose bounded reference passages by lexical relevance to one request."""
     if max_documents <= 0 or max_chars <= 0 or not isinstance(documents, Mapping):
         return ""
-    terms = _reference_terms(query)
+    terms = reference_terms(query)
     if not terms:
         return ""
     ranked: list[tuple[int, str, str]] = []
     for path, raw_content in documents.items():
         content = str(raw_content or "")
-        path_hits = len(terms & _reference_terms(str(path)))
+        path_hits = len(terms & reference_terms(str(path)))
         paragraphs = [
             item.strip()
             for item in re.split(r"\n\s*\n", content)
             if item.strip()
         ] or [content]
         scored = [
-            (len(terms & _reference_terms(paragraph)), paragraph)
+            (len(terms & reference_terms(paragraph)), paragraph)
             for paragraph in paragraphs
         ]
         paragraph_score, excerpt = max(
@@ -77,4 +79,4 @@ def select_reference_excerpts(
     return "\n\n".join(blocks)[:max_chars]
 
 
-__all__ = ["select_reference_excerpts"]
+__all__ = ["reference_terms", "select_reference_excerpts"]

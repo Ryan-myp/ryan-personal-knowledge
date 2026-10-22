@@ -37,6 +37,22 @@ def _is_write(definition: Any) -> bool:
     return bool(_value(definition, "is_write_tool", False))
 
 
+def required_tool_permissions(
+    definition: Any, execution_mode: str = "dry_run",
+) -> frozenset[str]:
+    """Resolve the same contract permissions for execution and capability views."""
+    required = {
+        str(item).strip()
+        for item in (_value(definition, "required_permissions", ()) or ())
+        if str(item).strip()
+    }
+    if _is_write(definition) and str(execution_mode).strip().lower() == "live":
+        live_permission = str(_value(definition, "live_permission", "") or "").strip()
+        if live_permission:
+            required.add(live_permission)
+    return frozenset(required)
+
+
 def _requires_external_write_policy(definition: Any) -> bool:
     effect = _value(definition, "effect_class", _value(definition, "effect", "read"))
     effect = getattr(effect, "value", effect)
@@ -386,18 +402,7 @@ class ToolExecutionPolicy:
     def required_permissions(
         self, definition: Any, execution_mode: str = "dry_run",
     ) -> frozenset[str]:
-        required = {
-            str(item).strip()
-            for item in (_value(definition, "required_permissions", ()) or ())
-            if str(item).strip()
-        }
-        if _is_write(definition) and str(execution_mode).strip().lower() == "live":
-            live_permission = str(
-                _value(definition, "live_permission", "") or ""
-            ).strip()
-            if live_permission:
-                required.add(live_permission)
-        return frozenset(required)
+        return required_tool_permissions(definition, execution_mode)
 
     def check_permissions(
         self,
@@ -902,4 +907,4 @@ class ToolExecutionPolicy:
         return True
 
 
-__all__ = ["IdempotencyStoreUnavailable", "ToolExecutionPolicy"]
+__all__ = ["IdempotencyStoreUnavailable", "ToolExecutionPolicy", "required_tool_permissions"]

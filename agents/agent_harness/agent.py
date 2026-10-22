@@ -820,7 +820,7 @@ class Agent:
                 context = dict(request.context or {})
                 context["agent_context"] = dict(value)
                 model_request = replace(request, context=context)
-                prompt = context_prompt(value)
+                prompt = redact_for_persistence(context_prompt(value))
                 if prompt:
                     context_messages.append(
                         AgentMessage.system(
@@ -840,6 +840,7 @@ class Agent:
                 request.user_input,
                 source_ids=source_ids,
             )
+            skill_context = redact_for_persistence(skill_context)
             if skill_context:
                 context_messages.append(
                     AgentMessage.system(

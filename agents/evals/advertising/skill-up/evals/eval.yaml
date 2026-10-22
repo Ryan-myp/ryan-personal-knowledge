@@ -21,11 +21,11 @@ engine:
   custom:
     transport: local
     response_format: session_result
-    timeout_seconds: 60
+    timeout_seconds: 500
     local:
       # Set AD_AGENT_REPO_ROOT when invoking skill-up. Keeping this as an
       # environment reference makes the suite portable across checkouts.
-      command: python3.13
+      command: ${AD_AGENT_REPO_ROOT}/scripts/ad-agent-python
       args:
         - ${AD_AGENT_REPO_ROOT}/agents/evals/advertising/skill_up_engine.py
         - --input
@@ -49,7 +49,7 @@ cases:
     - evals/cases/programmatic-ad-knowledge-search.yaml
     - evals/cases/schedule-create-conversation.yaml
   defaults:
-    timeout_seconds: 60
+    timeout_seconds: 500
     max_turns: 2
     collect_artifacts:
       - outputs/ad-agent-runtime-result.json

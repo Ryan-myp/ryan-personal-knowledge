@@ -74,10 +74,12 @@ def test_catalog_does_not_fill_unused_budget_with_unrelated_skills():
     assert catalog.build_context("unmatched subject") == ""
 
 
-def test_explicit_sources_and_declared_always_on_skills_are_not_dropped():
+def test_source_scope_and_declared_always_on_skills_are_respected():
     catalog = InMemorySkillCatalog()
     catalog.register_source(StaticSkillSource("selected", [
-        SkillBinding(name="invoice", instructions="EXPLICIT GUIDANCE"),
+        SkillBinding(
+            name="invoice", instructions="EXPLICIT GUIDANCE", metadata={"always_on": True},
+        ),
     ]))
     catalog.register_source(StaticSkillSource("global", [
         SkillBinding(

@@ -115,9 +115,10 @@ result = app.prompt("Help me with a ticket")
 ```
 
 The catalog injects matching Skills, not the first entries that fit its budget.
-Use meaningful names and descriptions. An integration can select `skill_source_ids`
-explicitly, or mark a trusted binding with `metadata={"always_on": True}` for
-cross-cutting guidance. Neither option grants execution permissions.
+Use meaningful names and descriptions. `skill_source_ids` constrains the eligible
+source pool; it does not activate every Skill in those sources. An integration
+can mark a trusted binding with `metadata={"always_on": True}` for cross-cutting
+guidance. Neither option grants execution permissions.
 
 `model_start` events include message character/count and visible Tool count,
 plus context preparation time; `model_end` and `model_error` include attempt

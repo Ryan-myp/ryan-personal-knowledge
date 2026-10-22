@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
-import re
 import threading
+import hashlib
+from collections import OrderedDict
 from dataclasses import dataclass, field
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any, Mapping, Protocol, Sequence
 
-from .reference_selection import select_reference_excerpts
+from .reference_selection import reference_terms, select_reference_excerpts
+from .metadata import immutable_metadata, read_skill_text, skill_identity
+from ..redaction import redact_for_persistence
 
 
 _REFERENCE_SUFFIXES = frozenset({
@@ -17,6 +21,7 @@ _REFERENCE_SUFFIXES = frozenset({
 _MAX_REFERENCE_FILES = 128
 _MAX_REFERENCE_CHARS = 100_000
 _MAX_REFERENCE_CONTEXT_CHARS = 1_200
+_MAX_REFERENCE_TOTAL_CHARS = 400_000
 
 
 @dataclass(frozen=True)
@@ -42,6 +47,8 @@ class SkillBinding:
             for path, content in self.reference_documents.items()
         ):
             raise ValueError("Skill references must map string paths to text")
+        object.__setattr__(self, "metadata", immutable_metadata(self.metadata))
+        object.__setattr__(self, "reference_documents", MappingProxyType(dict(self.reference_documents)))
 
 
 class SkillSource(Protocol):
@@ -82,20 +89,17 @@ class MarkdownSkillSource(StaticSkillSource):
         skill_file = root / "SKILL.md"
         if not skill_file.is_file():
             raise ValueError(f"Skill directory must contain SKILL.md: {root}")
-        content = skill_file.read_text(encoding="utf-8")
-        name = root.name
-        description = ""
-        first_heading = re.search(r"(?m)^#\s+(.+?)\s*$", content)
-        if first_heading:
-            description = first_heading.group(1).strip()
+        content = read_skill_text(skill_file)
+        identity = skill_identity(content, root.name)
         reference_documents = cls._read_reference_documents(root)
         return cls(
-            source_id or f"markdown:{name}",
+            source_id or f"markdown:{identity['name']}",
             [SkillBinding(
-                name=name,
+                name=identity["name"],
                 instructions=content,
-                description=description,
-                metadata={"path": str(skill_file)},
+                description=identity["description"],
+                version=identity["version"],
+                metadata={**identity["metadata"], "path": str(skill_file)},
                 reference_documents=reference_documents,
             )],
         )
@@ -109,9 +113,13 @@ class MarkdownSkillSource(StaticSkillSource):
             raise ValueError("Skill references directory cannot be a symlink")
 
         documents: dict[str, str] = {}
-        candidates = sorted(reference_root.rglob("*"))
-        for path in candidates:
-            if path.is_symlink() or not path.is_file():
+        total_chars = 0
+        for index, path in enumerate(reference_root.rglob("*")):
+            if index >= 1024:
+                raise ValueError("Skill references exceed the entry limit")
+            if path.is_symlink():
+                raise ValueError("Skill reference file cannot be a symlink")
+            if not path.is_file():
                 continue
             if path.suffix.lower() not in _REFERENCE_SUFFIXES:
                 continue
@@ -132,6 +140,9 @@ class MarkdownSkillSource(StaticSkillSource):
                 ) from exc
             if len(content) > _MAX_REFERENCE_CHARS:
                 content = content[:_MAX_REFERENCE_CHARS]
+            total_chars += len(content)
+            if total_chars > _MAX_REFERENCE_TOTAL_CHARS:
+                raise ValueError("Skill references exceed the aggregate text limit")
             documents[relative] = content
         return documents
 
@@ -182,7 +193,10 @@ class InMemorySkillCatalog:
 
     def __init__(
         self, *, max_context_chars: int = 12_000, max_skills: int = 8,
+        max_cached_contexts: int = 64,
     ) -> None:
+        if type(max_cached_contexts) is not int or max_cached_contexts <= 0:
+            raise ValueError("Skill context cache capacity must be a positive integer")
         if max_context_chars <= 0 or max_skills <= 0:
             raise ValueError("Skill catalog limits must be positive")
         self.max_context_chars = int(max_context_chars)
@@ -190,6 +204,11 @@ class InMemorySkillCatalog:
         self._lock = threading.RLock()
         self._skills: dict[str, SkillBinding] = {}
         self._sources: dict[str, list[str]] = {}
+        self._selection_text: dict[str, str] = {}
+        self._reference_index: dict[str, frozenset[str]] = {}
+        self._max_cached_contexts = max_cached_contexts
+        self._revision = 0
+        self._context_cache: OrderedDict[tuple[Any, ...], str] = OrderedDict()
 
     def register_source(self, source: SkillSource) -> list[str]:
         source_id = str(getattr(source, "source_id", "") or "").strip()
@@ -209,11 +228,23 @@ class InMemorySkillCatalog:
                         raise ValueError(f"Skill '{binding.name}' already registered")
                     self._skills[binding.name] = binding
                     names.append(binding.name)
+                    self._selection_text[binding.name] = " ".join((
+                        binding.name, redact_for_persistence(binding.description),
+                    )).casefold()
+                    self._reference_index[binding.name] = frozenset(
+                        term
+                        for path, text in binding.reference_documents.items()
+                        for term in reference_terms(path + "\n" + redact_for_persistence(text))
+                    )
                 self._sources[source_id] = list(names)
             except Exception:
                 for name in names:
                     self._skills.pop(name, None)
+                    self._selection_text.pop(name, None)
+                    self._reference_index.pop(name, None)
                 raise
+            self._revision += 1
+            self._context_cache.clear()
         return names
 
     def unregister_source(self, source_id: str) -> list[str]:
@@ -221,23 +252,22 @@ class InMemorySkillCatalog:
             names = list(self._sources.pop(str(source_id), []))
             for name in names:
                 self._skills.pop(name, None)
+                self._selection_text.pop(name, None)
+                self._reference_index.pop(name, None)
+            if names:
+                self._revision += 1
+                self._context_cache.clear()
             return names
 
     def list_skills(self) -> list[SkillBinding]:
         with self._lock:
             return list(self._skills.values())
 
-    @staticmethod
-    def _score(skill: SkillBinding, terms: set[str]) -> int:
-        haystack = " ".join(
-            (
-                skill.name,
-                skill.description,
-                skill.instructions,
-                " ".join(skill.reference_documents.keys()),
-            )
-        ).casefold()
-        return sum(1 for term in terms if term and term in haystack)
+    def _score(self, skill: SkillBinding, terms: set[str]) -> int:
+        haystack = self._selection_text[skill.name]
+        identity_score = sum(1 for term in terms if term and term in haystack)
+        reference_score = len(terms & self._reference_index[skill.name])
+        return identity_score * 3 + reference_score
 
     def build_context(
         self,
@@ -245,17 +275,21 @@ class InMemorySkillCatalog:
         *,
         source_ids: Sequence[str] | None = None,
     ) -> str:
-        terms = {
-            token.casefold()
-            for token in re.findall(r"[\w-]{2,}", str(user_input or ""))
-        }
-        for run in re.findall(r"[\u3400-\u9fff]+", str(user_input or "")):
-            terms.update(run[index:index + 2] for index in range(len(run) - 1))
+        terms = reference_terms(user_input, stopwords=())
         allowed_sources = (
             {str(item).strip() for item in source_ids if str(item).strip()}
             if source_ids is not None else None
         )
         with self._lock:
+            revision = self._revision
+            cache_key = (
+                revision,
+                hashlib.sha256(str(user_input or "").encode("utf-8", errors="surrogatepass")).digest(),
+                tuple(sorted(allowed_sources)) if allowed_sources is not None else None,
+            )
+            if cache_key in self._context_cache:
+                self._context_cache.move_to_end(cache_key)
+                return self._context_cache[cache_key]
             allowed_names = (
                 {
                     name
@@ -267,14 +301,20 @@ class InMemorySkillCatalog:
             skills = sorted(
                 (
                     skill for skill in self._skills.values()
-                    if (
-                        skill.name in allowed_names
-                        if allowed_names is not None else
-                        skill.metadata.get("always_on") is True or self._score(skill, terms) > 0
-                    )
+                    if (allowed_names is None or skill.name in allowed_names)
+                    and (skill.metadata.get("always_on") is True or self._score(skill, terms) > 0)
                 ),
                 key=lambda item: (-self._score(item, terms), item.name),
             )[:self.max_skills]
+        context = self._render_context(skills, user_input)
+        with self._lock:
+            if revision == self._revision:
+                self._context_cache[cache_key] = context
+                while len(self._context_cache) > self._max_cached_contexts:
+                    self._context_cache.popitem(last=False)
+        return context
+
+    def _render_context(self, skills: Sequence[SkillBinding], user_input: str) -> str:
         chunks: list[str] = []
         remaining = self.max_context_chars
         for skill in skills:
@@ -318,7 +358,7 @@ class InMemorySkillCatalog:
             remaining -= len(chunk)
             if remaining <= 0:
                 break
-        return "\n".join(chunks)
+        return redact_for_persistence("\n".join(chunks))[:self.max_context_chars]
 
     def source_snapshot(self) -> dict[str, list[str]]:
         """Return source ownership without exposing Skill file contents."""
@@ -334,6 +374,7 @@ class InMemorySkillCatalog:
                 "status": "ok",
                 "skills": len(self._skills),
                 "sources": len(self._sources),
+                "cached_contexts": len(self._context_cache),
                 "source_snapshot": self.source_snapshot(),
             }
 

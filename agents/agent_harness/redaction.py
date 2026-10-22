@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 from typing import Any
 
 
@@ -15,7 +16,26 @@ _SENSITIVE_KEY_PARTS = (
     "managercustomerid", "client_id", "clientid",
 )
 
+_PUBLIC_TOKEN_COUNTER_KEYS = frozenset({
+    "input_tokens", "output_tokens", "total_tokens", "prompt_tokens",
+    "completion_tokens", "cache_read_input_tokens", "cache_write_input_tokens",
+    "cache_creation_input_tokens", "cached_input_tokens", "cached_tokens",
+    "max_input_tokens", "max_output_tokens", "max_total_tokens", "max_tokens",
+})
+
+_SENSITIVE_CANONICAL_PARTS = frozenset(
+    part.replace("_", "").replace("-", "") for part in _SENSITIVE_KEY_PARTS
+)
+
+
+def _sensitive_key(key: Any) -> bool:
+    canonical = str(key).lower().replace("_", "").replace("-", "")
+    return any(part in canonical for part in _SENSITIVE_CANONICAL_PARTS)
+
 _TEXT_PATTERNS = (
+    r"(?i)(?P<prefix>['\"]?authorization['\"]?\s*[:=]\s*['\"]?(?:bearer|basic)\s+)[^\s,'\";}]+",
+    r"(?is)(?P<prefix>['\"]?(?:api[_-]?key|app[_-]?secret)['\"]?\s*[:=]\s*)['\"][^'\"]*['\"]",
+    r"(?i)(?P<prefix>\b(?:api[_-]?key|app[_-]?secret)\s*[:=]\s*)[^\s,;}]+",
     r"(?is)(?P<prefix>['\"]?(?:access|refresh|developer)[_-]?token['\"]?\s*[:=]\s*)['\"][^'\"]*['\"]",
     r"(?is)(?P<prefix>['\"]?private[_-]?key['\"]?\s*[:=]\s*)['\"]-----BEGIN.*?-----END[^\r\n]*-----['\"]",
     r"(?is)(?P<prefix>['\"]?private[_-]?key['\"]?\s*[:=]\s*)['\"][^'\"]*['\"]",
@@ -32,19 +52,25 @@ _TEXT_PATTERNS = (
 
 def redact_for_persistence(value: Any) -> Any:
     """Remove credential-shaped fields and pasted secrets from arbitrary data."""
-    if isinstance(value, dict):
+    if isinstance(value, Mapping):
         return {
             key: (
                 redact_for_persistence(child)
                 if str(key).lower() in {"selection_token", "selection_tokens"}
+                or (
+                    str(key).lower() in _PUBLIC_TOKEN_COUNTER_KEYS
+                    and type(child) is int and child >= 0
+                )
                 else "<redacted>"
-                if any(part in str(key).lower() for part in _SENSITIVE_KEY_PARTS)
+                if _sensitive_key(key)
                 else redact_for_persistence(child)
             )
             for key, child in value.items()
         }
     if isinstance(value, list):
         return [redact_for_persistence(child) for child in value]
+    if isinstance(value, tuple):
+        return tuple(redact_for_persistence(child) for child in value)
     if isinstance(value, str):
         redacted = value
         for pattern in _TEXT_PATTERNS:

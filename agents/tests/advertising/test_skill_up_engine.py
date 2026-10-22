@@ -52,6 +52,17 @@ def test_skill_up_suite_covers_capabilities_and_knowledge_retrieval():
     ]
 
 
+def test_skill_up_suite_uses_project_interpreter_and_unified_timeout():
+    repo_root = Path(__file__).resolve().parents[3]
+    config = yaml.safe_load((
+        repo_root / "agents/evals/advertising/skill-up/evals/eval.yaml"
+    ).read_text(encoding="utf-8"))
+    engine = config["engine"]["custom"]
+    assert engine["local"]["command"] == "${AD_AGENT_REPO_ROOT}/scripts/ad-agent-python"
+    assert engine["timeout_seconds"] == 500
+    assert config["cases"]["defaults"]["timeout_seconds"] == 500
+
+
 class _FakeClaudeResponse:
     content = [{"type": "text", "text": "按 Skill 先确认预算，再生成计划。"}]
     usage = {"input_tokens": 41, "output_tokens": 13}
