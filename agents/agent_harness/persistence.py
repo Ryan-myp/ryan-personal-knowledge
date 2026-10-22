@@ -8,13 +8,23 @@ from .messages import AgentMessage
 
 
 class IdempotencyStore(Protocol):
-    """Cross-process reservation store for externally effectful Tool calls."""
+    """Cross-process reservations; unresolved calls require reconciliation."""
 
     def reserve(
         self, key: str, *, request_hash: str, ttl_seconds: float,
     ) -> bool: ...
 
     def mark_executed(self, key: str, *, request_hash: str) -> None: ...
+
+    def mark_uncertain(self, key: str, *, request_hash: str) -> None:
+        """Quarantine an unknown effect; normal TTL and release cannot erase it."""
+        ...
+
+    def resolve_uncertain(
+        self, key: str, *, request_hash: str, executed: bool,
+    ) -> bool:
+        """Trusted reconciliation only, after verifying the external outcome."""
+        ...
 
     def release(self, key: str, *, request_hash: str) -> None: ...
 

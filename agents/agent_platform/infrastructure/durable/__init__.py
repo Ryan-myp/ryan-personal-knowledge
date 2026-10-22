@@ -13,12 +13,12 @@ from .task_executor import (
     TaskExecutor,
     TaskExecutorError,
     UnknownTaskKind,
-    task_outcome_status,
 )
+from .task_outcomes import TaskOutcomeContractError, task_outcome_status
 
 __all__ = [
     "CronExpression", "CronExpressionError", "DurableAgentService", "OutboxConsumer", "OutboxPublisher",
     "RuntimeSupervisor", "SQLiteRunStore", "SQLiteTaskQueueStore", "SchedulerService", "TaskCapacityError",
     "TaskExecutionContext", "TaskExecutor", "TaskExecutorError", "TaskSubmission",
-    "UnknownTaskKind", "next_run_at", "task_outcome_status", "validate_timezone",
+    "UnknownTaskKind", "TaskOutcomeContractError", "next_run_at", "task_outcome_status", "validate_timezone",
 ]

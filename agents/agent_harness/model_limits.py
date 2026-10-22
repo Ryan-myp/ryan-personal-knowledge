@@ -12,6 +12,10 @@ DEFAULT_MODEL_OUTPUT_CHARS = 128_000
 DEFAULT_STREAM_CHUNKS = 10_000
 
 
+class ModelTimeoutError(TimeoutError):
+    """The provider exceeded the configured invocation deadline."""
+
+
 class ModelLimitError(RuntimeError):
     """A local resource limit, not a retryable provider failure."""
 
@@ -30,6 +34,10 @@ class ModelInputLimitError(ModelLimitError):
 class ModelOutputLimitError(ModelLimitError):
     safe_reason_code = "model_output_limit_exceeded"
     public_reply = "模型输出超过本次处理上限，已停止继续处理，请缩小范围后重试。"
+
+class ModelInvocationStoppedError(ModelLimitError):
+    safe_reason_code = "model_invocation_stopped"
+    public_reply = "本次任务已停止，不再继续请求模型服务。"
 
 
 def positive_integer(name: str, value: Any) -> int:

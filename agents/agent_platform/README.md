@@ -109,6 +109,20 @@ principal，并按 tenant/user 过滤。重复幂等键只有在任务类型和�
 前必须由调用方完成外部状态核对，并使用独立的 recovery reference 操作持久 Store。
 提交入口默认限制输入为 100,000 字符，session ID 和幂等键各限制为 255 字符。
 
+后台 handler 可直接返回通用 `RunResult` 或 JSON 结果。控制标记必须为布尔值，
+终态必须来自通用 `RunStatus`；`succeeded` 不能覆盖真实错误、失败子结果或未知
+副作用。结果协议无效或保留结果超限时记录 `recovery_required` 和原因，不能把
+截断占位对象当成功。普通不带状态的数据只表示 handler 正常结束，不是外部 API
+执行成功的凭证；Agent handler 应返回标准 Run 结果。
+
+通用 Tool 策略在未知写入后通过 `IdempotencyStore.mark_uncertain` 持久化隔离，
+保留原有失败诊断和审计。SQL adapter 的未决 `pending` / `uncertain` 不随 TTL 自动
+放行，TTL 只适用于已知执行结果的去重窗口。受信任维护流程核对外部结果、确认
+原调用不会继续产生副作用后，才能调用 `resolve_uncertain`，且必须匹配请求摘要。
+隔离/核对不是回滚证明，也不向自然语言 Tool 暴露解锁权限。
+广告 SQL adapter 不把非布尔的预留答复强转成执行许可；完成标记必须确实更新
+一条匹配的 pending 记录，否则报告持久化错误。
+
 通用 Run 的无网络并发基线：
 
 ```bash

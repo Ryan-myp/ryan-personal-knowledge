@@ -19,7 +19,10 @@ from typing import Any, Callable, Optional
 
 from .ports import TaskQueueStore
 from agents.agent_harness.core.timeouts import DEFAULT_EXECUTION_TIMEOUT_SECONDS
+from agents.agent_harness.results import RunResult
+from agents.agent_harness.redaction import redact_for_persistence
 from .task import TaskSubmission
+from .task_outcomes import TaskOutcomeContractError, task_outcome_status
 
 logger = logging.getLogger(__name__)
 
@@ -34,49 +37,6 @@ class TaskCapacityError(TaskExecutorError):
 
 class UnknownTaskKind(TaskExecutorError):
     """No trusted handler has been registered for the requested kind."""
-
-
-TASK_OUTCOME_STATUSES = frozenset({
-    "succeeded", "failed", "partially_failed", "awaiting_input",
-    "recovery_required", "cancelled",
-})
-
-
-def task_outcome_status(result: Any) -> str:
-    """Translate a handler result into a durable task outcome.
-
-    A handler returning normally only means that the handler completed.  It
-    does not mean the business operation succeeded.  The explicit
-    ``task_status`` field is preferred; the remaining fallbacks keep existing
-    handlers safe while they migrate to the result contract.
-    """
-    if isinstance(result, dict):
-        explicit = result.get("task_status")
-        if explicit in TASK_OUTCOME_STATUSES:
-            return str(explicit)
-        signals = result.get("runtime_signals")
-        if isinstance(signals, dict) and any(
-            bool(signals.get(name))
-            for name in ("session_lease_lost", "task_lease_lost")
-        ):
-            return "recovery_required"
-        if result.get("recovery_required") or result.get("effect_state") == "unknown":
-            return "recovery_required"
-        if result.get("needs_input") or result.get("needs_confirmation"):
-            return "awaiting_input"
-        raw_status = result.get("status")
-        if raw_status in TASK_OUTCOME_STATUSES:
-            return str(raw_status)
-        result_items = result.get("results")
-        if isinstance(result_items, list) and result_items:
-            successes = [bool(item.get("success")) for item in result_items if isinstance(item, dict)]
-            if successes and not any(successes):
-                return "failed"
-            if successes and any(successes) and not all(successes):
-                return "partially_failed"
-        if result.get("success") is False:
-            return "failed"
-    return "succeeded"
 
 
 @dataclass
@@ -140,7 +100,7 @@ class TaskExecutor:
         self.task_timeout_seconds = float(task_timeout_seconds)
         self.lease_seconds = float(lease_seconds)
         self.queue_poll_interval = max(0.1, float(queue_poll_interval))
-        self._redact = redact or (lambda value: value)
+        self._redact = redact or redact_for_persistence
         # The default value is generic. Applications may inject a richer
         # persistence record without coupling this queue to that model.
         self._task_record_factory = task_record_factory or TaskSubmission
@@ -574,6 +534,7 @@ class TaskExecutor:
             try:
                 result = handler(context)
                 safe_result = self._safe_result(result)
+                outcome_status = task_outcome_status(safe_result)
                 current = self.store.get_task(task_id)
                 cancellation_requested = bool(
                     current and current.status == "cancelling"
@@ -597,7 +558,7 @@ class TaskExecutor:
                         metadata={"lease_lost": True, "effect_state": "unknown"},
                         expected_statuses=["running", "cancelling"],
                     )
-                elif cancellation_requested:
+                elif cancellation_requested and outcome_status != "recovery_required":
                     self.store.update_task(
                         task_id, "cancelled", result=safe_result,
                         workflow_id=workflow_id,
@@ -624,9 +585,8 @@ class TaskExecutor:
                         expected_statuses=["running"],
                     )
                 else:
-                    outcome_status = task_outcome_status(safe_result)
                     outcome_error = None
-                    if outcome_status in {"failed", "partially_failed"}:
+                    if outcome_status in {"failed", "partially_failed", "recovery_required"}:
                         if isinstance(safe_result, dict):
                             outcome_error = safe_result.get("error") or safe_result.get("reply")
                         outcome_error = str(outcome_error or "Agent turn reported an unsuccessful outcome")[:1000]
@@ -648,6 +608,7 @@ class TaskExecutor:
                 deadline_exceeded = deadline_event.is_set() or context.remaining_seconds() == 0.0
                 status = (
                     "recovery_required" if context.is_lease_lost()
+                    or isinstance(exc, TaskOutcomeContractError)
                     else "cancelled" if cancellation_requested
                     else "recovery_required" if deadline_exceeded
                     else "failed"
@@ -655,10 +616,7 @@ class TaskExecutor:
                 self.store.update_task(
                     task_id, status,
                     error=self._safe_error(exc),
-                    metadata=(
-                        {"deadline_exceeded": True, "effect_state": "unknown"}
-                        if deadline_exceeded else None
-                    ),
+                    metadata=self._failure_metadata(exc, deadline_exceeded),
                     expected_statuses=["running", "cancelling"],
                 )
             finally:
@@ -780,10 +738,29 @@ class TaskExecutor:
 
     def _safe_result(self, value: Any) -> Any:
         try:
+            if isinstance(value, RunResult):
+                value = value.to_dict()
             safe = self._redact(value)
             encoded = json.dumps(safe, ensure_ascii=False, default=str)
             if len(encoded.encode("utf-8")) > 2_000_000:
-                return {"truncated": True, "reason": "task result exceeds output limit"}
+                return self._invalid_result("task result exceeds output limit")
             return json.loads(encoded)
-        except Exception:
-            return {"truncated": True, "reason": "task result is not serializable"}
+        except Exception as error:
+            logger.warning("Task result retention failed: %s", type(error).__name__)
+            return self._invalid_result("task result is not serializable")
+
+    @staticmethod
+    def _invalid_result(reason: str) -> dict[str, Any]:
+        return {
+            "truncated": True, "error": reason, "task_status": "recovery_required",
+            "effect_state": "unknown",
+        }
+
+    @staticmethod
+    def _failure_metadata(error: Exception, deadline_exceeded: bool) -> dict[str, Any] | None:
+        if isinstance(error, TaskOutcomeContractError):
+            return {"task_output_invalid": True, "effect_state": "unknown"}
+        return (
+            {"deadline_exceeded": True, "effect_state": "unknown"}
+            if deadline_exceeded else None
+        )

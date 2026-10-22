@@ -37,6 +37,9 @@ class ToolCapacityError(RuntimeError):
 class ToolOutputContractError(ValueError):
     """An executor returned malformed Runtime control flags."""
 
+class ToolCircuitOpenError(RuntimeError):
+    """Admission was rejected before entering the executor."""
+
 
 class ToolInvocationError(RuntimeError):
     """An executor was entered, so a raised error may follow an external effect."""
@@ -798,14 +801,7 @@ class ToolExecutionCoordinator:
                 binding = self.tool_catalog.get_binding(call.name)
             definition = getattr(binding, "definition", None)
             if not self.tool_circuit.allow(call.name):
-                return {
-                    "tool_call_id": call.id,
-                    "name": call.name,
-                    "content": "Tool temporarily unavailable",
-                    "is_error": True,
-                    "terminate": False,
-                    "runtime_signals": {"tool_circuit_open": True},
-                }
+                raise ToolCircuitOpenError("Tool temporarily unavailable")
             output, retry_count, coalesced = self._invoke_tool(
                 binding,
                 context,
@@ -949,7 +945,7 @@ class ToolExecutionCoordinator:
                     "runtime_signals": {"session_lease_lost": True},
                 })
         except Exception as error:
-            if not isinstance(error, ToolCapacityError):
+            if not isinstance(error, (ToolCapacityError, ToolCircuitOpenError)):
                 self.tool_circuit.record_failure(call.name)
             cause = error.error if isinstance(error, ToolInvocationError) else error
             invalid_output = isinstance(cause, ToolOutputContractError)
@@ -982,6 +978,9 @@ class ToolExecutionCoordinator:
                 })
             elif isinstance(error, ToolCapacityError):
                 result["runtime_signals"] = {"tool_capacity_exhausted": True}
+            elif isinstance(error, ToolCircuitOpenError):
+                result["effect_state"] = "none"
+                result["runtime_signals"] = {"tool_circuit_open": True}
             if invalid_output:
                 result["runtime_signals"] = {
                     **dict(result.get("runtime_signals") or {}),

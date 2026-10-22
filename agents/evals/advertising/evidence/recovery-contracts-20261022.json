@@ -1,0 +1,100 @@
+{
+  "schema_version": "agent-quality-evidence/v1",
+  "recorded_date": "2026-10-22",
+  "pushed_preceding_revision": "8d4e291",
+  "source_revision": "recovery contract changes based on 8d4e291, committed together with this evidence",
+  "model_requests_were_real": false,
+  "advertising_provider_calls_in_this_iteration": 0,
+  "production_capacity_attested": false,
+  "initial_reproduction_before_implementation": {
+    "failed": 31,
+    "passed": 2
+  },
+  "verified_behaviors": [
+    "unknown_write_error_does_not_release_replay_reservation",
+    "unknown_audit_decision_preserves_original_failure_signals",
+    "unresolved_pending_and_uncertain_do_not_expire_into_execution_permits",
+    "quarantine_survives_database_reopen_and_normal_release",
+    "trusted_reconciliation_requires_exact_request_hash",
+    "late_success_cannot_clear_uncertain_reservation",
+    "circuit_rejection_runs_post_policy_cleanup_and_audit",
+    "all_reservation_finalizers_attempted_without_short_circuit",
+    "store_boolean_and_finalizer_acknowledgements_are_strict",
+    "persistence_adapter_does_not_coerce_invalid_backend_reservations",
+    "sql_executed_transition_requires_matching_pending_row",
+    "missing_executed_transition_reports_recovery_required",
+    "sdk_repairs_share_absolute_parent_deadline",
+    "sdk_preparation_time_reduces_remaining_request_timeout",
+    "sdk_cancellation_and_lease_loss_prevent_followup_requests",
+    "task_success_labels_do_not_hide_failure_or_unknown_effect",
+    "task_control_flags_are_not_coerced_from_strings",
+    "canonical_run_result_is_retained_as_structured_data",
+    "truncated_task_result_cannot_become_success",
+    "default_task_result_and_error_persistence_redacts_secrets",
+    "cancellation_cannot_hide_unknown_handler_effect",
+    "awaiting_input_interaction_remains_awaiting_input",
+    "aged_uncertain_reservation_still_blocks_replay_without_second_provider_call"
+  ],
+  "verification": {
+    "harness_and_platform_tests_passed": 752,
+    "full_suite_pending": false,
+    "full_suite_tests_passed": 2787,
+    "full_suite_warnings": 1,
+    "provider_contract_audit_passed": true,
+    "tool_contract_snapshot_count": 321,
+    "compile_passed": true,
+    "knowledge_search_checks_passed": true,
+    "local_synthetic_vector_gate_passed": true
+  },
+  "changed_statement_coverage": {
+    "percent": 90.4,
+    "covered": 189,
+    "total": 209,
+    "scope": "nine_measured_modules_not_framework_wide",
+    "modules": [
+      "agents.agent_harness.core.llm_client",
+      "agents.agent_harness.model_execution",
+      "agents.agent_harness.tool_execution",
+      "agents.agent_platform.infrastructure.durable.task_executor",
+      "agents.agent_platform.infrastructure.durable.task_outcomes",
+      "agents.agent_platform.tools.policy",
+      "agents.applications.advertising.persistence.adapters",
+      "agents.applications.advertising.persistence.mysql_store",
+      "agents.applications.advertising.persistence.store"
+    ]
+  },
+  "database_verification": {
+    "sqlite_temporary_and_in_memory_tests": true,
+    "mysql_quarantine_sql_conditions_offline": true,
+    "real_mysql_server_verified": false,
+    "schema_changed": false,
+    "production_data_reconciled_or_modified": false
+  },
+  "repository_qguard": {
+    "status": "failed",
+    "score": 0,
+    "files_scanned": 740,
+    "findings": 4969,
+    "includes_generated_build_duplicates": true,
+    "rules_disabled": false
+  },
+  "rollout": {
+    "behavior_change": "unresolved reservations no longer automatically expire",
+    "existing_pending_reservations_need_review": true,
+    "blind_rollback_to_expiry_behavior_is_unsafe": true,
+    "reconciliation_is_trusted_maintenance_not_llm_tool": true,
+    "default_timeout_seconds_remains": 500
+  },
+  "remaining": [
+    "tool_candidates_can_remain_too_broad",
+    "circuit_recovery_lacks_single_half_open_probe",
+    "quarantine_operator_ui_and_approval_workflow_not_complete",
+    "no_new_real_model_generalization_or_latency_attestation",
+    "repository_quality_gate_not_passed"
+  ],
+  "raw_checks_log": "outputs/agent-recovery-hardening-20261022/checks-post-adapter.log",
+  "raw_coverage_log": "outputs/agent-recovery-hardening-20261022/coverage-post-adapter.log",
+  "raw_quality_gate_log": "outputs/agent-recovery-hardening-20261022/qguard-post-adapter.log",
+  "service_restarted": false,
+  "new_iteration_changes_committed": true
+}

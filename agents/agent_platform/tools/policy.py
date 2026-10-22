@@ -176,6 +176,9 @@ class ToolExecutionPolicy:
     ] = field(
         default_factory=dict, init=False, repr=False,
     )
+    _uncertain_idempotency: set[str] = field(
+        default_factory=set, init=False, repr=False,
+    )
     _lock: threading.RLock = field(
         default_factory=threading.RLock, init=False, repr=False,
     )
@@ -326,8 +329,13 @@ class ToolExecutionPolicy:
     ) -> Optional[Mapping[str, Any]]:
         tool_data = result.get("data")
         uncertain = _is_write(context.tool_definition) and (
-            result.get("success") is False
-            or result.get("effect_state") in {"unknown", "recovery_required"}
+            result.get("effect_state") in {"unknown", "recovery_required"}
+            or result.get("recovery_required") is True
+            or (
+                result.get("success") is False
+                and result.get("is_error") is not True
+                and result.get("effect_state") != "none"
+            )
             or (
                 isinstance(tool_data, Mapping)
                 and tool_data.get("execution_status") in {
@@ -335,69 +343,56 @@ class ToolExecutionPolicy:
                 }
             )
         )
-        if result.get("is_error"):
-            call_key = (
-                str(context.request.run_id or ""),
-                str(context.request.turn_id or ""),
-                str(context.tool_call.id or ""),
-            )
-            with self._lock:
-                reservations = self._reservations_by_call.pop(call_key, set())
-                release_failed = any(
-                    not self._release_idempotency(*identity)
-                    for identity in reservations
-                )
-        elif uncertain:
-            call_key = (
-                str(context.request.run_id or ""),
-                str(context.request.turn_id or ""),
-                str(context.tool_call.id or ""),
-            )
-            with self._lock:
-                self._reservations_by_call.pop(call_key, None)
-            release_failed = False
-        else:
-            call_key = (
-                str(context.request.run_id or ""),
-                str(context.request.turn_id or ""),
-                str(context.tool_call.id or ""),
-            )
-            with self._lock:
-                reservations = self._reservations_by_call.pop(call_key, set())
-            release_failed = any(
-                not self._mark_idempotency_executed(*identity)
-                for identity in reservations
-            )
-        if release_failed:
-            return {
-                "runtime_signals": {"idempotency_store_error": True},
-                "recovery_required": True,
-            }
+        finalized = self._finalize_call_reservations(context, result, uncertain)
         audit_ok = self._audit(
             context.request,
             context.tool_call.name,
             decision=(
-                "failed" if result.get("is_error")
-                else "unknown" if uncertain
+                "unknown" if uncertain
+                else "failed" if result.get("is_error")
                 else "executed"
             ),
             reason_code=(
-                "executor_error" if result.get("is_error")
-                else "provider_result_unknown" if uncertain
+                "provider_result_unknown" if uncertain
+                else "executor_error" if result.get("is_error")
                 else "ok"
             ),
         )
+        signals = {}
+        if not finalized:
+            signals["idempotency_store_error"] = True
         if not audit_ok:
-            return {
-                "runtime_signals": {"audit_error": True},
-                "recovery_required": True,
-            }
+            signals["audit_error"] = True
         if uncertain:
-            return {
-                "runtime_signals": {"effect_state": "unknown"},
-                "recovery_required": True,
-            }
-        return None
+            signals["effect_state"] = "unknown"
+        if not signals:
+            return None
+        prior = result.get("runtime_signals")
+        return {
+            "runtime_signals": {
+                **(dict(prior) if isinstance(prior, Mapping) else {}), **signals,
+            },
+            "recovery_required": True,
+        }
+
+    def _finalize_call_reservations(
+        self, context: ToolCallContext, result: Mapping[str, Any], uncertain: bool,
+    ) -> bool:
+        call_key = (
+            str(context.request.run_id or ""),
+            str(context.request.turn_id or ""),
+            str(context.tool_call.id or ""),
+        )
+        with self._lock:
+            reservations = self._reservations_by_call.pop(call_key, set())
+        finalize = (
+            self._mark_idempotency_uncertain if uncertain
+            else self._release_idempotency if result.get("is_error")
+            else self._mark_idempotency_executed
+        )
+        # Do not short-circuit: each reservation needs its own finalization.
+        outcomes = [finalize(*identity) for identity in reservations]
+        return all(outcomes)
 
     def required_permissions(
         self, definition: Any, execution_mode: str = "dry_run",
@@ -743,11 +738,13 @@ class ToolExecutionPolicy:
         if store is not None:
             key = identity[0]
             try:
-                reserved = bool(store.reserve(
+                reserved = store.reserve(
                     key,
                     request_hash=str(request_hash),
                     ttl_seconds=self.idempotency_ttl_seconds,
-                ))
+                )
+                if type(reserved) is not bool:
+                    raise TypeError("idempotency reservation must be boolean")
             except Exception as error:
                 # A durable replay store is a safety boundary. Never execute
                 # an external write when it cannot answer the reservation.
@@ -773,9 +770,12 @@ class ToolExecutionPolicy:
         )
         now = time.monotonic()
         with self._lock:
+            if identity[0] in self._uncertain_idempotency:
+                return True
             expired = [
                 key for key, timestamp in self._seen_idempotency.items()
                 if now - timestamp >= self.idempotency_ttl_seconds
+                and key[1] not in self._uncertain_idempotency
             ]
             for key in expired:
                 self._seen_idempotency.pop(key, None)
@@ -783,9 +783,15 @@ class ToolExecutionPolicy:
                 return True
             if len(self._seen_idempotency) >= self.max_idempotency_entries:
                 oldest = min(
-                    self._seen_idempotency,
+                    (
+                        key for key in self._seen_idempotency
+                        if key[1] not in self._uncertain_idempotency
+                    ),
                     key=self._seen_idempotency.get,
+                    default=None,
                 )
+                if oldest is None:
+                    raise IdempotencyStoreUnavailable("idempotency capacity is quarantined")
                 self._seen_idempotency.pop(oldest, None)
             self._seen_idempotency[legacy_identity] = now
             call_key = (
@@ -801,25 +807,36 @@ class ToolExecutionPolicy:
     def _mark_idempotency_executed(self, key: str, request_hash: str) -> bool:
         if self.idempotency_store is not None:
             try:
-                self.idempotency_store.mark_executed(
+                acknowledgement = self.idempotency_store.mark_executed(
                     key, request_hash=request_hash,
                 )
             except Exception:
                 return False
-            return True
+            return acknowledgement is None
         # In-memory reservations are already durable for the lifetime of the
         # policy object; keeping them in the seen set preserves replay safety.
+        return True
+
+    def _mark_idempotency_uncertain(self, key: str, request_hash: str) -> bool:
+        if self.idempotency_store is not None:
+            try:
+                acknowledgement = self.idempotency_store.mark_uncertain(key, request_hash=request_hash)
+            except Exception:
+                return False
+            return acknowledgement is None
+        with self._lock:
+            self._uncertain_idempotency.add(key)
         return True
 
     def _release_idempotency(self, key: str, request_hash: str) -> bool:
         if self.idempotency_store is not None:
             try:
-                self.idempotency_store.release(
+                acknowledgement = self.idempotency_store.release(
                     key, request_hash=request_hash,
                 )
             except Exception:
                 return False
-            return True
+            return acknowledgement is None
         with self._lock:
             for identity in list(self._seen_idempotency):
                 if identity[1] == key and identity[2] == request_hash:

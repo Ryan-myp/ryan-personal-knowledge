@@ -183,9 +183,12 @@ def test_observer_receives_model_lifecycle_without_streaming_response_tokens():
         app.close()
 
 
-def test_llm_adapter_passes_the_remaining_deadline_to_the_sdk():
+def test_llm_adapter_passes_the_remaining_deadline_to_the_sdk(monkeypatch):
     from agents.agent_harness import TurnRequest
     from agents.agent_harness.core.llm_client import LLMClient
+    from agents.agent_harness.core import llm_client
+
+    monkeypatch.setattr(llm_client, "time", SimpleNamespace(monotonic=lambda: 0.0))
 
     calls = []
     def complete(**kwargs):

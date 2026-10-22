@@ -23,11 +23,11 @@ class PersistenceIdempotencyStore:
         reserve = getattr(self.backend, "reserve_write", None)
         if not callable(reserve):
             raise TypeError("persistence backend lacks SQL write reservations")
-        return bool(reserve(
+        return reserve(
             str(key),
             ttl_seconds=max(1, int(ttl_seconds)),
             request_hash=str(request_hash),
-        ))
+        )
 
     def mark_executed(self, key: str, *, request_hash: str) -> None:
         mark = getattr(self.backend, "mark_write_executed", None)
@@ -40,6 +40,19 @@ class PersistenceIdempotencyStore:
         if not callable(release):
             raise TypeError("persistence backend lacks SQL write reservations")
         release(str(key), request_hash=str(request_hash))
+
+    def mark_uncertain(self, key: str, *, request_hash: str) -> None:
+        if not self.backend.mark_write_uncertain(str(key), request_hash=str(request_hash)):
+            raise RuntimeError("write reservation cannot be quarantined")
+
+    def resolve_uncertain(
+        self, key: str, *, request_hash: str, executed: bool,
+    ) -> bool:
+        if type(executed) is not bool:
+            raise ValueError("executed must be boolean")
+        return self.backend.resolve_write_uncertain(
+            str(key), request_hash=str(request_hash), executed=executed,
+        )
 
 
 class PersistenceTranscriptStore:

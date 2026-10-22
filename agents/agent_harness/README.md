@@ -104,6 +104,18 @@ emitting deltas, and its iterator is closed when its worker can advance.
 An uncooperative provider can still occupy its bounded slot until it returns;
 local cancellation does not attest upstream cancellation or rollback.
 
+SDK-internal empty-response and protocol repair attempts share the invocation's
+absolute deadline; they cannot reset the timeout for each HTTP request. The
+adapter checks trusted cancellation and lease-loss tokens before requests and
+before accepting a response.
+
+`IdempotencyStore` implementations must quarantine uncertain effects through
+`mark_uncertain`. Unresolved `pending` and `uncertain` reservations must not
+expire into execution permits. `resolve_uncertain` is a trusted maintenance
+operation after external verification, not an LLM Tool or automatic retry.
+Returning a false or malformed store acknowledgement is a recovery failure,
+not proof that a reservation was released or finalized.
+
 The generic Runtime accepts only `dry_run` and `live` execution modes. A
 platform may choose the default mode through governance, but live Tool writes
 still require the Tool policy's explicit approval, permission, confirmation,

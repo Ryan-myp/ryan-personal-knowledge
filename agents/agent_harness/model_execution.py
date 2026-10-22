@@ -15,7 +15,8 @@ from typing import Any, Callable, Mapping, Optional, Sequence, TYPE_CHECKING
 from .messages import AgentMessage, ModelTurn, ToolCall
 from .model_limits import (
     DEFAULT_MODEL_OUTPUT_CHARS, DEFAULT_STREAM_CHUNKS,
-    ModelOutputLimitError, model_input_chars, model_output_chars, positive_integer,
+    ModelOutputLimitError, ModelTimeoutError,
+    model_input_chars, model_output_chars, positive_integer,
 )
 from .model_stream import consume_model_stream
 from .core.timeouts import DEFAULT_EXECUTION_TIMEOUT_SECONDS
@@ -23,10 +24,6 @@ from .runtime_kernel import TurnRequest
 
 if TYPE_CHECKING:
     from .agent import AgentState
-
-
-class ModelTimeoutError(TimeoutError):
-    """The provider exceeded the configured deadline."""
 
 
 class ModelCapacityError(RuntimeError):
@@ -429,6 +426,7 @@ class ModelExecutionCoordinator:
             model_request = replace(model_request, context={
                 **dict(model_request.context or {}),
                 "model_timeout_seconds": remaining,
+                "_harness_model_deadline": invocation.deadline,
             })
         invocation.stream_output_started = False
         invocation.attempt_started_at = time.monotonic()
@@ -469,6 +467,7 @@ class ModelExecutionCoordinator:
                 mark_stream_output,
             )
         except Exception as error:
+            self.assert_not_interrupted(request, invocation.abort_event)
             raise _ModelInvocationFailure(
                 error, self._retryable_model_error(error)
                 and not invocation.stream_output_started,

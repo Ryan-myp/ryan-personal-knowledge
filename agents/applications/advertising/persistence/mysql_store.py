@@ -127,6 +127,8 @@ class MySQLStore(AdAgentStore):
                 (str(idempotency_key),),
             ).fetchone()
             if row:
+                if row["status"] in {"pending", "uncertain"}:
+                    return False
                 if (
                     row["request_hash"]
                     and request_hash
@@ -159,15 +161,49 @@ class MySQLStore(AdAgentStore):
         self, idempotency_key: str, request_hash: Optional[str] = None,
     ) -> None:
         conn = self._get_conn()
-        conn.execute(
+        cursor = conn.execute(
             "UPDATE write_reservations SET status = ?, updated_at = ? "
-            "WHERE idempotency_key = ? AND "
+            "WHERE idempotency_key = ? AND status = 'pending' AND "
             "(request_hash IS NULL OR request_hash = ?)",
             (
                 "executed", datetime.now(timezone.utc).isoformat(),
                 str(idempotency_key), request_hash,
             ),
         )
+        if cursor.rowcount != 1:
+            raise RuntimeError("write reservation cannot be marked executed")
+
+    def mark_write_uncertain(
+        self, idempotency_key: str, request_hash: str,
+    ) -> bool:
+        cursor = self._get_conn().execute(
+            "UPDATE write_reservations SET status = 'uncertain', updated_at = ? "
+            "WHERE idempotency_key = ? AND request_hash = ? "
+            "AND status IN ('pending', 'uncertain')",
+            (datetime.now(timezone.utc).isoformat(), str(idempotency_key), str(request_hash)),
+        )
+        return cursor.rowcount == 1
+
+    def resolve_write_uncertain(
+        self, idempotency_key: str, *, request_hash: str, executed: bool,
+    ) -> bool:
+        if type(executed) is not bool:
+            raise ValueError("executed must be boolean")
+        conn = self._get_conn()
+        if executed:
+            cursor = conn.execute(
+                "UPDATE write_reservations SET status = 'executed', updated_at = ? "
+                "WHERE idempotency_key = ? AND request_hash = ? "
+                "AND status IN ('pending', 'uncertain')",
+                (datetime.now(timezone.utc).isoformat(), str(idempotency_key), str(request_hash)),
+            )
+        else:
+            cursor = conn.execute(
+                "DELETE FROM write_reservations WHERE idempotency_key = ? "
+                "AND request_hash = ? AND status IN ('pending', 'uncertain')",
+                (str(idempotency_key), str(request_hash)),
+            )
+        return cursor.rowcount == 1
 
     def release_write(
         self, idempotency_key: str, request_hash: Optional[str] = None,

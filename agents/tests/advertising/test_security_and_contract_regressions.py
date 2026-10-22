@@ -2203,7 +2203,12 @@ def test_uncertain_live_write_keeps_reservation_for_recovery():
     reservation = store._get_conn().execute(
         "SELECT status FROM write_reservations"
     ).fetchone()
-    assert reservation["status"] == "pending"
+    assert reservation["status"] == "uncertain"
+    store._get_conn().execute(
+        "UPDATE write_reservations SET updated_at = ?",
+        ("2000-01-01T00:00:00+00:00",),
+    )
+    store._get_conn().commit()
 
     second_client = TemporaryFailureMetaClient()
     second_runtime = AdvertisingComposition(require_llm=False,

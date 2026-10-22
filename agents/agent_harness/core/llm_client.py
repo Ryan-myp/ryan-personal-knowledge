@@ -10,6 +10,7 @@ import re
 import threading
 import math
 import base64
+import time
 from dataclasses import dataclass, field
 from contextlib import contextmanager
 from contextvars import ContextVar
@@ -17,7 +18,8 @@ from typing import Optional, Dict, Any
 
 from ..messages import AgentMessage, ModelTurn, ToolCall
 from ..model_limits import (
-    DEFAULT_MODEL_INPUT_CHARS, ModelInputLimitError, positive_integer,
+    DEFAULT_MODEL_INPUT_CHARS, ModelInputLimitError, ModelInvocationStoppedError,
+    ModelTimeoutError, positive_integer,
     provider_input_chars,
 )
 from .timeouts import DEFAULT_EXECUTION_TIMEOUT_SECONDS
@@ -165,6 +167,9 @@ class _CompletionState:
     kwargs: dict[str, Any]
     attempt_messages: list[dict[str, Any]]
     max_input_chars: int = DEFAULT_MODEL_INPUT_CHARS
+    deadline: float = 0.0
+    cancellation_event: Any = None
+    lease_lost_event: Any = None
     usage_totals: dict[str, int] = field(default_factory=lambda: {
         "input_tokens": 0,
         "output_tokens": 0,
@@ -215,8 +220,12 @@ class LLMClient:
             raise ValueError("LLM_MODEL 未设置；请通过配置或构造参数提供模型名称")
         self.api_key = api_key or os.environ.get("OPENAI_API_KEY", "")
         self.base_url = base_url or os.environ.get("OPENAI_BASE_URL")
-        if timeout_seconds <= 0:
-            raise ValueError("timeout_seconds must be positive")
+        if (
+            isinstance(timeout_seconds, bool)
+            or not math.isfinite(timeout_seconds)
+            or timeout_seconds <= 0
+        ):
+            raise ValueError("timeout_seconds must be positive and finite")
         if max_tool_calls_per_response <= 0:
             raise ValueError("max_tool_calls_per_response must be positive")
         if max_tool_argument_chars <= 0:
@@ -269,6 +278,7 @@ class LLMClient:
             try:
                 response = self._request_completion(state, collector)
                 self._record_response_usage(response, state, collector)
+                self._remaining_sdk_time(state)
                 parsed = self._parse_completion(response, state)
             except LLMStructuredOutputError as error:
                 if self._recover_catalog_error(error, state, request):
@@ -309,6 +319,7 @@ class LLMClient:
         tools: Any,
         request: Any,
     ) -> _CompletionState:
+        started_at = time.monotonic()
         try:
             provider_messages = self._provider_messages(messages)
             provider_messages = self._attach_input_media(
@@ -352,6 +363,11 @@ class LLMClient:
             kwargs=kwargs,
             attempt_messages=provider_messages,
             max_input_chars=max_input_chars,
+            deadline=self._sdk_deadline(
+                request, started_at, kwargs.get("timeout", self.timeout_seconds),
+            ),
+            cancellation_event=getattr(request, "cancellation_event", None),
+            lease_lost_event=getattr(request, "lease_lost_event", None),
         )
 
     def _apply_request_limits(
@@ -378,6 +394,7 @@ class LLMClient:
             state.attempt_messages, state.kwargs.get("tools"),
         ) > state.max_input_chars:
             raise ModelInputLimitError()
+        state.kwargs["timeout"] = self._remaining_sdk_time(state)
         if collector is not None:
             collector.add({"llm_requests": 1})
         try:
@@ -385,6 +402,30 @@ class LLMClient:
         except Exception as error:
             self._log_completion_error(error, state)
             raise
+
+    @staticmethod
+    def _sdk_deadline(request: Any, started_at: float, timeout: float) -> float:
+        deadline = started_at + timeout
+        context = getattr(request, "context", None)
+        parent = context.get("_harness_model_deadline") if isinstance(context, dict) else None
+        if parent is None:
+            return deadline
+        if (
+            isinstance(parent, bool) or not isinstance(parent, (int, float))
+            or not math.isfinite(parent)
+        ):
+            raise ValueError("parent model deadline must be finite")
+        return min(deadline, parent)
+
+    @staticmethod
+    def _remaining_sdk_time(state: _CompletionState) -> float:
+        for token in (state.cancellation_event, state.lease_lost_event):
+            if token is not None and token.is_set():
+                raise ModelInvocationStoppedError()
+        remaining = state.deadline - time.monotonic()
+        if remaining <= 0:
+            raise ModelTimeoutError("model SDK deadline exhausted")
+        return remaining
 
     def _log_completion_error(
         self,

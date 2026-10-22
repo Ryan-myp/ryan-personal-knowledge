@@ -1452,9 +1452,9 @@ class AdAgentStore:
     ) -> bool:
         """Atomically reserve a write key across Runtime processes.
 
-        Both pending and executed reservations block a duplicate within the
-        TTL.  A stale pending reservation is replaceable so a crashed worker
-        does not permanently prevent a later explicit retry.
+        Unresolved reservations never expire into an execution permit: a
+        crashed worker may already have performed the external write. TTL
+        bounds only the replay window for a known executed result.
         """
         with self._lock:
             conn = self._get_conn()
@@ -1468,6 +1468,9 @@ class AdAgentStore:
                     "FROM write_reservations WHERE idempotency_key = ?",
                     (str(idempotency_key),),
                 ).fetchone()
+                if row and row["status"] in {"pending", "uncertain"}:
+                    conn.rollback()
+                    return False
                 if row:
                     if (
                         row["request_hash"]
@@ -1505,12 +1508,52 @@ class AdAgentStore:
     ) -> None:
         with self._lock:
             conn = self._get_conn()
-            conn.execute(
+            cursor = conn.execute(
                 "UPDATE write_reservations SET status = ?, updated_at = ? "
-                "WHERE idempotency_key = ? AND (request_hash IS NULL OR request_hash = ?)",
-                ("executed", datetime.now().isoformat(), idempotency_key, request_hash),
+                "WHERE idempotency_key = ? AND status = 'pending' "
+                "AND (request_hash IS NULL OR request_hash = ?)",
+                ("executed", datetime.now(timezone.utc).isoformat(), idempotency_key, request_hash),
             )
             conn.commit()
+            if cursor.rowcount != 1:
+                raise RuntimeError("write reservation cannot be marked executed")
+
+    def mark_write_uncertain(
+        self, idempotency_key: str, request_hash: str,
+    ) -> bool:
+        with self._lock:
+            conn = self._get_conn()
+            cursor = conn.execute(
+                "UPDATE write_reservations SET status = 'uncertain', updated_at = ? "
+                "WHERE idempotency_key = ? AND request_hash = ? "
+                "AND status IN ('pending', 'uncertain')",
+                (datetime.now(timezone.utc).isoformat(), str(idempotency_key), str(request_hash)),
+            )
+            conn.commit()
+            return cursor.rowcount == 1
+
+    def resolve_write_uncertain(
+        self, idempotency_key: str, *, request_hash: str, executed: bool,
+    ) -> bool:
+        if type(executed) is not bool:
+            raise ValueError("executed must be boolean")
+        with self._lock:
+            conn = self._get_conn()
+            if executed:
+                cursor = conn.execute(
+                    "UPDATE write_reservations SET status = 'executed', updated_at = ? "
+                    "WHERE idempotency_key = ? AND request_hash = ? "
+                    "AND status IN ('pending', 'uncertain')",
+                    (datetime.now(timezone.utc).isoformat(), str(idempotency_key), str(request_hash)),
+                )
+            else:
+                cursor = conn.execute(
+                    "DELETE FROM write_reservations WHERE idempotency_key = ? "
+                    "AND request_hash = ? AND status IN ('pending', 'uncertain')",
+                    (str(idempotency_key), str(request_hash)),
+                )
+            conn.commit()
+            return cursor.rowcount == 1
 
     def release_write(
         self, idempotency_key: str, request_hash: Optional[str] = None,
