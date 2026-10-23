@@ -115,6 +115,7 @@ def _weather_definition(permission: str) -> ToolDefinition:
         resource_type="weather",
         intent_type="weather_lookup",
         intent_aliases=(
+            "天气",
             "查天气",
             "查询天气",
             "天气预报",

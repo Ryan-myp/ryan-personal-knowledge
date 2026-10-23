@@ -4,6 +4,7 @@ import json
 from types import SimpleNamespace
 
 from agents.agent_harness.core.interfaces import ReplayPolicy, RiskLevel, ToolEffect
+from agents.agent_harness.core.tool_selection import ToolSelector
 from agents.applications.advertising.composition.ad_application import (
     AdvertisingComposition,
 )
@@ -15,6 +16,7 @@ from agents.agent_platform.tools.public_reference_apis import (
     public_research_tool_source,
     public_site_quality_tool_source,
 )
+from agents.agent_platform.tools.web_search import web_search_tool_source
 from agents.agent_platform.governance.identity.principal import RequestPrincipal
 
 
@@ -111,6 +113,34 @@ def test_public_reference_tools_are_read_only_bounded_and_mcp_categorized():
         assert definition.max_output_bytes <= 32_000
         assert definition.timeout_seconds <= 60
         assert "external_public_data" in definition.traits
+
+
+def test_weather_question_selects_the_specific_weather_tool():
+    environment = [
+        binding.definition
+        for binding in public_environment_tool_source(
+            required_permission="ads.read",
+        ).list_bindings()
+    ]
+    web_search = [
+        binding.definition
+        for binding in web_search_tool_source(
+            configuration_provider=lambda: {},
+            required_permission="ads.read",
+        ).list_bindings()
+    ]
+
+    selected = ToolSelector().select_relevant(
+        "今天深圳天气怎么样",
+        [*environment, *web_search],
+    )
+    names = [tool.name for tool in selected]
+
+    assert "public_weather_lookup" in names
+    assert "agent_web_search" in names
+    assert ToolSelector().select_relevant(
+        "这个方案怎么样", [*environment, *web_search],
+    ) == []
 
 
 def test_public_reference_tools_appear_in_runtime_mcp_category_listing():

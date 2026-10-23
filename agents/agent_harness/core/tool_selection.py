@@ -680,10 +680,16 @@ class ToolSelector:
             return _semantic_discovery_tools(available_tools)[:limit]
         text = str(user_input or "").casefold()
         verb_text = _request_verbs(user_input, available_tools)
+        publisher_target_match = any(
+            _matches_publisher_target(user_input, tool)
+            or _matches_short_cjk_alias(user_input, tool)
+            for tool in available_tools or ()
+        )
         if (
             _is_short_comparative_followup(text)
             and not _has_explicit_read_action(verb_text)
             and not _has_unnegated_write_cue(verb_text)
+            and not publisher_target_match
         ):
             return []
         prior_inputs = [
@@ -702,10 +708,7 @@ class ToolSelector:
             apply_policies(self.policies, detected_namespaces)
         )
         denied_namespaces = set(detected_namespaces) - allowed_namespaces
-        known_resource_target = any(
-            _matches_publisher_target(user_input, tool)
-            for tool in available_tools or ()
-        )
+        known_resource_target = publisher_target_match
         blocked_policy_operation = bool(denied_namespaces) and (
             _has_unnegated_write_cue(verb_text)
             or (
@@ -869,7 +872,16 @@ class ToolSelector:
         if not query_terms:
             return []
         ranked = [
-            (_relevance_score(query_terms, tool), index, tool)
+            (
+                _relevance_score(query_terms, tool)
+                + (
+                    4
+                    if _matches_short_cjk_alias(user_input, tool)
+                    else 0
+                ),
+                index,
+                tool,
+            )
             for index, tool in enumerate(candidates)
         ]
         relevant = [item for item in ranked if item[0] > 0]
