@@ -58,6 +58,7 @@ class AdvertisingRunService:
         tool_allowlist: Optional[list[str]] = None,
         task_id: Optional[str] = None,
         input_media: tuple[InputMedia, ...] = (),
+        streaming: bool = False,
     ) -> dict:
         runtime = self.runtime
         effective_session_id = str(session_id or uuid.uuid4())
@@ -89,6 +90,7 @@ class AdvertisingRunService:
                 confirmed, confirmation_payload,
             ),
             task_id=task_id,
+            streaming=bool(streaming),
         ))
         application_state = dict(getattr(result, "application_data", None) or {})
         to_dict = getattr(result, "to_dict", None)

@@ -456,6 +456,7 @@ def create_chat_router(context: ApiContext) -> APIRouter:
                     tool_allowlist=request.tool_allowlist,
                     principal=principal,
                     event_callback=observe,
+                    streaming=True,
                 ))
                 final_event = None
                 reply_marker = None
@@ -484,6 +485,15 @@ def create_chat_router(context: ApiContext) -> APIRouter:
                             final_event = payload
                         elif payload.get("type") == "reply":
                             reply_marker = payload
+                        elif payload.get("type") == "model_reasoning_delta":
+                            delta = payload.get("delta")
+                            if isinstance(delta, str) and delta:
+                                yield event({
+                                    "type": "reasoning_delta",
+                                    "event_type": "reasoning_delta",
+                                    "status": "running",
+                                    "content": context.redact(delta),
+                                })
                         elif payload.get("type") == "model_delta":
                             continue
                         else:

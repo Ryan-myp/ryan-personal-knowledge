@@ -166,6 +166,7 @@ class AdApplicationFacadeMixin:
         tool_allowlist: Optional[list[str]] = None,
         task_id: Optional[str] = None,
         input_media: tuple[InputMedia, ...] = (),
+        streaming: bool = False,
     ) -> dict:
         return self._run_service().run(
             user_input=user_input,
@@ -187,6 +188,7 @@ class AdApplicationFacadeMixin:
             tool_allowlist=tool_allowlist,
             task_id=task_id,
             input_media=input_media,
+            streaming=streaming,
         )
 
     def cancel_run(

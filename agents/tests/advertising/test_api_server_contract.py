@@ -2715,6 +2715,10 @@ def test_chat_stream_forwards_model_lifecycle_but_never_model_deltas(fake_server
             "delta": protocol_text,
         })
         observe({
+            "type": "model_reasoning_delta",
+            "delta": "先分析任务，再给最终结论。",
+        })
+        observe({
             "type": "model_end",
             "provider": "configured-model",
             "provider_index": 0,
@@ -2732,8 +2736,11 @@ def test_chat_stream_forwards_model_lifecycle_but_never_model_deltas(fake_server
 
     assert response.status_code == 200
     assert callable(received["event_callback"])
+    assert received["streaming"] is True
     assert '"type": "model_start"' in response.text
     assert '"type": "model_end"' in response.text
+    assert '"type": "reasoning_delta"' in response.text
+    assert "先分析任务，再给最终结论。" in response.text
     assert "<|tool_" not in response.text
     assert "API Error:" not in response.text
     assert "40400 / invalid_user_id" in response.text

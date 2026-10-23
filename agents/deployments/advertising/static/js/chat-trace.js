@@ -13,6 +13,66 @@
             if (status && text) status.textContent = text;
         }
 
+        function resetStreamingThought() {
+            document.getElementById('activeThinkingMessage')?.remove();
+        }
+
+        function updateThinkingToggle(message, collapsed) {
+            const button = message?.querySelector('.thinking-toggle');
+            if (!button) return;
+            button.setAttribute('aria-expanded', String(!collapsed));
+            const state = button.querySelector('.thinking-toggle-state');
+            if (state) state.textContent = collapsed ? '展开' : '收起';
+        }
+
+        function appendStreamingThought(delta) {
+            const text = String(delta || '');
+            if (!text) return;
+            let message = document.getElementById('activeThinkingMessage');
+            if (!message) {
+                message = document.createElement('div');
+                message.id = 'activeThinkingMessage';
+                message.className = 'message agent thinking-message';
+                message.innerHTML = `
+                    <div class="message-avatar">🤖</div>
+                    <div class="message-content">
+                        <div class="thinking-box">
+                            <button class="thinking-toggle" type="button" aria-expanded="true">
+                                <span>思考过程</span>
+                                <small class="thinking-toggle-state">收起</small>
+                            </button>
+                            <pre class="thinking-content" aria-live="polite"></pre>
+                        </div>
+                    </div>
+                `;
+                const toggle = message.querySelector('.thinking-toggle');
+                toggle?.addEventListener('click', () => {
+                    const box = message.querySelector('.thinking-box');
+                    const collapsed = !box.classList.contains('collapsed');
+                    box.classList.toggle('collapsed', collapsed);
+                    updateThinkingToggle(message, collapsed);
+                });
+                document.getElementById('chatContainer')?.appendChild(message);
+            }
+            const content = message.querySelector('.thinking-content');
+            if (!content) return;
+            const combined = `${content.textContent || ''}${text}`;
+            content.textContent = combined.length > 16000
+                ? `…${combined.slice(-15999)}`
+                : combined;
+            const chatArea = document.getElementById('chatArea');
+            if (chatArea) chatArea.scrollTop = chatArea.scrollHeight;
+        }
+
+        function finalizeStreamingThought() {
+            const message = document.getElementById('activeThinkingMessage');
+            if (!message) return;
+            const box = message.querySelector('.thinking-box');
+            box?.classList.add('collapsed');
+            updateThinkingToggle(message, true);
+            message.id = '';
+        }
+
         function renderTraceDetail(node) {
             const detail = document.getElementById('traceDetail');
             if (!node) {
@@ -280,6 +340,7 @@
 
         function startExecutionTrace(userInput) {
             stopDurableRunPolling();
+            resetStreamingThought();
             traceState.activeTurn += 1;
             traceState.nodes = [];
             traceState.events = [];
@@ -503,6 +564,10 @@
 
         function applyExecutionEvent(event) {
             if (!event || !(event.type || event.event_type)) return null;
+            if (String(event.type || event.event_type) === 'reasoning_delta') {
+                appendStreamingThought(event.content || event.delta || '');
+                return null;
+            }
             event = normalizeExecutionEvent(event);
             if (!event || !event.type) return null;
             const duplicateStart = event.type === 'start' && traceState.events.some(item => item.type === 'start');
@@ -595,8 +660,14 @@
                 updateTraceHeader('running', label);
                 updateChatLoadingStatus(label);
             }
-            if (event.type === 'done') updateTraceHeader(event.status || 'succeeded', event.status === 'awaiting_confirmation' ? '等待用户确认后继续' : '本回合已完成');
-            if (event.type === 'error') updateTraceHeader('failed', '本回合未完成，请查看安全事件');
+            if (event.type === 'done') {
+                finalizeStreamingThought();
+                updateTraceHeader(event.status || 'succeeded', event.status === 'awaiting_confirmation' ? '等待用户确认后继续' : '本回合已完成');
+            }
+            if (event.type === 'error') {
+                finalizeStreamingThought();
+                updateTraceHeader('failed', '本回合未完成，请查看安全事件');
+            }
             if (!duplicateStart) pushTraceEvent(event);
             renderExecutionTrace();
             return event;

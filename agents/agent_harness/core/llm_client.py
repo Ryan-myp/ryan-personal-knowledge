@@ -11,9 +11,11 @@ import threading
 import math
 import base64
 import time
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from contextlib import contextmanager
 from contextvars import ContextVar
+from types import SimpleNamespace
 from typing import Optional, Dict, Any
 
 from ..messages import AgentMessage, ModelTurn, ToolCall
@@ -134,13 +136,89 @@ _GATEWAY_INVALID_USER_ID = re.compile(
     r"message\s*=\s*invalid_user_id\b",
 )
 _PRIVATE_THINK_BLOCK = re.compile(
-    r"<think(?:\s[^>]*)?>[\s\S]*?</think\s*>",
+    r"<(?:think|analysis)(?:\s[^>]*)?>[\s\S]*?"
+    r"</(?:think|analysis)\s*>",
     re.IGNORECASE,
 )
 _OPEN_THINK_BLOCK = re.compile(
-    r"<think(?:\s[^>]*)?>[\s\S]*$",
+    r"<(?:think|analysis)(?:\s[^>]*)?>[\s\S]*$",
     re.IGNORECASE,
 )
+_DANGLING_REASONING_CLOSE = re.compile(
+    r"</(?:think|analysis)\s*>",
+    re.IGNORECASE,
+)
+_REASONING_OPEN = re.compile(
+    r"<(?:think|analysis)(?:\s[^>]*)?>",
+    re.IGNORECASE,
+)
+_REASONING_CLOSE = re.compile(
+    r"</(?:think|analysis)\s*>",
+    re.IGNORECASE,
+)
+
+
+class _ReasoningStreamFilter:
+    """Extract analysis/think blocks while never forwarding final-answer text."""
+
+    _OPEN_PREFIXES = ("<analysis", "<think")
+    _CLOSE_PREFIXES = ("</analysis", "</think")
+
+    def __init__(self) -> None:
+        self._buffer = ""
+        self._inside = False
+
+    def feed(self, value: Any) -> str:
+        text = str(value or "")
+        if not text:
+            return ""
+        self._buffer += text
+        emitted: list[str] = []
+        while self._buffer:
+            if self._inside:
+                closing = _REASONING_CLOSE.search(self._buffer)
+                if closing is not None:
+                    if closing.start():
+                        emitted.append(self._buffer[:closing.start()])
+                    self._buffer = self._buffer[closing.end():]
+                    self._inside = False
+                    continue
+                keep = self._partial_suffix(self._buffer, self._CLOSE_PREFIXES)
+                if keep:
+                    emit = self._buffer[:-keep]
+                    self._buffer = self._buffer[-keep:]
+                else:
+                    emit = self._buffer
+                    self._buffer = ""
+                if emit:
+                    emitted.append(emit)
+                break
+            opening = _REASONING_OPEN.search(self._buffer)
+            if opening is not None:
+                self._buffer = self._buffer[opening.end():]
+                self._inside = True
+                continue
+            keep = self._partial_suffix(self._buffer, self._OPEN_PREFIXES)
+            self._buffer = self._buffer[-keep:] if keep else ""
+            break
+        return "".join(emitted)
+
+    def finish(self) -> str:
+        remaining = self._buffer if self._inside else ""
+        self._buffer = ""
+        self._inside = False
+        return remaining
+
+    @staticmethod
+    def _partial_suffix(text: str, prefixes: tuple[str, ...]) -> int:
+        lowered = text.casefold()
+        longest = 0
+        for prefix in prefixes:
+            limit = min(len(lowered), len(prefix) - 1)
+            for length in range(1, limit + 1):
+                if lowered.endswith(prefix[:length]):
+                    longest = max(longest, length)
+        return longest
 _UNEXECUTED_TOOL_HISTORY_NOTICE = (
     "The previous assistant turn contained an unexecuted Tool protocol and "
     "did not perform an action. Ignore that representation. Handle the latest "
@@ -313,6 +391,52 @@ class LLMClient:
                 usage=state.usage_totals,
             )
 
+    def stream(self, messages, tools, request):
+        """Stream reasoning deltas and return one normalized ModelTurn."""
+        state = self._prepare_completion_state(messages, tools, request)
+        collector = _ACTIVE_USAGE_COLLECTOR.get()
+        while True:
+            try:
+                response = yield from self._request_completion_stream(
+                    state, collector,
+                )
+                parsed = self._parse_completion(response, state)
+            except LLMStructuredOutputError as error:
+                if self._recover_catalog_error(error, state, request):
+                    continue
+                if (
+                    state.text_only_recovery_used
+                    and not state.active_tools
+                    and error.safe_reason_code == "tool_not_in_active_catalog"
+                ):
+                    logger.warning(
+                        "LLM text-only recovery still returned an unavailable "
+                        "Tool call; returning a safe no-action response"
+                    )
+                    turn = self._safe_no_action_turn(state)
+                    yield turn
+                    return
+                logger.error(
+                    "LLM Tool-call stream rejected: reason=%s",
+                    self._structured_error_reason(error),
+                )
+                raise
+            if self._schedule_response_retry(parsed, state, request):
+                continue
+            turn = ModelTurn(
+                content=parsed.content,
+                tool_calls=parsed.calls,
+                stop_reason=(
+                    "tool_call" if parsed.calls
+                    else str(
+                        getattr(parsed.choice, "finish_reason", None) or "stop"
+                    )
+                ),
+                usage=state.usage_totals,
+            )
+            yield turn
+            return
+
     def _prepare_completion_state(
         self,
         messages: Any,
@@ -340,6 +464,59 @@ class LLMClient:
             "messages": provider_messages,
             "temperature": 0.1,
         }
+        context = getattr(request, "context", None)
+        context_reasoning = (
+            context.get("reasoning_effort")
+            if isinstance(context, Mapping)
+            else None
+        )
+        reasoning_effort = (
+            str(context_reasoning).strip().lower()
+            if context_reasoning not in (None, "")
+            else os.environ.get("LLM_REASONING_EFFORT", "low").strip().lower()
+        )
+        wants_reasoning = bool(
+            getattr(request, "streaming", False)
+            or context_reasoning not in (None, "")
+        )
+        if (
+            wants_reasoning
+            and str(self.model or "").casefold().startswith("agnes-")
+            and reasoning_effort in {"low", "medium", "high"}
+        ):
+            kwargs["reasoning_effort"] = reasoning_effort
+            language_instruction = {
+                "role": "system",
+                "content": (
+                    "Reasoning language rule: write the reasoning/analysis and "
+                    "the final answer in the user's current language. If the "
+                    "user writes Chinese, use Simplified Chinese even if your "
+                    "internal reasoning defaults to English. Never mix English "
+                    "reasoning with a Chinese answer."
+                ),
+            }
+            last_system = max(
+                (
+                    index for index, message in enumerate(provider_messages)
+                    if message.get("role") == "system"
+                ),
+                default=-1,
+            )
+            provider_messages.insert(last_system + 1, language_instruction)
+            for message in reversed(provider_messages):
+                if message.get("role") != "user":
+                    continue
+                content = message.get("content")
+                if isinstance(content, str):
+                    instruction = (
+                        "【语言要求：推理过程、分析和最终回答全部使用简体中文，"
+                        "不要使用英文。】"
+                        if re.search(r"[\u4e00-\u9fff]", content)
+                        else "Reason in the user's language and keep the final answer in that language."
+                    )
+                    message["content"] = f"{instruction}\n{content}"
+                break
+            kwargs["messages"] = provider_messages
         initial_tool_choice = getattr(request, "initial_tool_choice", None)
         if provider_tools:
             kwargs["tools"] = provider_tools
@@ -350,7 +527,6 @@ class LLMClient:
             )
 
         self._apply_request_limits(kwargs, request)
-        context = getattr(request, "context", None)
         max_input_chars = positive_integer(
             "max_model_input_chars",
             context.get("max_model_input_chars", DEFAULT_MODEL_INPUT_CHARS)
@@ -402,6 +578,119 @@ class LLMClient:
         except Exception as error:
             self._log_completion_error(error, state)
             raise
+
+    def _request_completion_stream(
+        self,
+        state: _CompletionState,
+        collector: Any,
+    ):
+        state.kwargs["messages"] = state.attempt_messages
+        state.kwargs["stream"] = True
+        if provider_input_chars(
+            state.attempt_messages, state.kwargs.get("tools"),
+        ) > state.max_input_chars:
+            raise ModelInputLimitError()
+        state.kwargs["timeout"] = self._remaining_sdk_time(state)
+        if collector is not None:
+            collector.add({"llm_requests": 1})
+        try:
+            response_stream = self._get_client().chat.completions.create(
+                **state.kwargs,
+            )
+        except Exception as error:
+            self._log_completion_error(error, state)
+            raise
+
+        content_parts: list[str] = []
+        calls: dict[int, dict[str, str]] = {}
+        finish_reason = "stop"
+        raw_usage = None
+        reasoning = _ReasoningStreamFilter()
+        try:
+            for chunk in response_stream:
+                chunk_usage = getattr(chunk, "usage", None)
+                if chunk_usage is not None:
+                    raw_usage = chunk_usage
+                choices = tuple(getattr(chunk, "choices", ()) or ())
+                if not choices:
+                    continue
+                choice = choices[0]
+                delta = getattr(choice, "delta", None)
+                if delta is not None:
+                    for field_name in ("reasoning_content", "reasoning"):
+                        value = self._tool_value(delta, field_name, "")
+                        if isinstance(value, str) and value:
+                            yield {"reasoning_delta": value}
+                    content = self._tool_value(delta, "content", "")
+                    if content not in (None, ""):
+                        text = str(content)
+                        content_parts.append(text)
+                        reasoning_delta = reasoning.feed(text)
+                        if reasoning_delta:
+                            yield {"reasoning_delta": reasoning_delta}
+                    for raw_call in tuple(
+                        self._tool_value(delta, "tool_calls", ()) or ()
+                    ):
+                        self._append_stream_tool_call(calls, raw_call)
+                reason = getattr(choice, "finish_reason", None)
+                if reason:
+                    finish_reason = str(reason)
+        finally:
+            close = getattr(response_stream, "close", None)
+            if callable(close):
+                close()
+        tail = reasoning.finish()
+        if tail:
+            yield {"reasoning_delta": tail}
+        response = SimpleNamespace(
+            choices=[SimpleNamespace(
+                message=SimpleNamespace(
+                    content="".join(content_parts),
+                    tool_calls=[
+                        SimpleNamespace(
+                            id=item["id"],
+                            function=SimpleNamespace(
+                                name=item["name"],
+                                arguments=item["arguments"],
+                            ),
+                        )
+                        for item in calls.values()
+                    ],
+                ),
+                finish_reason=finish_reason,
+            )],
+            usage=raw_usage,
+        )
+        self._record_response_usage(response, state, collector)
+        return response
+
+    @staticmethod
+    def _append_stream_tool_call(
+        calls: dict[int, dict[str, str]],
+        raw_call: Any,
+    ) -> None:
+        index = getattr(raw_call, "index", 0)
+        try:
+            index = int(index)
+        except (TypeError, ValueError):
+            index = 0
+        item = calls.setdefault(index, {
+            "id": "",
+            "name": "",
+            "arguments": "",
+        })
+        call_id = getattr(raw_call, "id", None)
+        if isinstance(call_id, str):
+            item["id"] += call_id
+        function = getattr(raw_call, "function", None)
+        if function is None:
+            return
+        name = getattr(function, "name", None)
+        if isinstance(name, str):
+            item["name"] += name
+        arguments = getattr(function, "arguments", None)
+        if isinstance(arguments, str):
+            item["arguments"] += arguments
 
     @staticmethod
     def _sdk_deadline(request: Any, started_at: float, timeout: float) -> float:
@@ -747,7 +1036,8 @@ class LLMClient:
     @staticmethod
     def _strip_private_think(content: str) -> str:
         text = _PRIVATE_THINK_BLOCK.sub("", str(content or ""))
-        return _OPEN_THINK_BLOCK.sub("", text).strip()
+        text = _OPEN_THINK_BLOCK.sub("", text)
+        return _DANGLING_REASONING_CLOSE.sub("", text).strip()
 
     @staticmethod
     def _tool_protocol_repair_messages(

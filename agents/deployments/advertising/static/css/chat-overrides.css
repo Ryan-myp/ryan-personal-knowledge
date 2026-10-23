@@ -3240,6 +3240,19 @@
         .creation-card-summary-item { display: grid; flex: 0 0 auto; min-width: 106px; max-width: 160px; gap: 2px; padding: 5px 6px; border: 1px solid #2b5065; border-radius: 6px; color: #aec8ce; background: #102638; cursor: pointer; font: inherit; text-align: left; }
         .creation-card-summary-item:hover, .creation-card-summary-item:focus-visible { color: #eaf7f5; border-color: #58e6d0; background: #143d4a; outline: none; }
         .creation-card-summary-item.template-prefilled { border-color: rgba(88, 230, 208, .48); }
+        .thinking-message .message-content { max-width: min(780px, 88%); }
+        .thinking-box { overflow: hidden; border: 1px solid #31566a; border-radius: 8px; background: #0d2031; }
+        .thinking-toggle { display: flex; align-items: center; justify-content: space-between; width: 100%; padding: 8px 10px; border: 0; color: #b8d5dc; background: transparent; cursor: pointer; font: inherit; font-size: 10px; font-weight: 700; text-align: left; }
+        .thinking-toggle:hover, .thinking-toggle:focus-visible { color: #eaf7f5; background: #132d3f; outline: none; }
+        .thinking-toggle-state { color: #7899a8; font-size: 9px; font-weight: 500; }
+        .thinking-content { max-height: 260px; margin: 0; padding: 0 11px 10px; overflow: auto; color: #a9c3ca; background: transparent; font: 10px/1.62 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; scrollbar-width: thin; }
+        .thinking-box.collapsed .thinking-content { display: none; }
+        .thinking-box.collapsed .thinking-toggle { border-bottom: 0; }
+        body.light-theme .thinking-box { border-color: #b5ced1; background: #edf6f5; }
+        body.light-theme .thinking-toggle { color: #41616a; }
+        body.light-theme .thinking-toggle:hover,
+        body.light-theme .thinking-toggle:focus-visible { color: #173d45; background: #e1f4f1; }
+        body.light-theme .thinking-content { color: #4c6972; }
         .creation-card-summary-item span { overflow: hidden; color: #7595a2; font-size: 7px; text-overflow: ellipsis; white-space: nowrap; }
         .creation-card-summary-item strong { overflow: hidden; color: inherit; font-size: 8px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
         .creation-card-summary-item.pending { border-color: rgba(245,158,11,.42); }

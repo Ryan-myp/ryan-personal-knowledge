@@ -61,6 +61,16 @@ class _QueuedCompletions:
         return self.responses[index]
 
 
+class _StreamingCompletions:
+    def __init__(self, chunks):
+        self.chunks = list(chunks)
+        self.requests = []
+
+    def create(self, **kwargs):
+        self.requests.append(kwargs)
+        return iter(self.chunks)
+
+
 def _client(message, *, usage=None):
     completions = _Completions(SimpleNamespace(
         choices=[SimpleNamespace(message=message, finish_reason="tool_calls")],
@@ -70,6 +80,48 @@ def _client(message, *, usage=None):
     client = LLMClient(model="test-model", api_key="test-only")
     client._client = api
     return client, completions
+
+
+def test_llm_client_streams_analysis_as_reasoning_and_keeps_it_out_of_final_text():
+    chunks = [
+        SimpleNamespace(choices=[SimpleNamespace(
+            delta=SimpleNamespace(content="<analy", tool_calls=[]),
+            finish_reason=None,
+        )]),
+        SimpleNamespace(choices=[SimpleNamespace(
+            delta=SimpleNamespace(content="sis>先确认图片方向。", tool_calls=[]),
+            finish_reason=None,
+        )]),
+        SimpleNamespace(choices=[SimpleNamespace(
+            delta=SimpleNamespace(
+                content="</analysis>这是最终答复。",
+                tool_calls=[],
+            ),
+            finish_reason="stop",
+        )]),
+    ]
+    completions = _StreamingCompletions(chunks)
+    client = LLMClient(model="test-model", api_key="test-only")
+    client._client = SimpleNamespace(
+        chat=SimpleNamespace(completions=completions),
+    )
+
+    events = list(client.stream(
+        [AgentMessage.user("生成一张图片。")],
+        [],
+        TurnRequest(user_input="生成一张图片。"),
+    ))
+
+    reasoning = "".join(
+        event["reasoning_delta"]
+        for event in events
+        if isinstance(event, dict) and event.get("reasoning_delta")
+    )
+    turns = [event for event in events if isinstance(event, ModelTurn)]
+    assert reasoning == "先确认图片方向。"
+    assert len(turns) == 1
+    assert turns[0].content == "这是最终答复。"
+    assert completions.requests[0]["stream"] is True
 
 
 def test_llm_client_implements_generic_harness_model_tool_call_contract():
@@ -1031,6 +1083,26 @@ def test_llm_client_strips_private_think_block_from_normal_answer():
 
     assert result.content == "Here is the answer."
     assert "internal reasoning" not in result.content
+    assert len(completions.requests) == 1
+
+
+def test_llm_client_strips_analysis_blocks_with_mixed_reasoning_tags():
+    client, completions = _client(SimpleNamespace(
+        content=(
+            "<analysis>先分析用户目标，再给结论。</think>"
+            "这是最终中文答复。"
+        ),
+        tool_calls=[],
+    ))
+
+    result = client.complete(
+        [AgentMessage.user("回答。")],
+        [_tool()],
+        TurnRequest(user_input="回答。"),
+    )
+
+    assert result.content == "这是最终中文答复。"
+    assert "先分析用户目标" not in result.content
     assert len(completions.requests) == 1
 
 

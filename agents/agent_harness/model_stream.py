@@ -21,6 +21,7 @@ def consume_model_stream(
     parse_calls: Callable[..., Any],
     check: Callable[[], None],
     emit_delta: Callable[[str], None],
+    emit_reasoning: Callable[[str], None] | None = None,
 ) -> ModelTurn:
     parts: list[str] = []
     calls = []
@@ -37,11 +38,19 @@ def consume_model_stream(
                     raise ModelOutputLimitError()
                 final = chunk
                 continue
-            delta, chunk_calls = _stream_chunk(chunk, parse_calls)
+            delta, reasoning_delta, chunk_calls = _stream_chunk(
+                chunk, parse_calls,
+            )
             used += model_output_chars(ModelTurn(content=delta, tool_calls=chunk_calls))
             if used > max_chars:
                 raise ModelOutputLimitError()
             calls.extend(chunk_calls)
+            if reasoning_delta and emit_reasoning is not None:
+                for offset in range(0, len(reasoning_delta), delta_chars):
+                    check()
+                    emit_reasoning(
+                        reasoning_delta[offset:offset + delta_chars],
+                    )
             if not delta:
                 continue
             parts.append(delta)
@@ -84,13 +93,21 @@ def _close_stream(iterator: Any, failed: bool) -> None:
         logger.warning("Model stream cleanup failed: %s", type(error).__name__)
 
 
-def _stream_chunk(chunk: Any, parse_calls: Callable[..., Any]) -> tuple[str, Any]:
+def _stream_chunk(
+    chunk: Any,
+    parse_calls: Callable[..., Any],
+) -> tuple[str, str, Any]:
     if isinstance(chunk, str):
-        return chunk, ()
+        return chunk, "", ()
     if isinstance(chunk, Mapping):
+        reasoning_delta = chunk.get(
+            "reasoning_delta",
+            chunk.get("reasoning", ""),
+        )
         delta = chunk.get("delta", chunk.get("content", ""))
         return (
             str(delta) if delta is not None else "",
+            str(reasoning_delta) if reasoning_delta is not None else "",
             parse_calls(chunk.get("tool_calls") or ()),
         )
-    return "", ()
+    return "", "", ()

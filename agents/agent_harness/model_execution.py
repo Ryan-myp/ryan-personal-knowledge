@@ -274,6 +274,11 @@ class ModelExecutionCoordinator:
                 on_output()
             self.emit("model_delta", request, delta=delta)
 
+        def emit_reasoning(delta: str) -> None:
+            if on_output is not None:
+                on_output()
+            self.emit("model_reasoning_delta", request, delta=delta)
+
         return consume_model_stream(
             iterator,
             max_chars=self.options.max_model_output_chars,
@@ -284,6 +289,7 @@ class ModelExecutionCoordinator:
                 lambda: self.assert_not_interrupted(request, abort_event)
             ),
             emit_delta=emit_delta,
+            emit_reasoning=emit_reasoning,
         )
 
     @staticmethod
