@@ -340,6 +340,51 @@ def test_media_model_profile_defaults_to_official_endpoint_and_catalog_is_public
     }
 
 
+def test_legacy_agnes_com_media_profiles_resolve_to_the_official_cn_endpoint(
+    tmp_path,
+):
+    service, _runtime, vault, _clients = make_service(tmp_path)
+    image_id = service.save_model_profile(
+        name="Legacy Image",
+        model="agnes-image-2.5-flash",
+        base_url="https://apihub.agnes-ai.cn/v1",
+        api_key="image-key",
+        purpose="image_generation",
+    )
+    video_id = service.save_model_profile(
+        name="Legacy Video",
+        model="agnes-video-2.5-flash",
+        base_url="https://apihub.agnes-ai.cn/v1",
+        api_key="video-key",
+        purpose="video_generation",
+    )
+    state = vault.read()
+    for profile in state["models"]:
+        profile["base_url"] = "https://apihub.agnes-ai.com/v1"
+    vault.write(state)
+
+    assert service.model_configuration_for("image_generation") == {
+        "name": "Legacy Image",
+        "model": "agnes-image-2.5-flash",
+        "base_url": "https://apihub.agnes-ai.cn/v1",
+        "api_key": "image-key",
+    }
+    assert service.model_configuration_for("video_generation") == {
+        "name": "Legacy Video",
+        "model": "agnes-video-2.5-flash",
+        "base_url": "https://apihub.agnes-ai.cn/v1",
+        "api_key": "video-key",
+    }
+    profiles = {
+        profile["id"]: profile
+        for profile in service.snapshot()["models"]["profiles"]
+    }
+    assert profiles[image_id]["base_url"] == "https://apihub.agnes-ai.cn/v1"
+    assert profiles[video_id]["base_url"] == "https://apihub.agnes-ai.cn/v1"
+    assert profiles[image_id]["supported"] is True
+    assert profiles[video_id]["supported"] is True
+
+
 def test_media_model_profile_rejects_non_agnes_endpoint(tmp_path):
     service, runtime, vault, clients = make_service(tmp_path)
 

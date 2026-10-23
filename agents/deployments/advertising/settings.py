@@ -691,12 +691,23 @@ class AgentSettingsService:
             self.vault.write(state)
 
     def _safe_profile(self, profile: Mapping[str, Any]) -> dict[str, Any]:
+        purpose = self._profile_purpose(profile)
+        base_url = str(profile.get("base_url") or "")
+        if purpose in FREE_AGNES_MEDIA_MODELS:
+            try:
+                base_url = validate_free_media_configuration(
+                    purpose,
+                    profile.get("model"),
+                    base_url,
+                )
+            except ValueError:
+                pass
         return {
             "id": str(profile.get("id") or ""),
             "name": str(profile.get("name") or ""),
             "model": str(profile.get("model") or ""),
-            "base_url": str(profile.get("base_url") or ""),
-            "purpose": self._profile_purpose(profile),
+            "base_url": base_url,
+            "purpose": purpose,
             "supported": self._profile_supports_free_media(profile),
             "api_key_configured": bool(profile.get("api_key")),
             "source": "vault",

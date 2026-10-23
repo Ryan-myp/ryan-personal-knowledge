@@ -8,6 +8,7 @@ from urllib.parse import urlsplit
 
 
 AGNES_MEDIA_BASE_URL = "https://apihub.agnes-ai.cn/v1"
+LEGACY_AGNES_MEDIA_BASE_URL = "https://apihub.agnes-ai.com/v1"
 FREE_AGNES_MEDIA_MODELS: dict[str, dict[str, str]] = {
     "image_generation": {
         "model": "agnes-image-2.5-flash",
@@ -42,6 +43,8 @@ def validate_free_media_configuration(
         raise ValueError("only the latest free Agnes Flash media model is allowed")
 
     raw = str(base_url or "").strip().rstrip("/")
+    if raw == LEGACY_AGNES_MEDIA_BASE_URL:
+        raw = AGNES_MEDIA_BASE_URL
     if not raw:
         return AGNES_MEDIA_BASE_URL
     try:
