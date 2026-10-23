@@ -120,6 +120,28 @@ test('fenced code preserves line breaks and literal markdown', () => {
     assert.doesNotMatch(html, /<h2>|<strong>/);
 });
 
+test('escaped newlines in prose render as Markdown line breaks', () => {
+    const html = context.formatContent(
+        '请确认以下信息：\\n1. 推广目标？\\n2. 预算模式？\\n3. 预算金额？',
+    );
+
+    assert.match(html, /请确认以下信息：/);
+    assert.match(html, /<ol>/);
+    assert.match(html, /推广目标/);
+    assert.match(html, /预算模式/);
+    assert.doesNotMatch(html, /\\n/);
+});
+
+test('escaped newline normalization does not alter code spans or fences', () => {
+    const html = context.formatContent(
+        '示例 `a\\nb` 后继续\\n第二行\n\n```text\nline\\nliteral\n```',
+    );
+
+    assert.match(html, /<code>a\\nb<\/code>/);
+    assert.match(html, /line\\nliteral/);
+    assert.match(html, /第二行/);
+});
+
 test('Mermaid code fences preserve their language marker for diagram rendering', () => {
     const html = context.formatContent('```mermaid\ngraph TD\nA --> B\n```');
 

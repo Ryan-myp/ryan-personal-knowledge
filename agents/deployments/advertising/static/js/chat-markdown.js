@@ -22,9 +22,25 @@ const chatMarkdownParser = new marked.Marked({
     renderer: chatMarkdownRenderer,
 });
 
+function normalizeEscapedLineBreaks(content) {
+    let inFence = false;
+    return String(content).split(/\r?\n/).map(line => {
+        if (/^\s*```/.test(line)) {
+            inFence = !inFence;
+            return line;
+        }
+        if (inFence) return line;
+        return line.split(/(`[^`]*`)/g).map(part => (
+            part.startsWith('`') && part.endsWith('`')
+                ? part
+                : part.replace(/\\n/g, '\n')
+        )).join('');
+    }).join('\n');
+}
+
 function formatContent(content) {
     if (content == null || content === '') return '';
-    const source = String(content).replace(/\r\n?/g, '\n');
+    const source = normalizeEscapedLineBreaks(content).replace(/\r\n?/g, '\n');
     return DOMPurify.sanitize(chatMarkdownParser.parse(source), {
         ALLOWED_TAGS: [
             'p', 'br', 'hr', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
