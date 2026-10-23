@@ -1,5 +1,6 @@
 """Authorized local template catalog and preview services for conversational Tools."""
 
+import copy
 import logging
 from typing import Any, Mapping
 
@@ -8,6 +9,58 @@ from agents.applications.advertising.persistence.errors import PersistenceError
 from .templates import CreationTemplateError
 
 logger = logging.getLogger(__name__)
+
+
+def pending_template_input_tool(runtime: Any, request: Any, tools: Any) -> Any:
+    """Keep incomplete template edits on the registered, read-only draft Tool."""
+    context = request.context if isinstance(request.context, Mapping) else {}
+    template_id = context.get("creation_template_id")
+    if not template_id or context.get("confirmed"):
+        return None
+    principal = getattr(request, "principal", None)
+    scope = getattr(principal, "account_scope", None)
+    manager = runtime._creation_template_manager_for_request(scope)
+    template = manager.get(
+        str(request.tenant_id or "default"), str(request.user_id or "anonymous"),
+        str(template_id), account_id=context.get("account_id"), account_scope=scope,
+    )
+    if not template:
+        return None
+    provider = str(template.get("provider") or "")
+    required = template.get("required_input_fields") or []
+    if not required:
+        return None
+    intent = ParsedIntent(
+        "create_campaign", request.user_input, [provider],
+        scoped_parameters=dict(context.get("platform_params") or {}),
+    )
+    applied = runtime.apply_creation_template_to_intent(
+        intent, str(template_id), account_id=context.get("account_id"),
+        account_scope=scope, tenant_id=str(request.tenant_id or "default"),
+        user_id=str(request.user_id or "anonymous"),
+    )
+    values = applied.scoped_parameters.get(provider, {})
+    missing = [
+        path for path in required
+        if runtime._creation_path_value(values, path)[1] in (None, "", [])
+    ]
+    if not missing:
+        return None
+    candidates = [
+        tool for tool in tools
+        if getattr(tool, "resource_type", "") == "creation_template"
+        and getattr(tool, "action", "") == "get"
+        and getattr(tool, "is_read_tool", False)
+        and runtime._canonical_platform(tool.namespace)
+        == runtime._canonical_platform(provider)
+    ]
+    if len(candidates) != 1:
+        return None
+    if isinstance(request.context, dict):
+        request.context["_agent_template_input_fields"] = missing
+        request.context["_agent_template_preview_tool"] = candidates[0].name
+        request.context["_agent_tool_choice_required"] = True
+    return candidates[0]
 
 
 class CreationTemplateToolService:
@@ -75,9 +128,10 @@ class CreationTemplateToolService:
             raise CreationTemplateError("模板不存在、已停用或不在当前账户授权范围内。")
         values = manager.validate_overrides(template, arguments.get("values") or {})
         account = request["account_id"] or template.get("account_id")
+        draft_values = self._draft_values(context, template, values)
         intent = ParsedIntent(
             "create_campaign", "预览已选择的广告创建模板", [self.namespace],
-            scoped_parameters={self.namespace: values},
+            scoped_parameters={self.namespace: draft_values},
         )
         applied = self.runtime.apply_creation_template_to_intent(
             intent, template_id, **{**request, "account_id": account},
@@ -101,3 +155,24 @@ class CreationTemplateToolService:
                 "payload": cards[0],
             },
         )
+
+    def _draft_values(
+        self, context: Any, template: Mapping[str, Any], overrides: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        previous = context.metadata.get("creation_request") or {}
+        params = previous.get("platform_params") or {}
+        values: dict[str, Any] = {}
+        if previous.get("creation_template_id") == template.get("template_id"):
+            values = copy.deepcopy(params.get(self.namespace) or {})
+        blueprint = self.runtime.creation_blueprints.get(
+            str(template["blueprint_id"]), str(template["blueprint_version"]),
+        )
+        blueprint = self.runtime.creation_card_builder.expand_blueprint(blueprint)
+        fields = {str(field["path"]): field for field in blueprint.fields}
+        for path, value in overrides.items():
+            values[path] = copy.deepcopy(value)
+            self.runtime._set_creation_path(values, path, value)
+            tool_name, schema_path = str(fields[path]["tool_ref"]).split(".", 1)
+            target = values.setdefault(tool_name, {})
+            self.runtime._set_creation_path(target, schema_path, value)
+        return values

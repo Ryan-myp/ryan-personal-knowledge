@@ -49,6 +49,9 @@ from agents.applications.advertising.persistence.models import (
     ScheduledTaskRecord,
     ScheduledTaskRunRecord,
 )
+from agents.applications.advertising.creation.template_tool_service import (
+    pending_template_input_tool,
+)
 from agents.applications.advertising.persistence.session_manager import SessionManager
 from agents.applications.advertising.persistence.adapters import (
     PersistenceTranscriptStore,
@@ -153,6 +156,37 @@ def _select_blueprint_tools(
                 selected.append(lookup)
     selected = list({tool.name: tool for tool in selected}.values())
     return selected[:MAX_RELEVANT_TOOLS_PER_TURN]
+
+
+def _filter_unapproved_live_write_tools(
+    runtime: Any,
+    request: TurnRequest,
+    tools: Any,
+) -> list[Any]:
+    """Hide external writes that the active live policy cannot execute.
+
+    Model-visible Tools and executable Tools must use the same write boundary.
+    Otherwise the selector can offer an unapproved legacy Tool and the model
+    only discovers the mismatch when the policy rejects the call.
+    """
+    items = list(tools or ())
+    if str(getattr(request, "execution_mode", "") or "").lower() != "live":
+        return items
+    approved = set(getattr(runtime, "_live_approved_tools", ()) or ())
+    visible: list[Any] = []
+    for tool in items:
+        if not bool(getattr(tool, "is_write_tool", False)):
+            visible.append(tool)
+            continue
+        effect = getattr(tool, "effect_class", "")
+        effect = str(getattr(effect, "value", effect) or "").lower()
+        if effect == "internal_write":
+            visible.append(tool)
+            continue
+        name = str(getattr(tool, "name", "") or "")
+        if name and name in approved:
+            visible.append(tool)
+    return visible
 
 
 def _creation_blueprint_request_error(
@@ -596,7 +630,8 @@ class AdApplicationAssembly:
             request_context = (
                 request.context if isinstance(request.context, Mapping) else {}
             )
-            selected = _select_blueprint_tools(
+            preview = pending_template_input_tool(runtime, request, tools)
+            selected = [preview] if preview is not None else _select_blueprint_tools(
                 runtime, request_context, tools,
                 include_lookups=str(request.execution_mode or "dry_run") == "live",
             )
@@ -649,7 +684,15 @@ class AdApplicationAssembly:
                     conversation_context=conversation_context,
                 ):
                     request_context["_agent_tool_choice_required"] = True
+            selected = _filter_unapproved_live_write_tools(
+                runtime, request, selected,
+            )
             if isinstance(request.context, dict):
+                request.context["_agent_local_catalog"] = bool(selected) and all(
+                    bool(getattr(item, "is_read_tool", False))
+                    and {"local", "catalog"} <= set(getattr(item, "traits", ()) or ())
+                    for item in selected
+                )
                 request.context["_agent_tool_namespaces"] = list(dict.fromkeys(
                     str(getattr(item, "namespace", "") or "")
                     for item in selected

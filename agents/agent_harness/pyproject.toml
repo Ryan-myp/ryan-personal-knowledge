@@ -23,6 +23,7 @@ package-dir = { "" = "../.." }
 [tool.setuptools.packages.find]
 where = ["../.."]
 include = ["agents", "agents.agent_harness", "agents.agent_harness.*"]
+exclude = ["agents.agent_harness.build*", "agents.agent_harness.dist*"]
 
 [tool.setuptools.package-data]
 agents = ["agent_harness/py.typed"]

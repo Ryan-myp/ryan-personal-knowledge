@@ -156,6 +156,13 @@
         function reopenCreationCard(cardId) {
             const card = workbenchState.cards.get(String(cardId)) || creationCardState?.get(cardId);
             if (!card) return;
+            if (card.blueprint_id) {
+                pendingBlueprintRequest = {
+                    ...creationContextForCard(card),
+                    session_id: sessionId,
+                };
+                pendingBlueprintContinuation = creationContinuationContextForCard(card, '', sessionId);
+            }
             renderCreationCardInWorkbench(card);
         }
 

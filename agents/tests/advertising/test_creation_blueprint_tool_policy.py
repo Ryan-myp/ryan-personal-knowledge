@@ -1,9 +1,11 @@
 from pathlib import Path
 from types import SimpleNamespace
 
+from agents.agent_harness.core.tool_selection import ToolSelector
 from agents.agent_harness.core.tool_registry import SimpleToolRegistry
 from agents.agent_platform.tools.policy import ToolExecutionPolicy
 from agents.applications.advertising.composition.ad_application_assembly import (
+    AdApplicationAssembly,
     _select_blueprint_tools,
 )
 from agents.applications.advertising.execution.ad_tool_policy_factory import (
@@ -344,3 +346,70 @@ def test_tiktok_template_context_excludes_web_search_from_creation_tools():
 
     assert {tool.name for tool in selected} == set(TIKTOK_BLUEPRINT.tools)
     assert "agent_web_search" not in {tool.name for tool in selected}
+
+
+def test_live_tool_visibility_hides_unapproved_tiktok_legacy_write():
+    tools = [
+        binding.definition
+        for binding in create_tiktok_tool_source().list_bindings()
+    ]
+    runtime = SimpleNamespace(
+        _live_approved_tools={
+            "tiktok_smart_plus_create_campaign",
+            "tiktok_smart_plus_create_adgroup",
+            "tiktok_smart_plus_create_ad",
+        },
+        creation_blueprints=SimpleNamespace(get=lambda *_args, **_kwargs: None),
+        _canonical_platform=lambda value: str(value or "").lower(),
+        registry=SimpleNamespace(list_all=lambda: tools),
+    )
+    request = SimpleNamespace(
+        user_input=(
+            "广告系列名称：agent-test1，预算模式：BUDGET_MODE_TOTAL，"
+            "预算金额：50 USD"
+        ),
+        execution_mode="live",
+        context={
+            "_agent_tool_selection_context": (
+                "创建 TikTok 广告系列",
+                "商品销售 (PRODUCT_SALES)",
+            ),
+        },
+        principal=SimpleNamespace(account_scope=None),
+    )
+
+    selected = AdApplicationAssembly._tool_selector(
+        runtime,
+        ToolSelector(max_tools_per_namespace=20, max_read_tools_per_turn=16),
+    )(request, tools)
+    names = {tool.name for tool in selected}
+
+    assert "tiktok_smart_plus_create_campaign" in names
+    assert "tiktok_create_campaign" not in names
+
+
+def test_dry_run_tool_visibility_keeps_legacy_tiktok_write():
+    tools = [
+        binding.definition
+        for binding in create_tiktok_tool_source().list_bindings()
+    ]
+    runtime = SimpleNamespace(
+        _live_approved_tools=set(),
+        creation_blueprints=SimpleNamespace(get=lambda *_args, **_kwargs: None),
+        _canonical_platform=lambda value: str(value or "").lower(),
+        registry=SimpleNamespace(list_all=lambda: tools),
+    )
+    request = SimpleNamespace(
+        user_input="创建 TikTok 广告系列",
+        execution_mode="dry_run",
+        context={},
+        principal=SimpleNamespace(account_scope=None),
+    )
+
+    selected = AdApplicationAssembly._tool_selector(
+        runtime,
+        ToolSelector(max_tools_per_namespace=20, max_read_tools_per_turn=16),
+    )(request, tools)
+    names = {tool.name for tool in selected}
+
+    assert "tiktok_create_campaign" in names

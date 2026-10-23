@@ -9,7 +9,7 @@ import json
 import time
 from typing import Any, Callable, Iterable, Mapping, Optional
 
-from agents.agent_harness import ToolCallContext
+from agents.agent_harness import ToolCallContext, redact_for_persistence
 from agents.agent_harness.core.interfaces import ToolSchema
 from agents.agent_harness.core.tool_registry import validate_tool_input
 
@@ -91,6 +91,10 @@ def _mode(request: Any) -> str:
 
 class IdempotencyStoreUnavailable(RuntimeError):
     """The durable replay boundary could not make a safe decision."""
+
+
+class ToolArgumentValidationError(ValueError):
+    """An application-owned, user-actionable input failure with no private data."""
 
 
 @dataclass(frozen=True)
@@ -277,12 +281,14 @@ class ToolExecutionPolicy:
         self, context: ToolCallContext, error: Exception
     ) -> dict[str, Any]:
         call = context.tool_call
+        reason = (
+            str(redact_for_persistence(str(error)))[:1000]
+            if isinstance(error, ToolArgumentValidationError) else
+            "Tool input could not be resolved from the selected template and request context"
+        )
         result = {
             "block": True,
-            "reason": (
-                "Tool input could not be resolved from the selected "
-                "template and request context"
-            ),
+            "reason": reason,
             "terminate": True,
             "needs_input": True,
             "runtime_signals": {

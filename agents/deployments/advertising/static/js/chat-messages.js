@@ -813,15 +813,6 @@
         function isCreationDraftContinuation(text) {
             const normalized = String(text || '').trim().toLowerCase();
             if (!normalized) return false;
-            if (/(?:不要|别|先不|暂不|不再).{0,5}(?:创建|新建|提交|执行)/.test(normalized)) {
-                return false;
-            }
-            if ([
-                '创建', '新建', '提交', '执行', '继续', '确认',
-                '修改', '调整', '改成', '改为', '调到', 'change',
-                'update', 'edit', 'submit', 'create', 'continue', 'confirm',
-            ].some(cue => normalized.includes(cue))) return true;
-
             const reply = normalizeCreationReply(text);
             const continuation = pendingBlueprintContinuation;
             const choices = [
@@ -836,9 +827,18 @@
                     )),
                 ]),
             ].map(normalizeCreationReply).filter(Boolean);
-            return choices.some(choice => choice === reply || (
+            const matchesField = choices.some(choice => choice === reply || (
                 choice.length >= 3 && reply.includes(choice)
             ));
+            if (matchesField) return true;
+            if (/(?:不要|别|先不|暂不|不再).{0,5}(?:创建|新建|提交|执行)/.test(normalized)) {
+                return false;
+            }
+            return [
+                '创建', '新建', '提交', '执行', '继续', '确认',
+                '修改', '调整', '改成', '改为', '调到', 'change',
+                'update', 'edit', 'submit', 'create', 'continue', 'confirm',
+            ].some(cue => normalized.includes(cue));
         }
 
         function captureChatMessage(text, submittedAttachments) {

@@ -422,10 +422,12 @@ function reconcileLookupSelection(selectedValue, options, multiple) {
                     ? (multiple ? tokens : (tokens[0] || undefined))
                     : undefined;
                 const key = lookupFieldName(field, context);
+                const changed = lookupValueKey(lookupFieldValue(field, context)) !== lookupValueKey(nextValue)
+                    || lookupValueKey(tokenStore[key]) !== lookupValueKey(nextTokens);
                 if (nextTokens) tokenStore[key] = nextTokens;
                 else delete tokenStore[key];
                 if (typeof context.onSelection === 'function') {
-                    context.onSelection({ value: nextValue, tokens: nextTokens, option });
+                    context.onSelection({ value: nextValue, tokens: nextTokens, option, changed });
                 }
                 renderSelected();
                 renderResults();
@@ -505,8 +507,23 @@ function reconcileLookupSelection(selectedValue, options, multiple) {
             async function resolvePrefilledSelection() {
                 if (!context.autoResolvePrefill) return;
                 const values = getSelected();
+                if (!values.length) return;
+                ensureLookupSessionId();
+                const lookupContext = lookupContextValues(context);
+                const dependencies = (field?.lookup?.dependencies || []).map(dependency => {
+                    const valuePath = dependency.value_path || dependency.input_field;
+                    return lookupContext[valuePath] ?? String(valuePath).split('.').reduce(
+                        (value, key) => value?.[key], lookupContext,
+                    );
+                });
+                const attemptKey = `${optionsKey}:prefill`;
+                const fingerprint = lookupValueKey([
+                    sessionId, context.platform, accountId(), values, dependencies,
+                ]);
+                if (optionsStore[attemptKey] === fingerprint) return;
+                optionsStore[attemptKey] = fingerprint;
                 if (!field?.lookup?.query_field) {
-                    if (values.length) await queryOptions('', false);
+                    await queryOptions('', false);
                     return;
                 }
                 for (const value of values) {

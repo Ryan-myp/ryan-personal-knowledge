@@ -101,6 +101,7 @@ def test_meta_template_preserves_explicit_form_values_and_paused_children(runtim
 def test_live_template_exposes_only_creation_tools_and_declared_same_channel_lookups(runtime, key):
     template = next(row for row in load_builtin_template_definitions() if row["key"] == key)
     blueprint = runtime.creation_blueprints.get(template["blueprint_id"])
+    runtime._live_approved_tools = set(blueprint.tools)
     request = TurnRequest(
         user_input="使用模板创建暂停广告",
         execution_mode="live",

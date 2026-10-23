@@ -1912,10 +1912,6 @@ def test_template_selection_is_applied_to_creation_draft_without_execution():
         "tiktok": ["7397068114548195329"],
     }
     runtime.register_tool_source(create_tiktok_tool_source())
-    install(runtime, ModelTurn(tool_calls=(call(
-        "tiktok_smart_plus_create_campaign",
-        {"account_id": "7397068114548195329", "objective_type": "TRAFFIC"},
-    ),)))
     template = next(
         item for item in runtime.list_creation_templates(
             provider="tiktok",
@@ -1925,6 +1921,10 @@ def test_template_selection_is_applied_to_creation_draft_without_execution():
         )
         if item["blueprint_id"] == "tiktok.traffic_video"
     )
+    install(runtime, ModelTurn(tool_calls=(call(
+        "tiktok_get_creation_template",
+        {"account_id": "7397068114548195329", "template_id": template["template_id"]},
+    ),)))
 
     intent = runtime.apply_creation_template_to_intent(
         ParsedIntent("chat", "使用模板", ["tiktok"]),
@@ -1987,7 +1987,9 @@ def test_google_app_test_template_prefills_required_campaign_configuration():
                 if getattr(item, "role", "") == "system"
             )
             return ModelTurn(
-                tool_calls=(call("google_create_campaign", {}),),
+                tool_calls=(call("google_ads_get_creation_template", {
+                    "template_id": request.context["creation_template_id"],
+                }),),
             )
 
     model = SelectedBlueprintModel()
@@ -2024,7 +2026,7 @@ def test_google_app_test_template_prefills_required_campaign_configuration():
         assert card["template_id"] == template["template_id"]
         assert card["account_id"] == "9055507554"
         assert model.initial_tool_choice == "required"
-        assert model.tool_names == tuple(blueprint.tools)
+        assert model.tool_names == ("google_ads_get_creation_template",)
         assert template["template_id"] in model.prompt
         assert values["campaign.advertising_channel_type"] == "MULTI_CHANNEL"
         assert values["campaign.advertising_channel_sub_type"] == "APP_CAMPAIGN"
@@ -2379,8 +2381,15 @@ def test_all_builtin_test_account_templates_seed_their_declared_creation_cards()
                 "prompt": prompt,
             })
             assert blueprint is not None
+            preview = next((
+                tool for tool in tools
+                if tool.resource_type == "creation_template" and tool.action == "get"
+            ), None)
             return ModelTurn(
-                tool_calls=(call(blueprint.tools[0], {}),),
+                tool_calls=(call(
+                    preview.name if preview else blueprint.tools[0],
+                    {"template_id": request.context["creation_template_id"]} if preview else {},
+                ),),
             )
 
     model = TemplateMatrixModel()
@@ -2450,7 +2459,11 @@ def test_all_builtin_test_account_templates_seed_their_declared_creation_cards()
                 definition["blueprint_version"],
             )
             assert call_record["tool_choice"] == "required"
-            assert call_record["tool_names"] == tuple(blueprint.tools)
+            expected = (
+                (definition["provider"].replace("-", "_") + "_get_creation_template",)
+                if definition.get("required_input_fields") else tuple(blueprint.tools)
+            )
+            assert call_record["tool_names"] == expected
             assert template_id in call_record["prompt"]
     finally:
         runtime.close(wait=True)

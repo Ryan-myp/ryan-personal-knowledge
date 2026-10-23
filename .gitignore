@@ -30,6 +30,8 @@ config.local.json
 *~
 .venv/
 __pycache__/
+.coverage
+.coverage.*
 *.py[cod]
 .DS_Store
 *.egg-info/

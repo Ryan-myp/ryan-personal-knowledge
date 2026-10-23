@@ -293,6 +293,54 @@ def test_candidate_tool_namespaces_do_not_turn_a_scoped_request_into_multi_accou
     )
 
 
+def test_internal_non_scoped_tool_does_not_inherit_selected_ad_account():
+    owner = SimpleNamespace(
+        _canonical_platform=lambda value: value,
+        _resolve_platform_identifier=lambda value: value,
+    )
+    factory = AdvertisingToolPolicyFactory(owner)
+    tool = ToolDefinition(
+        name="agent_request_input",
+        namespace="agent_platform",
+        skill="clarification",
+        description="Ask for input",
+        action="request",
+        resource_type="clarification",
+        scope_required=False,
+        input_schema=ToolSchema(),
+    )
+    request_context = {
+        "account_id": "7397068114548195329",
+        "platform_params": {"tiktok": {"account_id": "7397068114548195329"}},
+        "_agent_tool_namespaces": ["tiktok", "agent_platform"],
+    }
+    request = SimpleNamespace(
+        principal=SimpleNamespace(
+            account_scope={"tiktok": {"7397068114548195329"}},
+        ),
+        execution_mode="live",
+    )
+
+    assert factory._accounts_for_call(
+        tool, "agent_platform", {}, request_context,
+    ) == (None, None)
+    assert factory._account_scope_error(
+        tool, request, {}, "agent_platform", request_context,
+    ) is None
+
+
+def test_optional_account_scope_still_authorizes_an_explicit_account():
+    owner = SimpleNamespace(_resolve_platform_identifier=lambda value: value)
+    factory = AdvertisingToolPolicyFactory(owner)
+    tool = SimpleNamespace(scope_required=False, scope_fields=["account_id"])
+    assert factory._accounts_for_call(
+        tool, "meta", {"account_id": "selected"}, {},
+    ) == (None, "selected")
+    assert factory._accounts_for_call(
+        tool, "meta", {}, {"account_id": "form-account"},
+    ) == ("form-account", None)
+
+
 def test_account_authorized_on_another_channel_is_reported_as_channel_mismatch():
     owner = SimpleNamespace(
         _canonical_platform=lambda value: value,

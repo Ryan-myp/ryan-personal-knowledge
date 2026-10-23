@@ -87,7 +87,13 @@ def catalog_selection_input(
         (str(alias).strip() for alias in aliases if str(alias).strip()),
         f"get {getattr(target, 'resource_type', '')}",
     )
-    return f"{prefix} {label} {choice}", str(getattr(target, "name", "") or "")
+    identifiers = {
+        field: row[field]
+        for field in getattr(list_definition, "result_id_fields", ()) or ()
+        if row.get(field) not in (None, "")
+    }
+    identity = json.dumps(identifiers, ensure_ascii=False)
+    return f"{prefix} {label} {identity} {choice}", str(getattr(target, "name", "") or "")
 
 
 def _normalize(value: str) -> str:
@@ -184,6 +190,7 @@ def _matching_detail_tool(
             and str(getattr(tool, "action", "") or "").lower()
             in {"get", "detail", "retrieve"}
             and required & result_ids & set(row)
+            and bool(getattr(tool, "is_read_tool", False))
         ):
             targets.append(tool)
     return targets[0] if len(targets) == 1 else None

@@ -54,6 +54,13 @@ class AdvertisingContextProvider:
         skill_context = session.ctx.metadata.get("skill_context", {})
         if not isinstance(skill_context, dict):
             skill_context = {}
+        if request_context.get("_agent_local_catalog"):
+            skill_context = {
+                key: skill_context[key]
+                for key in ("memory_context", "prior_tool_results", "conversation_digest")
+                if key in skill_context
+            }
+            session.ctx.metadata["skill_context"] = skill_context
         structured_input = self._structured_input(request_context, account_id, request)
         capability_catalog = self._capability_catalog(request)
         read_accounts = AdvertisingCapabilityCatalog(self.owner).read_account_candidates(request)
@@ -196,6 +203,11 @@ class AdvertisingContextProvider:
             ),
             "available": True,
         }
+        if request_context.get("_agent_template_preview_tool"):
+            selection["draft_tool"] = request_context["_agent_template_preview_tool"]
+            selection["missing_input_fields"] = request_context.get(
+                "_agent_template_input_fields", [],
+            )
         template_id = selection["template_id"]
         if template_id:
             account_scope = getattr(getattr(request, "principal", None), "account_scope", None)
@@ -344,6 +356,22 @@ class AdvertisingContextProvider:
         return remaining
 
     @staticmethod
+    def _append_template_draft(
+        parts: list[str], selection: Mapping[str, Any], selection_json: str,
+    ) -> bool:
+        if not selection.get("draft_tool"):
+            return False
+        parts.append(
+            "当前处于模板参数补充阶段，尚未提交创建：\n"
+            + selection_json
+            + "\n请调用 draft_tool 指定的只读模板工具，template_id 使用上面的"
+            "template_id，将用户本次补充或修改的参数按蓝图路径传入 values。"
+            "保留先前表单和模板中的参数，不要重复要求预填资源。"
+            "工具会返回更新后的创建表单；只有用户提交完整表单后才进入写入确认。"
+        )
+        return True
+
+    @staticmethod
     def _append_creation_selection(
         parts: list[str],
         structured_input: Mapping[str, Any] | None,
@@ -361,6 +389,10 @@ class AdvertisingContextProvider:
                 separators=(",", ":"),
             )
             if selection.get("available") is True:
+                if AdvertisingContextProvider._append_template_draft(
+                    parts, selection, selection_json,
+                ):
+                    return
                 parts.append(
                     "已选择的创建流程（来自服务端蓝图注册表）：\n"
                     + selection_json
@@ -529,6 +561,17 @@ class AdvertisingToolExecutor:
             ),
             "account_scope": getattr(principal, "account_scope", None),
         }
+        if (
+            self.definition.resource_type == "creation_template"
+            and self.definition.action == "get"
+        ):
+            request_context = (
+                request.context if isinstance(request.context, Mapping) else {}
+            )
+            metadata["creation_request"] = {
+                key: copy.deepcopy(request_context.get(key))
+                for key in ("creation_template_id", "platform_params")
+            }
         if (
             str(getattr(self.definition, "action", "") or "").lower() == "list"
             and str(getattr(self.definition, "resource_type", "") or "").lower()

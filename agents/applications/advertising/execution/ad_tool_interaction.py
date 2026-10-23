@@ -7,6 +7,7 @@ from typing import Any, Mapping
 from agents.agent_harness.core.interfaces import ParsedIntent
 from agents.agent_harness.core.tool_registry import validate_tool_input
 from agents.agent_harness.tool_execution import ToolExecutionCoordinator
+from agents.agent_platform.tools.policy import ToolArgumentValidationError
 
 
 class AdvertisingToolInteractionProvider:
@@ -47,7 +48,14 @@ class AdvertisingToolInteractionProvider:
         if reason == "scope_required":
             return self._account_selection(context, definition)
         if str(getattr(definition, "action", "") or "").lower() == "create":
-            return self._creation_interaction(context, definition)
+            interaction = self._creation_interaction(context, definition)
+            if reason == "argument_resolution_failed" and interaction is not None:
+                interaction = dict(interaction)
+                interaction["prompt"] = message
+                card = dict(interaction["payload"])
+                card["validation_error"] = message
+                interaction["payload"] = card
+            return interaction
         if reason in {"input_schema", "confirmation_required"}:
             return self._action_interaction(context, definition, message)
         return None
@@ -243,7 +251,9 @@ class AdvertisingToolInteractionProvider:
             for error in (resolved or {}).get(key, ())
         ]
         if validation_errors:
-            raise ValueError("创建参数校验失败：" + "；".join(validation_errors[:10]))
+            raise ToolArgumentValidationError(
+                "创建参数校验失败：" + "；".join(validation_errors[:10])
+            )
         properties = getattr(
             getattr(definition, "input_schema", None), "properties", {},
         ) or {}

@@ -12,20 +12,12 @@ def tool_account_fields(tool: Any) -> tuple[str, ...]:
     return tuple(getattr(tool, "scope_fields", ()) or ACCOUNT_SCOPE_FIELDS)
 
 
-def tool_call_accounts(
-    tool: Any,
+def _scoped_request_account(
+    fields: tuple[str, ...],
     platform: str,
-    arguments: Mapping[str, Any],
     context: Mapping[str, Any],
-    *,
     normalize_namespace: Callable[[str], str],
-) -> tuple[Any, Any]:
-    """Resolve candidates without granting authority or selecting writes."""
-    fields = tool_account_fields(tool)
-    argument_account = next((
-        arguments.get(field) for field in fields
-        if arguments.get(field) not in (None, "")
-    ), None)
+) -> Any:
     platform_params = context.get("platform_params")
     scoped_account = None
     if isinstance(platform_params, Mapping):
@@ -44,8 +36,32 @@ def tool_call_accounts(
     multiple_namespaces = len({
         normalize_namespace(namespace) for namespace in (namespaces or ())
     }) > 1
-    request_account = scoped_account or (
+    return scoped_account or (
         None if multiple_namespaces else context.get("account_id")
+    )
+
+
+def tool_call_accounts(
+    tool: Any,
+    platform: str,
+    arguments: Mapping[str, Any],
+    context: Mapping[str, Any],
+    *,
+    normalize_namespace: Callable[[str], str],
+) -> tuple[Any, Any]:
+    """Resolve candidates without granting authority or selecting writes."""
+    if (
+        getattr(tool, "scope_required", None) is False
+        and not getattr(tool, "scope_fields", ())
+    ):
+        return None, None
+    fields = tool_account_fields(tool)
+    argument_account = next((
+        arguments.get(field) for field in fields
+        if arguments.get(field) not in (None, "")
+    ), None)
+    request_account = _scoped_request_account(
+        fields, platform, context, normalize_namespace,
     )
     # History supplies a read candidate, never authority. An explicit new
     # argument wins, and every call must still pass current account policy.

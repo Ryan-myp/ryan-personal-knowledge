@@ -76,3 +76,23 @@ def test_batch_binding_replaces_a_parent_name_that_violates_the_declared_id_sche
     assert bound.depends_on == ("root",)
     assert binding == ("parent_id", "root", "parent_id")
     assert unresolved is rejection is None
+
+
+def test_argument_resolution_issue_is_visible_on_the_existing_creation_card():
+    runtime = SimpleNamespace()
+    interactions = AdvertisingToolInteractionProvider(runtime)
+    interactions._creation_ui = lambda *_: {"cards": [{
+        "type": "ad_creation_form", "id": "example", "ready": True,
+        "fields": [{"path": "ad.asset_id", "value": "preset-asset"}],
+    }]}
+    request = SimpleNamespace(
+        context={"creation_template_id": "preset"}, execution_mode="live",
+    )
+    context = SimpleNamespace(
+        request=request, tool_definition=SimpleNamespace(action="create"),
+    )
+    message = "创建参数校验失败：素材必须从当前账户资源列表中选择"
+    interaction = interactions.build(context, "argument_resolution_failed", message)
+    assert interaction["prompt"] == message
+    assert interaction["payload"]["validation_error"] == message
+    assert interaction["payload"]["fields"][0]["value"] == "preset-asset"

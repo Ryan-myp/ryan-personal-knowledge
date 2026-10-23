@@ -75,6 +75,7 @@ function environment() {
             createDocumentFragment: element,
         },
         escapeHtml: value => String(value ?? ''),
+        creationFieldValue: field => field.value,
         renderCreationCard: () => element(),
         addMessage() {},
         showConfirm() {},
@@ -120,6 +121,22 @@ test('history cards stay in the transcript and only enter the workbench when reo
     assert.equal(workbenchSize(context), 1);
     assert.equal(elements.get('workbenchCreationCount').textContent, '1 张');
     assert.equal(elements.get('workbenchCreationCount').hidden, false);
+});
+
+test('reopening a historical template restores its editable context without approval', () => {
+    const { context } = environment();
+    context.sessionId = 'current-session';
+    context.creationCardState.set('historical', {
+        id: 'historical', type: 'ad_creation_form', provider: 'example',
+        account_id: 'test-account', blueprint_id: 'example.complete',
+        blueprint_version: '1.0.0', template_id: 'saved-template', ready: false,
+        fields: [{ path: 'campaign.name', provider_field: 'name', tool: 'example_create', value: 'draft' }],
+    });
+    context.reopenCreationCard('historical');
+    assert.equal(context.pendingBlueprintRequest.creation_template_id, 'saved-template');
+    assert.equal(context.pendingBlueprintRequest.session_id, 'current-session');
+    assert.equal(context.pendingBlueprintRequest.confirmed, undefined);
+    assert.equal(context.pendingBlueprintRequest.confirmation_payload, undefined);
 });
 
 test('a completed non-creation turn clears the stale creation workspace', () => {

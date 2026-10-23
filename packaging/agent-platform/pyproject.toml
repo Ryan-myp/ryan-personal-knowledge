@@ -18,4 +18,7 @@ package-dir = { "" = "../.." }
 [tool.setuptools.packages.find]
 where = ["../.."]
 include = ["agents", "agents.agent_platform", "agents.agent_platform.*"]
-exclude = ["agents.agent_platform.benchmarks", "agents.agent_platform.benchmarks.*"]
+exclude = [
+  "agents.agent_platform.benchmarks", "agents.agent_platform.benchmarks.*",
+  "agents.agent_platform.build*", "agents.agent_platform.dist*",
+]

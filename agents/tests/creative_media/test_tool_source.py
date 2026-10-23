@@ -2,8 +2,11 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+from agents.agent_harness import AgentApplication, AgentMessage, TurnRequest
 from agents.agent_harness.core.interfaces import ToolContext, ToolEffect
 from agents.agent_harness.core.tool_selection import ToolSelector
+from agents.agent_harness.messages import ModelTurn
+from agents.agent_platform.tools.web_search import web_search_tool_source
 from agents.tools.creative_media.source import (
     _generation_error_message,
     creative_media_tool_source,
@@ -193,6 +196,93 @@ def test_plain_image_generation_request_selects_image_tool_not_upload_guidance()
         "帮我生成一个苹果手机图片",
         selected,
     )
+
+
+def test_clarified_image_request_keeps_image_tool_ahead_of_web_search():
+    source, _store = _source()
+    web = web_search_tool_source(
+        configuration_provider=lambda: {}, required_permission="ads.read",
+    )
+    definitions = [
+        binding.definition for tool_source in (source, web)
+        for binding in tool_source.list_bindings()
+    ]
+    selector = ToolSelector()
+    request = "生成一个广告创意图，高质量的电脑图\n通用高性能笔记本电脑"
+
+    selected = selector.select_relevant(request, definitions)
+
+    assert selected[0].name == "creative_generate_image"
+    assert "agent_web_search" not in {tool.name for tool in selected}
+    assert selector.requires_tool_call(request, selected)
+
+
+def test_choice_in_real_creative_catalog_exposes_generation_not_web_search():
+    source, _store = _source()
+    web = web_search_tool_source(
+        configuration_provider=lambda: {}, required_permission="ads.read",
+    )
+    selector = ToolSelector()
+
+    def select_tools(request, tools):
+        selected = selector.select_relevant(request.user_input, tools)
+        if selector.requires_tool_call(request.user_input, selected):
+            request.context["_agent_tool_choice_required"] = True
+        return selected
+
+    app = AgentApplication.create(
+        model=SimpleNamespace(complete=lambda *_args: ModelTurn(content="")),
+        tool_selector=select_tools,
+    )
+    app.register_tool_source(source)
+    app.register_tool_source(web)
+    try:
+        tools, required = app.agent._tools_for_turn(
+            TurnRequest(
+                "通用高性能笔记本电脑", turn_id="choice",
+                session_id="session-1",
+            ),
+            [
+                AgentMessage.user(
+                    "生成一个广告创意图，高质量的电脑图",
+                    turn_id="prompt",
+                ),
+                AgentMessage.tool(
+                    {
+                        "needs_input": True,
+                        "data": {
+                            "choices": ["通用高性能笔记本电脑", "高性能台式机"],
+                        },
+                    },
+                    tool_call_id="input", name="agent_request_input",
+                    turn_id="prompt",
+                ),
+                AgentMessage.assistant(
+                    "请选择产品类型", turn_id="prompt",
+                ),
+            ],
+        )
+        names = [tool.name for tool in tools]
+        assert names[0] == "creative_generate_image"
+        assert "agent_web_search" not in names
+        assert required is True
+    finally:
+        app.close()
+
+
+def test_request_to_draw_an_image_does_not_become_web_search():
+    source, _store = _source()
+    web = web_search_tool_source(
+        configuration_provider=lambda: {}, required_permission="ads.read",
+    )
+    definitions = [
+        binding.definition for tool_source in (source, web)
+        for binding in tool_source.list_bindings()
+    ]
+    selected = ToolSelector().select_relevant("帮我画个图", definitions)
+
+    assert selected and selected[0].name == "creative_generate_image"
+    assert "agent_web_search" not in {tool.name for tool in selected}
 
 
 def test_plain_video_generation_request_selects_video_generation_tool():

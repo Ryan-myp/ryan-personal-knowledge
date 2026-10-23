@@ -42,6 +42,28 @@ def test_no_budget_or_no_records_cannot_claim_knowledge_delivery():
     assert empty["documents"] == []
 
 
+def test_local_catalog_context_preserves_scope_but_omits_unrelated_advisory_documents(monkeypatch):
+    provider = AdvertisingContextProvider(SimpleNamespace())
+    session = SimpleNamespace(ctx=SimpleNamespace(metadata={"skill_context": {
+        "expert_knowledge": "unrelated-expert-instructions-" * 200,
+        "publisher_context": "unrelated-blueprint-details-" * 100,
+        "knowledge": [{"document_id": "unrelated-doc", "excerpt": "general advice"}],
+        "memory_context": "Use the current template draft.",
+    }}))
+    monkeypatch.setattr(provider, "_prepare_context_session", lambda *_: session)
+    monkeypatch.setattr(provider, "_structured_input", lambda *_: {"account_id": "selected-account"})
+    monkeypatch.setattr(provider, "_capability_catalog", lambda *_: "registered local template tools")
+    request = TurnRequest(
+        "列出模板", run_id="catalog", context={"_agent_local_catalog": True},
+    )
+    result = provider.build_context(request, [])
+    assert "selected-account" in result["prompt"]
+    assert "Use the current template draft." in result["prompt"]
+    assert "unrelated-expert" not in result["prompt"]
+    assert "unrelated-blueprint" not in result["prompt"]
+    assert result["knowledge_context"]["documents"] == []
+
+
 def test_aggregate_budget_counts_serialized_knowledge_not_just_strings():
     context = {
         **{key: "x" * limit for key, limit in AdTurnContextService._CONTEXT_LIMITS.items()

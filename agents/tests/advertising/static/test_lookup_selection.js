@@ -477,3 +477,60 @@ test('template-prefilled selection without query field stays unverified when loo
     assert.equal(selected.tokens, undefined);
     assert.match(picker.querySelector('.lookup-picker-status').textContent, /未匹配/);
 });
+
+test('an unchanged empty prefill result does not restart lookup after a rerender', async () => {
+    installLookupEnvironment([]);
+    const optionsStore = {};
+    let queries = 0;
+    let change;
+    context.serviceFetch = async () => {
+        queries += 1;
+        return { ok: true, text: async () => JSON.stringify({ options: [] }) };
+    };
+    const field = { value: 'asset-1', lookup: { tool: 'list_assets' } };
+    const settings = {
+        platform: 'example', accountId: 'test-account',
+        fieldName: 'asset_id', targetToolName: 'create_ad',
+        optionsStore, selectionTokens: {}, autoResolvePrefill: true,
+        onSelection: selection => { change = selection.changed; },
+    };
+    context.renderLookupPicker(field, settings);
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(change, false);
+    const rerendered = context.renderLookupPicker(field, settings);
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(queries, 1);
+    await rerendered.querySelector('.lookup-picker-search').listeners.click();
+    assert.equal(queries, 2, 'manual retry remains available');
+    context.renderLookupPicker(field, { ...settings, accountId: 'another-account' });
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(queries, 3, 'a different account requires a new lookup');
+});
+
+test('a changed declared dependency permits another prefill lookup', async () => {
+    installLookupEnvironment([]);
+    const optionsStore = {};
+    let queries = 0;
+    let catalog = 'catalog-1';
+    context.serviceFetch = async () => {
+        queries += 1;
+        return { ok: true, text: async () => JSON.stringify({ options: [] }) };
+    };
+    const field = {
+        value: 'product-set', lookup: {
+            tool: 'list_sets', dependencies: [{ input_field: 'catalog_id', value_path: 'catalog_id' }],
+        },
+    };
+    const settings = {
+        platform: 'example', accountId: 'test-account',
+        fieldName: 'set_id', targetToolName: 'create_ad',
+        optionsStore, autoResolvePrefill: true,
+        getLookupContext: () => ({ catalog_id: catalog }),
+    };
+    context.renderLookupPicker(field, settings);
+    await new Promise(resolve => setImmediate(resolve));
+    catalog = 'catalog-2';
+    context.renderLookupPicker(field, settings);
+    await new Promise(resolve => setImmediate(resolve));
+    assert.equal(queries, 2);
+});

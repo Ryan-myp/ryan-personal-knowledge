@@ -262,6 +262,20 @@ test('a reply matching the previous creation prompt keeps the template context',
     assert.equal('pendingBlueprintContinuation' in queued.requestParams, false);
 });
 
+test('editing a known field without submitting keeps its template context', () => {
+    const { context } = environment();
+    context.pendingBlueprintRequest = {
+        session_id: 'session', creation_template_id: 'selected-template',
+    };
+    context.pendingBlueprintContinuation = {
+        session_id: 'session', fields: [{ label: 'Campaign 名称', path: 'campaign.name' }],
+    };
+    const queued = context.captureChatMessage(
+        'Campaign 名称：demo，总预算50，先补充草稿，不要提交创建。', [],
+    );
+    assert.equal(queued.requestParams.creation_template_id, 'selected-template');
+});
+
 test('a chat continuation keeps the draft attached to the signed confirmation request', async () => {
     const { context, requests } = environment();
     const draft = {

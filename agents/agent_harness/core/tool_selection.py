@@ -36,9 +36,10 @@ _READ_ACTION_CUES = tuple(
 )
 _WRITE_CUES = (
     "create", "execute", "generate", "run", "update", "delete", "pause", "enable", "disable", "launch",
-    "submit", "save", "publish", "edit", "change", "modify", "set",
+    "submit", "save", "publish", "edit", "change", "modify", "set", "draw", "illustrate",
     "创建", "新建", "生成", "执行", "运行", "更新", "修改", "删除", "暂停", "启用", "停用",
-    "上线", "提交", "保存", "发布", "设置", "调整",
+    "上线", "提交", "保存", "发布", "设置", "调整", "绘制", "绘图",
+    "画个", "画一", "画张", "画出",
 )
 _WRITE_NEGATIONS = (
     "do not", "don't", "dont", "never", "without", "avoid", "no need to",
@@ -797,6 +798,15 @@ class ToolSelector:
             if str(_tool_field(tool, "resource_type", "")).casefold()
             == "json_records"
         ]
+        explicitly_aliased_catalog = [
+            tool for tool in explicitly_aliased_reads
+            if {"local", "catalog"} <= set(_tool_field(tool, "traits", ()) or ())
+            and (
+                not active_namespaces
+                or normalize_namespace(_tool_field(tool, "namespace", ""))
+                in {normalize_namespace(item) for item in active_namespaces}
+            )
+        ]
         contextual_knowledge = [
             tool for tool in (available_tools or ())
             if _is_read_tool(tool)
@@ -812,6 +822,8 @@ class ToolSelector:
             candidates = explicitly_aliased_web_search
         elif explicitly_aliased_knowledge:
             candidates = explicitly_aliased_knowledge
+        elif explicitly_aliased_catalog:
+            candidates = explicitly_aliased_catalog
         elif contextual_knowledge and _is_knowledge_followup(text):
             candidates = contextual_knowledge
         elif active_namespaces:
@@ -972,6 +984,13 @@ class ToolSelector:
         write_request = _has_unnegated_write_cue(verb_text)
         read_request = not write_request and _is_read_only_request(verb_text)
         text = str(user_input or "").casefold()
+        if _has_explicit_read_action(verb_text) and any(
+            _is_read_tool(tool)
+            and {"local", "catalog"} <= set(_tool_field(tool, "traits", ()) or ())
+            and _matches_tool_alias(text, tool)
+            for tool in selected_tools or ()
+        ):
+            return True
         selected_knowledge = [
             tool for tool in (selected_tools or ())
             if _is_read_tool(tool) and _is_knowledge_tool(tool)

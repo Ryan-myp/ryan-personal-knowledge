@@ -192,6 +192,15 @@
             return values;
         }
 
+        function evaluatedCreationFieldOptions(field, state) {
+            if (!Object.prototype.hasOwnProperty.call(state, 'options')) return field.options || [];
+            return (state.options || []).map(option => {
+                if (option && typeof option === 'object' && 'value' in option) return option;
+                const existing = (field.options || []).find(item => item?.value === option);
+                return existing || { value: option, label: field.option_labels?.[String(option)] || String(option) };
+            });
+        }
+
         async function evaluateCreationCard(card, changedPath) {
             if (!card.blueprint_id) return;
             const localInvalidPaths = new Set(
@@ -221,7 +230,8 @@
                     return !previous
                         || previous.visible !== next.visible
                         || previous.required !== next.required
-                        || JSON.stringify(previous.options || []) !== JSON.stringify(next.options || []);
+                        || (next.options_state !== undefined && previous.options_state !== next.options_state)
+                        || JSON.stringify(previous.options || []) !== JSON.stringify(evaluatedCreationFieldOptions(previous, next));
                 });
                 (card.fields || []).forEach(field => {
                     if (reset.has(field.path)) {
@@ -235,6 +245,8 @@
                         field.visible = state.visible;
                         field.required = state.required;
                         field.state = state.state;
+                        field.options = evaluatedCreationFieldOptions(field, state);
+                        if (state.options_state !== undefined) field.options_state = state.options_state;
                     }
                     if (field.local_error) field.state = 'invalid';
                 });
@@ -1386,7 +1398,8 @@
                         selectionTokens: card.selection_tokens,
                         autoResolvePrefill: Boolean(card.template_id),
                         optionsStore: card.lookup_options || (card.lookup_options = {}),
-                        onSelection: ({ value, tokens }) => {
+                        onSelection: ({ value, tokens, changed = true }) => {
+                            if (!changed) return;
                             const key = field.provider_field || field.path;
                             field.value = value;
                             if (tokens) {

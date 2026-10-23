@@ -91,6 +91,58 @@ def test_natural_template_followup_exposes_template_tools_in_the_active_channel(
     assert "meta_list_creation_templates" not in {tool.name for tool in selected}
 
 
+@pytest.mark.parametrize("provider", ["google-ads", "meta", "tiktok"])
+def test_explicit_template_catalog_query_does_not_send_creation_schemas(runtime, provider):
+    if provider == "tiktok":
+        runtime.register_tool_source(create_tiktok_tool_source())
+    request = TurnRequest(
+        f"创建 {provider} 广告系列，先列出内置模板让我选择，不要提交创建。",
+        execution_mode="live",
+    )
+    selected = AdApplicationAssembly._tool_selector(runtime, ToolSelector())(
+        request, runtime.registry.list_all(),
+    )
+    assert selected
+    catalogs = [tool for tool in selected if "clarification" not in tool.traits]
+    assert all(
+        tool.namespace == provider and tool.resource_type == "creation_template"
+        for tool in catalogs
+    )
+    assert catalogs and len(selected) <= 3
+    assert all(tool.is_read_tool for tool in selected)
+
+
+def test_template_catalog_model_request_stays_within_small_schema_budget(runtime):
+    from agents.agent_harness.model_limits import model_input_chars
+
+    measurements = []
+
+    class Model:
+        def complete(self, messages, tools, request):
+            measurements.append({
+                "schema_chars": model_input_chars([], tools),
+                "input_chars": model_input_chars(messages, tools),
+                "tool_count": len(tools),
+            })
+            if not any(
+                message.role == "tool" and message.turn_id == request.turn_id
+                for message in messages
+            ):
+                return ModelTurn(tool_calls=[ToolCall("list", LIST, {"account_id": ACCOUNT})])
+            return ModelTurn(content="已返回本地广告模板，请选择。")
+
+    runtime.platform_application.agent.model = Model()
+    result = runtime.run(
+        "创建 Google Ads 广告，先列出内置模板让我选择，不要提交创建。",
+        session_id="bounded-template-context", account_id=ACCOUNT,
+    )
+    assert result["status"] == "succeeded"
+    assert measurements[0]["tool_count"] <= 3
+    assert measurements[0]["schema_chars"] < 6000
+    assert measurements[0]["input_chars"] < 50000
+    assert result["knowledge_context"]["documents"] == []
+
+
 def test_list_templates_finds_account_presets_without_provider_calls(runtime):
     result = execute(runtime, LIST, {})
     assert result.success
@@ -140,6 +192,195 @@ def test_get_template_builds_a_prefilled_draft_without_creating_ads(runtime):
     assert fields["campaign.shopping_setting.merchant_id"]["value"] == 115791065
     assert fields["campaign.shopping_setting.merchant_id"]["user_required"] is False
     assert result.data["external_effects"] is False
+
+
+def test_missing_template_inputs_select_preview_before_creating(runtime):
+    template = shopping_template(runtime)
+    request = TurnRequest(
+        "Campaign 名称：demo，开始时间2026-10-24，结束时间2026-10-25，日预算50",
+        execution_mode="live",
+        principal=RequestPrincipal(
+            user_id="operator", tenant_id="tenant",
+            permissions=frozenset({"ads.read", "ads.write"}),
+            account_scope={"google-ads": {ACCOUNT}},
+        ),
+        context={
+            "account_id": ACCOUNT,
+            "creation_blueprint_id": template["blueprint_id"],
+            "creation_blueprint_version": template["blueprint_version"],
+            "creation_template_id": template["template_id"],
+            "platform_params": {"google-ads": {}},
+        },
+    )
+    selected = AdApplicationAssembly._tool_selector(runtime, ToolSelector())(
+        request, runtime.registry.list_all(),
+    )
+    assert [tool.name for tool in selected] == [GET]
+    assert request.context["_agent_template_input_fields"] == template["required_input_fields"]
+
+
+def test_template_edit_preserves_previous_form_values(runtime):
+    template = shopping_template(runtime)
+    ctx = context()
+    ctx.metadata["creation_request"] = {
+        "creation_template_id": template["template_id"],
+        "platform_params": {"google-ads": {
+            "google_create_campaign": {
+                "campaign_name": "earlier-name",
+                "start_date": "2026-10-24",
+                "end_date": "2026-10-25",
+                "daily_budget": 20,
+            },
+        }},
+    }
+    result = execute(runtime, GET, {
+        "template_id": template["template_id"],
+        "values": {"campaign.campaign_name": "new-name", "campaign.daily_budget": 50},
+    }, ctx)
+    assert result.success, result.error
+    fields = {field["path"]: field for field in result.interaction["payload"]["fields"]}
+    assert fields["campaign.campaign_name"]["value"] == "new-name"
+    assert fields["campaign.daily_budget"]["value"] == 50
+    assert fields["campaign.start_date"]["value"] == "2026-10-24"
+    assert fields["campaign.end_date"]["value"] == "2026-10-25"
+    assert fields["campaign.shopping_setting.merchant_id"]["value"] == 115791065
+
+
+def test_ready_template_inputs_select_only_approved_blueprint_writes(runtime):
+    template = shopping_template(runtime)
+    runtime._live_approved_tools = {"google_create_campaign"}
+    request = TurnRequest(
+        "提交创建计划",
+        execution_mode="live",
+        principal=RequestPrincipal(
+            user_id="operator", tenant_id="tenant",
+            permissions=frozenset({"ads.read", "ads.write"}),
+            account_scope={"google-ads": {ACCOUNT}},
+        ),
+        context={
+            "account_id": ACCOUNT,
+            "creation_blueprint_id": template["blueprint_id"],
+            "creation_blueprint_version": template["blueprint_version"],
+            "creation_template_id": template["template_id"],
+            "platform_params": {"google-ads": {"google_create_campaign": {
+                "campaign_name": "demo", "start_date": "2026-10-24",
+                "end_date": "2026-10-25", "daily_budget": 50,
+            }}},
+        },
+    )
+    selected = AdApplicationAssembly._tool_selector(runtime, ToolSelector())(
+        request, runtime.registry.list_all(),
+    )
+    names = {tool.name for tool in selected}
+    assert "google_create_campaign" in names
+    assert GET not in names
+    assert all(
+        not tool.is_write_tool or tool.name in runtime._live_approved_tools
+        for tool in selected
+    )
+
+
+@pytest.mark.parametrize("provider,account,query,overrides", [
+    ("google-ads", ACCOUNT, "Shopping", {
+        "campaign.campaign_name": "dialog-shopping",
+        "campaign.start_date": "2026-10-24", "campaign.end_date": "2026-10-25",
+        "campaign.daily_budget": 50,
+    }),
+    ("meta", "2806375919473667", "流量", {
+        "campaign.name": "dialog-meta",
+        "ad_set.start_time": "2026-10-24T00:00:00+00:00",
+        "ad_set.end_time": "2026-10-25T00:00:00+00:00",
+        "campaign.daily_budget": 5000,
+    }),
+    ("tiktok", "7397068114548195329", "商品目录销售", {
+        "campaign.campaign_name": "dialog-sales",
+        "ad_group.schedule_start_time": "2026-10-24T00:00:00+00:00",
+        "ad_group.schedule_end_time": "2026-10-25T00:00:00+00:00",
+        "ad_group.budget": 50,
+    }),
+])
+def test_dialog_selection_loads_template_card_then_merges_freeform_inputs(
+    runtime, provider, account, query, overrides,
+):
+    if provider == "tiktok":
+        runtime.register_tool_source(create_tiktok_tool_source())
+        runtime.whitelist_validator.allowed_accounts[provider] = [account]
+    prefix = provider.replace("-", "_")
+    list_name = f"{prefix}_list_creation_templates"
+    get_name = f"{prefix}_get_creation_template"
+    principal = RequestPrincipal(
+        user_id="operator", tenant_id="tenant",
+        permissions=frozenset({"ads.read", "ads.write"}),
+        account_scope={provider: {account}},
+    )
+    state = {"phase": 0, "calls": 0, "template": None, "choice": ""}
+
+    class Model:
+        def complete(self, messages, tools, request):
+            names = {tool.name for tool in tools}
+            state["calls"] += 1
+            if state["phase"] == 0:
+                prior = [
+                    message for message in messages
+                    if message.role == "tool" and message.turn_id == request.turn_id
+                ]
+                if not prior:
+                    return ModelTurn(tool_calls=[ToolCall(
+                        "list", list_name, {"account_id": account, "query": query},
+                    )])
+                result = prior[-1].content
+                if isinstance(result, str):
+                    result = json.loads(result)
+                template = result["data"]["templates"][0]
+                state["template"] = template
+                state["choice"] = template["name"] + "（仅需补充名称、日期、预算）"
+                return ModelTurn(tool_calls=[ToolCall(
+                    "choice", "agent_request_input",
+                    {"question": "请选择模板", "choices": [state["choice"]]},
+                )])
+            assert names == {get_name}
+            assert request.initial_tool_choice == "required"
+            return ModelTurn(tool_calls=[ToolCall(
+                "preview", get_name, {
+                    "template_id": state["template"]["template_id"],
+                    "account_id": account,
+                    "values": overrides if state["phase"] == 2 else {},
+                },
+            )])
+
+    runtime.platform_application.agent.model = Model()
+    base = {
+        "session_id": f"dialog-template-{provider}",
+        "account_id": account, "principal": principal, "execution_mode": "live",
+    }
+    first = runtime.run(f"创建 {provider} 广告系列，查询{query}模板", **base)
+    assert first["status"] == "awaiting_input", first["reply"]
+    state["phase"] = 1
+    selected = runtime.run(state["choice"], **base)
+    assert selected["status"] == "awaiting_input", selected["reply"]
+    card = selected["ui"]["cards"][0]
+    assert card["template_id"] == state["template"]["template_id"]
+    assert any(field.get("value") for field in card["fields"])
+    scoped = {}
+    for field in card["fields"]:
+        if field.get("tool") and field.get("value") not in (None, ""):
+            runtime._set_creation_path(
+                scoped.setdefault(field["tool"], {}),
+                field["provider_field"], field["value"],
+            )
+    state["phase"] = 2
+    edited = runtime.run(
+        "名称、日期和预算按我这次补充的参数填写", **base,
+        creation_template_id=card["template_id"],
+        creation_blueprint_id=card["blueprint_id"],
+        creation_blueprint_version=card["blueprint_version"],
+        platform_params={provider: scoped},
+    )
+    assert edited["status"] == "awaiting_input", edited["reply"]
+    updated = {field["path"]: field for field in edited["ui"]["cards"][0]["fields"]}
+    for path, value in overrides.items():
+        assert updated[path]["value"] == value
+    assert not any(row.get("action") == "create" for row in edited["results"])
 
 
 @pytest.mark.parametrize("values", [
@@ -241,6 +482,11 @@ def test_template_confirmation_choice_routes_to_blueprint_writes_not_template_pr
     )
     try:
         owner.register_tool_source(create_tiktok_tool_source())
+        owner._live_approved_tools = {
+            "tiktok_smart_plus_create_campaign",
+            "tiktok_smart_plus_create_adgroup",
+            "tiktok_smart_plus_create_ad",
+        }
         options = [
             "确认按上述 4 项创建",
             "我要修改",
@@ -284,7 +530,14 @@ def test_template_confirmation_choice_routes_to_blueprint_writes_not_template_pr
                 "creation_blueprint_id": "tiktok.product_sales_video",
                 "creation_blueprint_version": "2.3.0",
                 "creation_template_id": "builtin_f24270752ed0b43298ac45d8",
-                "platform_params": {"tiktok": {"campaign_name": "test"}},
+                "platform_params": {"tiktok": {
+                    "campaign_name": "test",
+                    "tiktok_smart_plus_create_adgroup": {
+                        "schedule_start_time": "2026-10-24T00:00:00+00:00",
+                        "schedule_end_time": "2026-10-25T00:00:00+00:00",
+                        "budget": 50,
+                    },
+                }},
             },
             execution_mode="live",
             initial_tool_choice="required",

@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from types import MappingProxyType, SimpleNamespace
 
+import pytest
+
 from agents.agent_harness import (
     AgentApplication, AgentMessage,
     StaticToolSource,
@@ -1074,7 +1076,8 @@ def test_clarification_only_uses_the_immediately_previous_offered_choice():
         app.close()
 
 
-def test_selecting_a_recent_list_item_routes_to_its_registered_detail_tool():
+@pytest.mark.parametrize("with_clarification", [False, True])
+def test_selecting_a_recent_list_item_routes_to_its_registered_detail_tool(with_clarification):
     selector = ToolSelector()
     list_tool = ToolDefinition(
         name="tiktok_list_creation_templates",
@@ -1137,10 +1140,22 @@ def test_selecting_a_recent_list_item_routes_to_its_registered_detail_tool():
         ),
         AgentMessage.assistant("找到一个模板。", turn_id="catalog-turn"),
     ]
+    choice = "TikTok 测试账号 · 商品目录销售（补充名称、排期、预算）"
+    if with_clarification:
+        transcript.append(AgentMessage.tool(
+            {
+                "success": True,
+                "needs_input": True,
+                "data": {"choices": [choice, "不使用模板"]},
+            },
+            name="ask_for_choice",
+            tool_call_id="clarify",
+            turn_id="catalog-turn",
+        ))
     try:
         tools, required = app.agent._tools_for_turn(
             TurnRequest(
-                "TikTok 测试账号 · 商品目录销售",
+                choice,
                 turn_id="selection-turn",
                 session_id="catalog-session",
             ),
@@ -1148,8 +1163,39 @@ def test_selecting_a_recent_list_item_routes_to_its_registered_detail_tool():
         )
         assert [tool.name for tool in tools] == [get_tool.name]
         assert required is True
+        selected_request, target = app.agent._tool_selection_request(
+            TurnRequest(choice, turn_id="selection-turn"),
+            transcript,
+            app.agent.tool_catalog.list_tools(),
+        )
+        assert target == get_tool.name
+        assert "tiktok.product-sales" in selected_request.user_input
     finally:
         app.close()
+
+
+def test_explicit_local_catalog_alias_beats_large_same_namespace_write_schemas():
+    catalog = ToolDefinition(
+        name="docs_list_presets", namespace="docs", skill="docs",
+        description="List local document presets.", action="list",
+        resource_type="preset", intent_aliases=["列出预设"],
+        traits=["read", "local", "catalog"], input_schema=ToolSchema(),
+    )
+    write = ToolDefinition(
+        name="docs_publish", namespace="docs", skill="docs",
+        description="Publish a document using a preset.", action="create",
+        resource_type="document", effect_class=ToolEffect.WRITE,
+        input_schema=ToolSchema(properties={"settings": {
+            "type": "object", "description": "x" * 20000,
+        }}),
+    )
+    selected = ToolSelector().select_relevant(
+        "创建 docs document，先列出预设，不要提交。", [write, catalog],
+    )
+    assert [tool.name for tool in selected] == [catalog.name]
+    assert ToolSelector().requires_tool_call(
+        "创建 docs document，先列出预设，不要提交。", selected,
+    )
 
 
 class _Completions:

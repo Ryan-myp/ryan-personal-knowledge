@@ -164,6 +164,19 @@ def test_argument_resolution_failure_blocks_execution_and_emits_safe_audit():
     }]
 
 
+def test_known_argument_validation_failure_returns_only_safe_actionable_text():
+    from agents.agent_platform.tools.policy import ToolArgumentValidationError
+
+    def fail_resolution(_context):
+        raise ToolArgumentValidationError("素材字段尚未通过当前账户资源查询校验，请重新选择素材。")
+
+    policy = ToolExecutionPolicy(argument_resolver=fail_resolution)
+    blocked = policy.before_tool_call(context("read"))
+    assert blocked["block"] is True
+    assert "重新选择素材" in blocked["reason"]
+    assert blocked["needs_input"] is True
+
+
 def test_harness_reenters_model_after_extra_argument_without_executing_invalid_call():
     executed = []
 

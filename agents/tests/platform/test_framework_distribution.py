@@ -25,6 +25,9 @@ def test_framework_wheels_run_without_advertising(tmp_path):
             package_root / package,
             ignore=shutil.ignore_patterns("build", "*.egg-info", "__pycache__"),
         )
+        stale = package_root / package / "build/lib/agents" / package / "stale.py"
+        stale.parent.mkdir(parents=True)
+        stale.write_text("stale = True\n", encoding="utf-8")
     build_root = source_root / "packaging/agent-platform"
     build_root.mkdir(parents=True)
     shutil.copy2(ROOT / "packaging/agent-platform/pyproject.toml", build_root)
@@ -48,6 +51,7 @@ def test_framework_wheels_run_without_advertising(tmp_path):
     install_root = tmp_path / "installed"
     for path in wheel_dir.glob("*.whl"):
         with zipfile.ZipFile(path) as wheel:
+            assert not any("/build/" in "/" + name for name in wheel.namelist())
             if path.name.startswith("agent_harness-"):
                 metadata_path = next(
                     name for name in wheel.namelist() if name.endswith("/METADATA")

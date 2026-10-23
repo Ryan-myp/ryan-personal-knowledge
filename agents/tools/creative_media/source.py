@@ -539,6 +539,7 @@ def _image_binding(dependencies: _CreativeDependencies) -> ToolBinding:
         intent_aliases=(
             "生成广告图片", "制作广告图片", "做一张创意图", "生成图片素材",
             "生成产品广告图", "帮我生成图片", "生成图片", "图片",
+            "画个图", "画一张图", "绘制图片",
             "create an ad image", "generate a creative image",
         ),
         schema=_image_schema(),

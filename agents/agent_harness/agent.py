@@ -809,15 +809,13 @@ class Agent:
         origin = clarification_origin(
             request.user_input, request.turn_id, transcript,
         )
-        catalog_selection, target_name = (
-            catalog_selection_input(
-                request.user_input, request.turn_id, transcript, tools,
-            )
-            if not origin else ("", "")
+        catalog_selection, target_name = catalog_selection_input(
+            request.user_input, request.turn_id, transcript, tools,
         )
         selection_input = (
-            f"{origin}\n{request.user_input}"
-            if origin else catalog_selection or request.user_input
+            catalog_selection or (
+                f"{origin}\n{request.user_input}" if origin else request.user_input
+            )
         )
         if catalog_selection:
             selection_context["_agent_tool_choice_required"] = True
@@ -836,7 +834,6 @@ class Agent:
         return [
             tool for tool in tools
             if str(getattr(tool, "name", "") or "") == target_name
-            or "clarification" in (getattr(tool, "traits", ()) or ())
         ]
 
     def _tools_for_turn(

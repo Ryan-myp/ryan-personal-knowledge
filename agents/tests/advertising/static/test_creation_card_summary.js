@@ -56,6 +56,17 @@ function environment() {
     return { context, summary };
 }
 
+test('cascade options preserve labels and omit no-longer-valid choices', () => {
+    const { context } = environment();
+    const field = { options: [
+        { value: 'APP', label: '应用' }, { value: 'WEB', label: '网站' },
+    ] };
+    const options = context.evaluatedCreationFieldOptions(field, { options: ['APP'] });
+    assert.deepEqual(JSON.parse(JSON.stringify(options)), [{ value: 'APP', label: '应用' }]);
+    assert.deepEqual(context.evaluatedCreationFieldOptions(field, {}), field.options);
+    assert.equal(context.evaluatedCreationFieldOptions(field, { options: [] }).length, 0);
+});
+
 test('the live creation summary includes populated template fields', () => {
     const { context, summary } = environment();
     const card = {

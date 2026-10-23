@@ -1,0 +1,65 @@
+{
+  "date": "2026-10-23",
+  "scope": "local_template_catalog_context_and_user_service_management",
+  "advertising_provider_calls": 0,
+  "advertising_mutations": 0,
+  "historical_stream_sample": {
+    "run_id": "dd28b7ee-6398-42ed-9d3a-a32fe933902b",
+    "first_tool_count": 13,
+    "first_input_chars": 73892,
+    "elapsed_seconds": 53.6,
+    "model_durations_ms": [35381.75, 17937.09]
+  },
+  "new_nonstream_sample": {
+    "run_id": "51fa395a-b0fa-4f29-b48a-a570cc199c6a",
+    "status": "succeeded",
+    "first_tool_count": 2,
+    "first_input_chars": 33453,
+    "elapsed_seconds": 110.92,
+    "model_durations_ms": [84021.2, 25704.86]
+  },
+  "new_stream_sample": {
+    "run_id": "410194c8-9c24-4f99-ba06-95c68e680368",
+    "status": "succeeded",
+    "first_tool_count": 2,
+    "first_input_chars": 33453,
+    "elapsed_seconds": 155.62,
+    "model_durations_ms": [95117.12, 59331.09]
+  },
+  "latency_improvement_verified": false,
+  "limitations": [
+    "Individual real-model samples, not a controlled latency benchmark.",
+    "Smaller input does not establish lower end-to-end latency.",
+    "No advertisement creation, query or update capability was verified.",
+    "Crash recovery was tested while no user Run was active."
+  ],
+  "service": {
+    "manager": "macos_user_launchagent",
+    "endpoint": "0.0.0.0:8766",
+    "login_start_configured": true,
+    "full_machine_reboot_tested": false,
+    "idle_crash_recovery_verified": true,
+    "recovery_seconds": 8.45,
+    "database_record_counts_unchanged": true,
+    "credential_values_in_manifest": false
+  },
+  "validation": {
+    "make_ad_agent_check": "passed",
+    "python_tests_passed": 2846,
+    "frontend_tests_passed": 124,
+    "new_service_and_delta_modules_line_coverage_percent": 84,
+    "incremental_qguard": {
+      "files": 12,
+      "baseline_findings": 45,
+      "current_findings": 45,
+      "new_findings": 0,
+      "passed": true
+    },
+    "whole_repository_qguard": {
+      "passed": false,
+      "score": 0,
+      "findings": 4976,
+      "findings_are_not_confirmed_vulnerabilities": true
+    }
+  }
+}
