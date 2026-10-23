@@ -3239,6 +3239,7 @@
         .creation-card-summary-items { display: flex; gap: 5px; min-width: 0; margin-top: 6px; overflow-x: auto; scrollbar-width: thin; }
         .creation-card-summary-item { display: grid; flex: 0 0 auto; min-width: 106px; max-width: 160px; gap: 2px; padding: 5px 6px; border: 1px solid #2b5065; border-radius: 6px; color: #aec8ce; background: #102638; cursor: pointer; font: inherit; text-align: left; }
         .creation-card-summary-item:hover, .creation-card-summary-item:focus-visible { color: #eaf7f5; border-color: #58e6d0; background: #143d4a; outline: none; }
+        .creation-card-summary-item.template-prefilled { border-color: rgba(88, 230, 208, .48); }
         .creation-card-summary-item span { overflow: hidden; color: #7595a2; font-size: 7px; text-overflow: ellipsis; white-space: nowrap; }
         .creation-card-summary-item strong { overflow: hidden; color: inherit; font-size: 8px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
         .creation-card-summary-item.pending { border-color: rgba(245,158,11,.42); }

@@ -88,6 +88,8 @@ function createEnvironment() {
         MAX_CHAT_QUEUE_SIZE: 10,
         MAX_CHAT_QUEUE_TOTAL_SIZE: 50,
         pausedChatQueueSessions: new Set(),
+        pendingBlueprintRequest: null,
+        pendingBlueprintContinuation: null,
     };
 
     for (const filename of ['chat-queue.js', 'chat-messages.js']) {

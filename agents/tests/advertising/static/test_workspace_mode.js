@@ -11,6 +11,8 @@ function environment(mode = 'dry_run', available = false) {
         creationCardState: new Map(),
         pendingCreationReview: null,
         pendingRequest: null,
+        pendingBlueprintRequest: null,
+        pendingBlueprintContinuation: null,
         isSending: false,
         sessionId: 'mode-session',
         document: {

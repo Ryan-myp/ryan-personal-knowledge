@@ -1566,6 +1566,14 @@
                         && item.status === 'active'
                 )?.template_id || null,
             };
+            pendingBlueprintContinuation = creationContinuationContextForCard({
+                fields: (blueprint.fields || []).map(field => ({
+                    ...field,
+                    value: blueprintState.values[field.path],
+                    options: blueprintOptions(field),
+                })),
+                ready: false,
+            }, `请按“${blueprint.title || blueprint.id}”继续创建广告。`, sessionId);
             setInput(`请按“${blueprint.title || blueprint.id}”继续创建广告。参数草稿已带入，请先检查并确认后提交。`);
             closeBlueprintManager();
         }

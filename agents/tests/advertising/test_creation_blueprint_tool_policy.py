@@ -3,11 +3,15 @@ from types import SimpleNamespace
 
 from agents.agent_harness.core.tool_registry import SimpleToolRegistry
 from agents.agent_platform.tools.policy import ToolExecutionPolicy
+from agents.applications.advertising.composition.ad_application_assembly import (
+    _select_blueprint_tools,
+)
 from agents.applications.advertising.execution.ad_tool_policy_factory import (
     AdvertisingToolPolicyFactory,
 )
 from agents.applications.advertising.persistence.errors import PersistenceError
 from agents.tools.advertising.providers.source_factory import create_tool_source
+from agents.tools.advertising.providers.tiktok import create_tiktok_tool_source
 from agents.tools.advertising.shared.domain.blueprint import load_blueprint_file
 from agents.tools.advertising.shared.domain.creation_card import CreationCardBuilder
 
@@ -24,6 +28,16 @@ BLUEPRINT = load_blueprint_file(
     / "traffic_link.v1.json"
 )
 TEST_ACCOUNT = "2806375919473667"
+TIKTOK_BLUEPRINT = load_blueprint_file(
+    ROOT
+    / "agents"
+    / "tools"
+    / "advertising"
+    / "providers"
+    / "tiktok"
+    / "blueprints"
+    / "product_sales_video.v1.json"
+)
 
 
 class _Security:
@@ -291,3 +305,42 @@ def test_selected_blueprint_confirmation_only_includes_its_registered_write_tool
     )
     assert set(confirmation["preview"]["tools"]) == set(BLUEPRINT.tools)
     assert "meta_create_conversion_ad" not in confirmation["preview"]["tools"]
+
+
+def test_tiktok_template_context_excludes_web_search_from_creation_tools():
+    class Blueprints:
+        @staticmethod
+        def get(blueprint_id, version=None):
+            if blueprint_id != TIKTOK_BLUEPRINT.blueprint_id:
+                return None
+            if version and version != TIKTOK_BLUEPRINT.version:
+                return None
+            return TIKTOK_BLUEPRINT
+
+    tools = [
+        binding.definition
+        for binding in create_tiktok_tool_source().list_bindings()
+    ]
+    tools.append(SimpleNamespace(
+        name="agent_web_search",
+        namespace="web",
+        action="search",
+        is_write_tool=False,
+    ))
+    runtime = SimpleNamespace(
+        creation_blueprints=Blueprints(),
+        _canonical_platform=lambda value: str(value or "").lower(),
+    )
+
+    selected = _select_blueprint_tools(
+        runtime,
+        {
+            "creation_blueprint_id": TIKTOK_BLUEPRINT.blueprint_id,
+            "creation_blueprint_version": TIKTOK_BLUEPRINT.version,
+            "creation_template_id": "tiktok.test.sales",
+        },
+        tools,
+    )
+
+    assert {tool.name for tool in selected} == set(TIKTOK_BLUEPRINT.tools)
+    assert "agent_web_search" not in {tool.name for tool in selected}

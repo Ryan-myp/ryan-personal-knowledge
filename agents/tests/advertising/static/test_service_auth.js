@@ -15,6 +15,8 @@ function setup(fetchHandler) {
         },
         console,
         Promise,
+        pendingBlueprintRequest: null,
+        pendingBlueprintContinuation: null,
     };
     const source = path.resolve(
         __dirname,

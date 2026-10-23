@@ -56,6 +56,7 @@ function environment(messages, fetchHandler = null) {
         sessionId: null, selectedConversationId: null,
         isSending: false, activeRunSessionId: null,
         loadedConversationTurnIds: new Set(), pendingRequest: null,
+        pendingBlueprintRequest: null, pendingBlueprintContinuation: null,
         pendingCreationReview: false,
         conversationHistory: [],
         conversationHistoryRequest: 0,

@@ -130,6 +130,59 @@
             };
         }
 
+        function creationReplyOptionsFromPrompt(prompt) {
+            const text = String(prompt || '');
+            const options = [];
+            const quoted = /["“‘「『`]([^"”’」』`]{2,80})["”’」』`]/g;
+            for (const match of text.matchAll(quoted)) options.push(match[1]);
+            const directed = /(?:回复|回答|选择|reply with|answer with|choose)\s*[:：]?\s*([^\n。.!?]+)/gi;
+            for (const match of text.matchAll(directed)) {
+                options.push(...match[1].split(/\s+或者?\s+|\s+or\s+|[，,、；;|]/i));
+            }
+            return [...new Set(options.map(value => String(value).trim()).filter(value => value.length >= 2 && value.length <= 80))];
+        }
+
+        function creationContinuationContextForCard(
+            card,
+            assistantPrompt = '',
+            targetSessionId = sessionId,
+            previous = null,
+        ) {
+            const rawFields = Array.isArray(card?.fields) ? card.fields : (previous?.fields || []);
+            const fields = rawFields.slice(0, 128)
+                .filter(field => field?.visible !== false)
+                .map(field => ({
+                    label: String(field.label || ''),
+                    path: String(field.path || ''),
+                    options: Array.isArray(field.options) ? field.options.slice(0, 24) : [],
+                }));
+            const fieldOptions = card
+                ? fields.flatMap(field => field.options)
+                : (previous?.field_options || []);
+            const promptOptions = creationReplyOptionsFromPrompt(assistantPrompt);
+            const replyOptions = [...new Set([
+                ...fieldOptions.map(option => typeof option === 'object'
+                    ? String(option.label || option.value || '')
+                    : String(option || '')
+                ),
+                ...promptOptions,
+            ].filter(Boolean))];
+            return {
+                session_id: String(targetSessionId || ''),
+                assistant_prompt: String(assistantPrompt || '').slice(0, 2000),
+                fields,
+                field_options: fieldOptions,
+                reply_options: replyOptions,
+                expects_input: card
+                    ? Boolean(
+                        !card.ready
+                        || (card.missing_fields || []).length
+                        || creationCardPendingLabels(card).length,
+                    )
+                    : Boolean(previous?.expects_input),
+            };
+        }
+
         function creationCardDraftValues(card) {
             const values = {};
             (card.fields || []).forEach(field => {
@@ -529,7 +582,7 @@
             const progress = creationCardProgress(card);
             const heading = document.createElement('div');
             heading.className = 'creation-card-summary-heading';
-            heading.innerHTML = '<span>实时摘要</span><small>填写时始终可见</small>';
+            heading.innerHTML = '<span>参数摘要</span><small>包含模板预填与已填写参数</small>';
             const progressValue = document.createElement('span');
             progressValue.className = `creation-card-summary-progress${progress.percent >= 100 ? ' ready' : ''}`;
             progressValue.textContent = `${progress.completed}/${progress.total} 项已填`;
@@ -543,16 +596,20 @@
             account.innerHTML = `<span>广告账户</span><strong>${escapeHtml(card.account_id || '未填写')}</strong>`;
             account.addEventListener('click', () => wrapper.querySelector('.creation-card-account input')?.focus());
             items.appendChild(account);
-            const filled = (card.fields || []).filter(field => field.visible !== false && !creationCardValueEmpty(creationFieldValue(field)) && creationFieldNeedsUserInput(field));
-            filled.slice(0, 5).forEach(field => {
+            const filled = (card.fields || []).filter(field =>
+                field.visible !== false
+                && !creationCardValueEmpty(creationFieldValue(field)),
+            );
+            filled.slice(0, 8).forEach(field => {
                 const item = document.createElement('button');
                 item.type = 'button';
-                item.className = 'creation-card-summary-item filled';
-                item.innerHTML = `<span>${escapeHtml(field.label || field.path)}</span><strong>${escapeHtml(creationFieldDisplayValue(field))}</strong>`;
+                item.className = `creation-card-summary-item filled${field.default_source === 'template' ? ' template-prefilled' : ''}`;
+                const source = field.default_source === 'template' ? ' · 模板' : '';
+                item.innerHTML = `<span>${escapeHtml(field.label || field.path)}${source}</span><strong>${escapeHtml(creationFieldDisplayValue(field))}</strong>`;
                 item.addEventListener('click', () => creationCardScrollTo(wrapper, wrapper.querySelector(`.creation-card-field[data-field-path="${CSS.escape(field.path)}"]`)));
                 items.appendChild(item);
             });
-            const remaining = filled.length - Math.min(filled.length, 5);
+            const remaining = filled.length - Math.min(filled.length, 8);
             if (remaining > 0) {
                 const more = document.createElement('span');
                 more.className = 'creation-card-summary-more';
@@ -581,7 +638,7 @@
             const fields = (card.fields || []).filter(field => {
                 const value = creationFieldValue(field);
                 return field.visible !== false && value !== undefined && value !== null && value !== '';
-            }).slice(0, 80);
+            }).slice(0, 160);
             return creationDirectoryHierarchyGroups(fields).map(([hierarchy, hierarchyFields]) => {
                 const rows = hierarchyFields.map(field => {
                     const fieldValue = creationFieldValue(field);
@@ -633,7 +690,7 @@
             const review = document.createElement('div');
             review.id = 'confirmCard';
             review.className = 'confirm-card';
-            review.innerHTML = `<div class="confirm-card-header"><span class="confirm-icon">✓</span><span class="confirm-title">请确认创建计划</span></div><div class="confirm-card-body"><p>即将为账户 <strong>${escapeHtml(card.account_id)}</strong> 提交“${escapeHtml(card.title || '广告')}”的创建计划。</p><p>请确认账户、预算、定向和素材均无误。${workspaceMode.mode === 'live' ? '确认后将提交到广告平台。' : '当前为预览状态，不会修改线上账户。'}</p></div><div class="confirm-card-footer"><button class="confirm-btn cancel" onclick="cancelCreationReview()">返回修改</button><button class="confirm-btn confirm" onclick="confirmCreationSubmission()">确认创建</button></div>`;
+            review.innerHTML = `<div class="confirm-card-header"><span class="confirm-icon">✓</span><span class="confirm-title">请确认创建计划</span></div><div class="confirm-card-body"><p>即将为账户 <strong>${escapeHtml(card.account_id)}</strong> 提交“${escapeHtml(card.title || '广告')}”的创建计划。</p><p>请核对模板预填和你修改的参数。${workspaceMode.mode === 'live' ? '确认后将提交到广告平台。' : '当前为预览状态，不会修改线上账户。'}</p><div class="creation-confirm-parameters"><div class="creation-confirm-parameters-title">本次提交参数 · 按广告层级</div><div class="creation-review-groups">${creationReviewRows(card) || '<div class="creation-review-empty">暂无参数</div>'}</div></div></div><div class="confirm-card-footer"><button class="confirm-btn cancel" onclick="cancelCreationReview()">返回修改</button><button class="confirm-btn confirm" onclick="confirmCreationSubmission()">确认创建</button></div>`;
             const target = document.getElementById('confirmation-workbench-host')
                 || document.getElementById('confirmCardContainer');
             target?.appendChild(review);
@@ -1526,6 +1583,11 @@
             if (!card) return;
             if (action === 'continue_chat') {
                 pendingBlueprintRequest = creationContextForCard(card);
+                pendingBlueprintContinuation = creationContinuationContextForCard(
+                    card,
+                    '',
+                    sessionId,
+                );
                 setInput(`请继续完善“${card.title || '广告创建'}”，我可以直接在输入框里补充参数。`);
                 return;
             }

@@ -23,6 +23,7 @@ function environment() {
         sessionId: 'session', selectedConversationId: 'session',
         isSending: false, pendingRequest: null, pendingCreationReview: null,
         pendingBlueprintRequest: null,
+        pendingBlueprintContinuation: null,
         workspaceMode: { mode: 'live', liveAvailable: true, saving: false, loading: false },
         document: {
             getElementById: id => nodes[id] || null,
@@ -50,6 +51,7 @@ function environment() {
     );
     context.pausedChatQueueSessions = new Set();
     context.editingQueueMessage = null;
+    context.chatMediaUploading = false;
     context.MAX_CHAT_QUEUE_SIZE = 10;
     context.isStopping = false;
     context.activeRunSessionId = null;
@@ -68,6 +70,14 @@ function environment() {
         creation_blueprint_id: card.blueprint_id,
         creation_blueprint_version: card.blueprint_version,
         creation_template_id: card.template_id,
+    });
+    context.creationContinuationContextForCard = (
+        card, assistantPrompt, targetSessionId, previous,
+    ) => ({
+        session_id: targetSessionId,
+        assistant_prompt: assistantPrompt,
+        fields: card?.fields || previous?.fields || [],
+        reply_options: previous?.reply_options || [],
     });
     return { context, requests, displayed, nodes, node };
 }
@@ -224,6 +234,34 @@ test('a rendered creation draft is carried into the next message in the same ses
     );
 });
 
+test('a reply matching the previous creation prompt keeps the template context', () => {
+    const { context } = environment();
+    context.pendingBlueprintRequest = {
+        session_id: 'session',
+        account_id: 'tiktok-test-account',
+        creation_blueprint_id: 'tiktok.product_sales_video',
+        creation_blueprint_version: '2.3.0',
+        creation_template_id: 'tiktok.test.sales',
+        platform_params: { tiktok: { campaign_name: 'Paused test campaign' } },
+    };
+    context.pendingBlueprintContinuation = {
+        session_id: 'session',
+        assistant_prompt: '时间可以使用建议值，请回复“使用建议时间”，也可以填写具体时间。',
+        fields: [{ label: '开始时间', path: 'ad_group.schedule_start_time', required: true }],
+        reply_options: ['使用建议时间'],
+    };
+
+    const queued = context.captureChatMessage('使用建议时间', []);
+
+    assert.equal(queued.requestParams.creation_blueprint_id, 'tiktok.product_sales_video');
+    assert.equal(queued.requestParams.creation_template_id, 'tiktok.test.sales');
+    assert.deepEqual(
+        JSON.parse(JSON.stringify(queued.requestParams.platform_params)),
+        { tiktok: { campaign_name: 'Paused test campaign' } },
+    );
+    assert.equal('pendingBlueprintContinuation' in queued.requestParams, false);
+});
+
 test('a chat continuation keeps the draft attached to the signed confirmation request', async () => {
     const { context, requests } = environment();
     const draft = {
@@ -277,6 +315,8 @@ test('a creation draft from another conversation is not copied into a new messag
     assert.equal('account_id' in queued.requestParams, false);
     assert.equal('creation_template_id' in queued.requestParams, false);
     assert.equal('platform_params' in queued.requestParams, false);
+    assert.equal(context.pendingBlueprintRequest, null);
+    assert.equal(context.pendingBlueprintContinuation, null);
 });
 
 test('an unrelated query in the same conversation does not inherit a creation draft', () => {
@@ -293,6 +333,56 @@ test('an unrelated query in the same conversation does not inherit a creation dr
     assert.equal('account_id' in queued.requestParams, false);
     assert.equal('creation_template_id' in queued.requestParams, false);
     assert.equal('platform_params' in queued.requestParams, false);
+});
+
+test('sending a creation answer does not clear the draft before its response arrives', async () => {
+    const { context, nodes } = environment();
+    context.pendingBlueprintRequest = {
+        session_id: 'session',
+        creation_blueprint_id: 'tiktok.product_sales_video',
+        creation_template_id: 'tiktok.test.sales',
+        platform_params: { tiktok: { daily_budget: 20 } },
+    };
+    context.pendingBlueprintContinuation = {
+        session_id: 'session',
+        assistant_prompt: '回复“使用建议时间”继续。',
+        reply_options: ['使用建议时间'],
+        fields: [],
+    };
+    context.pendingChatAttachments = [];
+    context.clearPendingChatMedia = () => {};
+    context.executeChatMessage = () => {};
+    nodes.userInput.value = '使用建议时间';
+    nodes.userInput.style = {};
+
+    await context.sendMessage();
+
+    assert.equal(context.pendingBlueprintRequest.creation_template_id, 'tiktok.test.sales');
+    assert.equal(context.pendingBlueprintContinuation.session_id, 'session');
+});
+
+test('a completed non-interactive turn clears stale creation context', () => {
+    const { context } = environment();
+    context.pendingBlueprintRequest = {
+        session_id: 'session',
+        creation_blueprint_id: 'tiktok.product_sales_video',
+        creation_template_id: 'tiktok.test.sales',
+    };
+    context.pendingBlueprintContinuation = {
+        session_id: 'session',
+        reply_options: ['使用建议时间'],
+        fields: [],
+    };
+
+    context.renderStreamResult({
+        session_id: 'session',
+        status: 'succeeded',
+        content: '查询完成。',
+        results: [],
+    }, { session_id: 'session' });
+
+    assert.equal(context.pendingBlueprintRequest, null);
+    assert.equal(context.pendingBlueprintContinuation, null);
 });
 
 test('a live response launcher keeps the usable approval rather than its redacted history copy', () => {

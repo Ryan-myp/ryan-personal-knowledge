@@ -51,6 +51,8 @@ function environment() {
         workspaceMode: { mode: 'dry_run' },
         pendingCreationReview: null,
         pendingRequest: null,
+        pendingBlueprintRequest: null,
+        pendingBlueprintContinuation: null,
         initializeTheme() {},
         resetExecutionTrace() {},
         refreshWorkspaceMode() {},

@@ -413,6 +413,8 @@
         function cancelConfirm() {
             pendingRequest = null;
             pendingCreationReview = null;
+            pendingBlueprintRequest = null;
+            pendingBlueprintContinuation = null;
             const card = document.getElementById('confirmCard');
             if (card) card.remove();
             if (typeof clearWorkbenchConfirmation === 'function') clearWorkbenchConfirmation();
@@ -789,26 +791,52 @@
                 || `queued-${Date.now()}-${Math.random().toString(16).slice(2)}`;
         }
 
+        function normalizeCreationReply(value) {
+            return String(value || '').trim().toLowerCase().replace(/[\s，。！？、；：,.!?;:'"`“”‘’「」『』（）()【】\[\]{}]/g, '');
+        }
+
         function isCreationDraftContinuation(text) {
             const normalized = String(text || '').trim().toLowerCase();
             if (!normalized) return false;
             if (/(?:不要|别|先不|暂不|不再).{0,5}(?:创建|新建|提交|执行)/.test(normalized)) {
                 return false;
             }
-            return [
+            if ([
                 '创建', '新建', '提交', '执行', '继续', '确认',
                 '修改', '调整', '改成', '改为', '调到', 'change',
                 'update', 'edit', 'submit', 'create', 'continue', 'confirm',
-            ].some(cue => normalized.includes(cue));
+            ].some(cue => normalized.includes(cue))) return true;
+
+            const reply = normalizeCreationReply(text);
+            const continuation = pendingBlueprintContinuation;
+            const choices = [
+                ...(continuation?.reply_options || []),
+                ...(continuation?.fields || []).flatMap(field => [
+                    field.label,
+                    field.path,
+                    ...(field.options || []).flatMap(option => (
+                        typeof option === 'object'
+                            ? [option.label, option.value]
+                            : [option]
+                    )),
+                ]),
+            ].map(normalizeCreationReply).filter(Boolean);
+            return choices.some(choice => choice === reply || (
+                choice.length >= 3 && reply.includes(choice)
+            ));
         }
 
         function captureChatMessage(text, submittedAttachments) {
             const targetSessionId = sessionId || ensureChatMediaSession();
             const pendingContext = pendingBlueprintRequest;
-            const matchesSession = !pendingContext?.session_id
-                || pendingContext.session_id === targetSessionId;
-            if (pendingContext && !matchesSession) pendingBlueprintRequest = null;
+            const contextSessionId = pendingContext?.session_id
+                || pendingBlueprintContinuation?.session_id;
+            const matchesSession = !contextSessionId || contextSessionId === targetSessionId;
             const continueDraft = matchesSession && isCreationDraftContinuation(text);
+            if (!matchesSession || ((pendingContext || pendingBlueprintContinuation) && !continueDraft)) {
+                pendingBlueprintRequest = null;
+                pendingBlueprintContinuation = null;
+            }
             const requestParams = {
                 ...(continueDraft ? pendingContext || {} : {}),
                 user_input: text,
@@ -1043,7 +1071,6 @@
                     );
                     return;
                 }
-                pendingBlueprintRequest = null;
                 input.value = '';
                 input.style.height = 'auto';
                 clearPendingChatMedia({ revoke: true, deleteStored: false });
@@ -1052,7 +1079,6 @@
                 return;
             }
 
-            pendingBlueprintRequest = null;
             input.value = '';
             input.style.height = 'auto';
             clearPendingChatMedia({ revoke: true, deleteStored: false });
@@ -1101,6 +1127,7 @@
             loadedConversationTurnIds.clear();
             pendingRequest = null;
             pendingBlueprintRequest = null;
+            pendingBlueprintContinuation = null;
             pendingCreationReview = null;
             historySelectionMode = false;
             selectedConversationIds.clear();

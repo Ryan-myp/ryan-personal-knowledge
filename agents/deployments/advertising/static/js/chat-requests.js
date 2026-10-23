@@ -179,15 +179,44 @@
                         requestParams?.session_id || data.session_id || sessionId || '',
                     ),
                 };
+                pendingBlueprintContinuation = creationContinuationContextForCard(
+                    creationDraft,
+                    content,
+                    pendingBlueprintRequest.session_id,
+                );
             }
             const awaitingInteraction = data.status === 'awaiting_input'
                 || data.needs_confirmation
                 || ui?.confirmation?.payload
                 || ui?.clarification
-                || ui?.account_selection;
+                || ui?.account_selection
+                || Boolean(creationDraft);
+            if (!creationDraft && pendingBlueprintRequest && !runFailed) {
+                const continuationSessionId = String(
+                    requestParams?.session_id || data.session_id || sessionId || '',
+                );
+                if (
+                    pendingBlueprintRequest.session_id
+                    && pendingBlueprintRequest.session_id !== continuationSessionId
+                ) {
+                    pendingBlueprintRequest = null;
+                    pendingBlueprintContinuation = null;
+                } else if (awaitingInteraction) {
+                    pendingBlueprintContinuation = creationContinuationContextForCard(
+                        null,
+                        content,
+                        continuationSessionId,
+                        pendingBlueprintContinuation,
+                    );
+                } else {
+                    pendingBlueprintRequest = null;
+                    pendingBlueprintContinuation = null;
+                }
+            }
             if (
                 !runFailed
                 && !data.ui?.cards?.length
+                && !creationDraft
                 && !awaitingInteraction
                 && !pendingCreationReview
                 && !pendingRequest
@@ -709,6 +738,7 @@
                 }
                 pendingRequest = null;
                 pendingBlueprintRequest = null;
+                pendingBlueprintContinuation = null;
                 document.getElementById('confirmCard')?.remove();
                 if (typeof resetCreationWorkbench === 'function') resetCreationWorkbench();
                 const container = document.getElementById('chatContainer');

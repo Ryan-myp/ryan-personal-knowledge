@@ -123,6 +123,7 @@ def test_live_template_exposes_only_creation_tools_and_declared_same_channel_loo
     assert {tool.namespace for tool in selected} == {"meta"}
     assert all(tool.is_read_tool for tool in selected if tool.name not in blueprint.tools)
     assert not ({"meta_list_campaigns", "meta_get_report", "meta_create_creative"} & names)
+    assert "agent_web_search" not in names
     assert len(selected) <= 32
 
 

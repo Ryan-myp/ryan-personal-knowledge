@@ -37,6 +37,7 @@
         const creationCardEvaluationRevisions = new Map();
         const creationDirectoryCollapseState = new Map();
         let pendingBlueprintRequest = null;
+        let pendingBlueprintContinuation = null;
         let pendingCreationReview = null;
         const skillState = {
             versions: [],
