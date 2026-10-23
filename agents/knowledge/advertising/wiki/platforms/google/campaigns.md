@@ -24,7 +24,7 @@ Google Ads 的 Campaign 不只是名称和目标。Campaign type 决定可用的
 
 ## 两种主要对象模型
 
-### Ad Group 模型
+### 广告组模型
 
 ```text
 Customer
@@ -39,7 +39,7 @@ Customer
 
 标准 Search 等采用 Ad Group 模型：Ad Group 组织广告和定向条件；Campaign 组织预算、网络/地域设置、出价和其他系列级配置。搜索关键词与广告并非可在任意层级互换的附件，要检查其父资源和资源名称。
 
-### Asset Group 模型
+### 资产组模型
 
 ```text
 Customer

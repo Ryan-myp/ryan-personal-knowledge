@@ -75,13 +75,13 @@ Business / Ad Account / Page / Pixel or Dataset
 | 多 Ad Set 需要严格隔离 | 使用明确预算边界 | 让自动分配破坏实验设计 |
 | 需要探索新受众 | 记录扩展边界和排除 | 把自动扩展当作无约束 |
 
-## Creative 与 Ad 更新边界
+## 创意与 Ad 更新边界
 
 补充新素材通常比覆盖线上 winner 更容易回退；替换素材、修改身份、落地页、CTA、追踪或推广对象会改变学习与审核。每次更新保存旧 Creative ID、素材版本、页面、事件和生效时间。
 
 不要通过删除重建来解决未知状态。超时先查询 Ad/Creative 状态；审核失败先读取错误详情；页面或素材变更后重新验证版位、政策和事件。
 
-## Insights 报告契约
+## 洞察报告契约
 
 报告必须记录 Ad Account、level、fields、breakdowns、time_range、time_increment、归因设置、时区、币种、分页和任务状态。Reach、frequency、conversions 和 value 的可加性要单独注明；不能把 Ad、Ad Set 和 Campaign 三个层级结果直接相加。
 

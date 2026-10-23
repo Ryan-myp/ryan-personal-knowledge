@@ -85,7 +85,7 @@ def test_advertising_skills_are_exportable_without_ad_runtime():
     assert "references/creative-roadmap.md" in context
 
     diagnostics_context = catalog.build_context(
-        "Google Ads search terms report disclosed-click coverage and omitted queries"
+        "Google Ads 搜索词报告可见点击覆盖率与缺失查询"
     )
 
     assert "Skill: account-diagnostics" in diagnostics_context

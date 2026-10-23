@@ -11,7 +11,7 @@ business:
       - LTV
 ---
 
-# App 业务 Skill
+# App 业务技能
 
 渠道和广告类型不在此 Skill 中静态白名单化。每次以当前 Registry、广告蓝图、
 Tool schema、账户可用资产与 API 实际结果判断；不同渠道的 App 目标和平台原生

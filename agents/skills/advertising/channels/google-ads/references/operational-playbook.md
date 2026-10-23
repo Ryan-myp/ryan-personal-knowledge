@@ -1,4 +1,4 @@
-# Google Ads 操作清单
+# Google 广告操作清单
 
 ## 创建前 Preflight
 

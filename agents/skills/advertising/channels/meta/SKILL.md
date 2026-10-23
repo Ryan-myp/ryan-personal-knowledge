@@ -8,7 +8,7 @@ tags: [meta, facebook, instagram, odax, advantage-plus, insights, pixel, capi, c
 aliases: [facebook, instagram, fb, meta ads]
 ---
 
-# Meta Marketing API 专家 Skill
+# Meta Marketing API 专家技能
 
 > 本 Skill 是 Meta 业务语义、参数依赖和安全 SOP 的 advisory context。它不注册 Tool、不保存
 > 认证材料、不直接调用 Graph API。所有动作必须由当前 Registry 的 Meta
@@ -72,30 +72,30 @@ Ad Set → Ad 链路。父级缺失时不能把一套对象压成一个不完整
 
 ## 广告格式与资产依赖
 
-### Link / Video / Carousel
+### 链接 / 视频 / 轮播
 
 确认 Page 或 Instagram actor、link、CTA、image hash/video ID、carousel cards、tracking
 URL 和落地页。图片和视频上传/查询与 Creative 组合是不同动作；不能把本地路径、文件名或
 外部 URL 直接当已存在的 Meta asset ID。
 
-### Lead Generation
+### 线索获取
 
 确认 Page、Instant Form、隐私政策 URL、问题和线索读取范围。Ad 创建引用的是已存在的
 form/page 资产时，先 lookup；当前没有完整 Form CRUD 就明确说明缺口，不能伪造已创建表单。
 
-### Catalog / Product
+### 目录 / 商品
 
 先确认 Business、Catalog、Product Set、feed 更新状态和账户权限，再创建目录广告。Catalog
 广告的 promoted object、product set、link、素材和 tracking 必须保持同一业务资产边界。
 
-### Creative 资产
+### 创意资产
 
 Creative 采用稳定的媒体引用和版本化文案；更新时区分可变字段与需要新建 Creative 的字段。
 保留旧 Creative/Ad 的审计关联，不能把“新素材已上传”描述成“广告已上线”。
 
-## Insights、归因与 CAPI
+## 洞察、归因与 CAPI
 
-### Insights 报表
+### 洞察报表
 
 先确认 account、object level（campaign/adset/ad）、日期范围、时区、归因窗口、fields、
 breakdowns 和分页。Meta 的 `spend`、`impressions`、`reach`、`frequency`、`clicks`、

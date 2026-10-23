@@ -1,18 +1,18 @@
-# Changelog
+# 更新日志
 
 ## 1.0.4 - 2026-10-18
 
-- Trigger the advisory knowledge-answering guidance for natural broad-topic requests such as “讲下相关知识” and “介绍一下基础知识”.
+- 为诸如“讲下相关知识”和“介绍一下基础知识”等自然语言宽泛主题请求，触发咨询类知识回答指引。
 
 ## 1.0.3 - 2026-10-18
 
-- Match natural-language requests to explain or draw a workflow even when the topic appears between the action phrase and “流程”.
+- 匹配自然语言请求以解释或绘制工作流，即使主题出现在动作短语与“流程”之间。
 
 ## 1.0.2 - 2026-10-18
 
-- Add flowchart and diagram request triggers.
-- Require explicit Mermaid node IDs and valid labeled endpoints.
+- 添加流程图和图表请求触发器。
+- 要求使用显式的 Mermaid 节点 ID 和有效的带标签端点。
 
 ## 1.0.1 - 2026-10-18
 
-- Add common detailed-explanation phrases such as “详解” and “详细讲解” to Skill triggers.
+- 添加常见详细解释短语，例如“详解”和“详细讲解”，作为 Skill 触发器。

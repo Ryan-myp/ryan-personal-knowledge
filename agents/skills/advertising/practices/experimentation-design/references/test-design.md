@@ -1,38 +1,38 @@
-# Advertising Experiment Design Notes
+# 广告实验设计笔记
 
-Use this reference to turn an advertising question into a reviewable design. It supplements the repository Wiki; it is not a statistical calculator or platform-specific implementation guide.
+使用此参考将广告问题转化为可审查的设计。它作为仓库 Wiki 的补充；它不是一个统计计算器或特定平台的实施指南。
 
-## Design Record
+## 设计记录
 
-| Field | Record |
+| 字段 | 记录 |
 |---|---|
-| Decision | What action will change if evidence supports the hypothesis? |
-| Evidence | Source, date range, account/resource scope, and known limitations |
-| Hypothesis | Observation, change, expected mechanism, audience, and outcome |
-| Experimental unit | User, account, geography, campaign, or another justified unit |
-| Assignment | Randomization or matched/quasi-experimental method; include contamination risks |
-| Primary metric | One pre-specified metric with numerator, denominator, and source |
-| Guardrails | Business quality, cost, policy, delivery, or user-harm limits |
-| Planning inputs | Baseline, minimum worthwhile effect, allocation, variance/model, power and error-rate choices |
-| Observation | Start/end rules, attribution window, conversion maturity, and data refresh lag |
-| Stop rule | Planned sample/horizon, valid sequential method, or safety stop |
+| 决策 | 如果证据支持假设，哪项操作会发生变化？ |
+| 证据 | 来源、日期范围、账户/资源范围以及已知局限性 |
+| 假设 | 观察、变更、预期机制、受众和结果 |
+| 实验单元 | 用户、账户、地理位置、广告系列或其他有正当理由的单元 |
+| 分配 | 随机化或匹配/准实验方法；包括污染风险 |
+| 主要指标 | 一个预先指定的指标，包括分子、分母和来源 |
+| 护栏 | 业务质量、成本、政策、投放或用户伤害的限制 |
+| 规划输入 | 基线、最小值得关注的效应、分配、方差/模型、功效和错误率选择 |
+| 观察 | 开始/结束规则、归因窗口、转化成熟度和数据刷新延迟 |
+| 停止规则 | 计划的样本量/观察期、有效的序贯方法或安全停止 |
 
-## Advertising-Specific Checks
+## 广告特定检查
 
-- Prefer platform-supported randomized experiments when available and suitable; verify actual assignment and exposure before interpreting results.
-- Campaigns can interfere through shared budgets, overlapping audiences, auctions, automated delivery, and creative rotation. Record these dependencies and select a unit that limits spillover.
-- If a platform allocates delivery adaptively rather than randomly, an observed winner may reflect who received more delivery, not only the creative or setting being tested.
-- A before/after comparison is exposed to seasonality, promotions, price, inventory, competition, and product changes. Match or model relevant factors and label remaining uncertainty.
-- Align event definitions, account time zone, attribution window, reporting date basis, and conversion maturity before comparing variants.
+- 当平台支持的随机化实验可用且合适时，优先考虑使用；在解释结果之前，验证实际的分配和曝光。
+- 广告系列可能会通过共享预算、重叠受众、竞价、自动投放和创意轮换产生干扰。记录这些依赖关系并选择一个能限制溢出效应的单元。
+- 如果平台自适应地而非随机地分配投放，观察到的赢家可能反映的是谁获得了更多的投放，而不仅仅是正在测试的创意或设置。
+- 前后对比容易受到季节性、促销活动、价格、库存、竞争和产品变化的影响。匹配或建模相关因素，并标记剩余的 uncertainty。
+- 在比较变体之前，请对齐事件定义、账户时区、归因窗口、报告日期基准和转化成熟度。
 
-## Analysis Discipline
+## 分析纪律
 
-Plan sample requirements using the outcome type, baseline and variability, unit of randomization, allocation, minimum worthwhile effect, chosen error control, and practical observation window. Do not reuse generic sample tables as if they were calculated for the current account.
+使用结果类型、基线和变异性、随机化单元、分配、最小值得关注的效应、所选错误控制和实际观察窗口来规划样本量要求。不要将通用样本表重新用于当前账户，仿佛它们是为该账户计算的一样。
 
-At readout, show per-variant exposure and sample, effect size, uncertainty interval, primary metric, guardrails, missingness, and maturity. Distinguish:
+在阅读结果时，展示每个变体的曝光量和样本量、效应大小、不确定性区间、主要指标、护栏、缺失值和成熟度。区分以下方面：
 
-- evidence of a difference under the planned analysis;
-- whether the effect is large enough to matter to the business;
-- whether the experiment identifies a causal effect for the tested population and period.
+- 在计划分析下存在差异的证据；
+- 效应是否足够大以影响业务；
+- 实验是否确定了针对受测人群和时期的因果效应。
 
-Do not translate an ad platform's proprietary confidence label into a p-value unless its documented method supports that interpretation. If the plan was underpowered or execution deviated, report the result as inconclusive or exploratory and state what evidence would resolve it.
+除非广告平台的专有置信标签的文档方法支持该解释，否则不要将其转换为 p 值。如果计划功效不足或执行偏离，将结果报告为不确定性或探索性，并说明什么证据可以解决这一问题。

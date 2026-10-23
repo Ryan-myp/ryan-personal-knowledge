@@ -1,4 +1,4 @@
-# ad-agent Skills 系统架构
+# 广告 Agent 技能系统架构
 
 ## 设计原则
 
@@ -7,7 +7,7 @@
 3. **Runtime Harness** - 统一负责路由、权限、dry-run、确认、幂等、恢复和审计
 4. **跨渠道编排** - 通过 Skill 的业务流程意图和统一资源模型管理多平台 Campaign
 
-## Skill 目录结构
+## 技能目录结构
 
 ```
 skills/
@@ -30,7 +30,7 @@ api_clients/<platform>_client.py        # 可选 Provider Client
 skills/<name>/tools.py                  # 仅受信任源码扩展，不属于上传 Skill
 ```
 
-## Skill 定义格式
+## 技能定义格式
 
 每个 Skill 的 SKILL.md 包含身份元数据、自然语言知识、流程说明和安全边界。
 它不是 Tool 注册表，也不应通过 Markdown 标题、表格或 YAML 清单直接产生可执行能力。

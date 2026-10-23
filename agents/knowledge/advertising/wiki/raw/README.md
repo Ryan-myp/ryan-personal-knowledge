@@ -1,15 +1,10 @@
-# Raw Sources
+---
+# 原始素材
 
-This directory is the immutable source layer of the Karpathy-style Wiki.
+此目录是 Karpathy 风格 Wiki 的不可变源层。
 
-Raw material is kept for ingest, provenance and re-processing. It is not
-loaded into the Agent Runtime directly. Runtime context comes from published
-entity, concept, comparison and query pages with source citations.
+原始素材被保留用于摄取、溯源及再处理。它不会直接加载到 Agent Runtime 中。运行时上下文来自带有源引用的已发布实体、概念、比较和查询页面。
 
-The larger personal corpus remains under the repository-level `knowledge/`
-directory. New material should record its original path or URL in
-`source_ref`, then be distilled into a published Wiki page.
+更大的个人语料库仍位于仓库级的 `knowledge/` 目录下。新素材应在 `source_ref` 中记录其原始路径或 URL，然后被提炼为已发布的 Wiki 页面。
 
-For tenant uploads, the HTTP/API source of truth is the persistence-backed
-`raw_knowledge_sources` table. The checked-in directory documents this same
-boundary for repository-managed material; it is not a writable Runtime cache.
+对于租户上传，HTTP/API 的事实来源是持久化支持的 `raw_knowledge_sources` 表。已检入的目录为此仓库管理的材料记录了相同的边界；它不是一个可写的运行时缓存。

@@ -19,7 +19,7 @@ tags: [meta, facebook ads, Instagram广告, 广告平台, 渠道介绍, 基础�
 status: published
 ---
 
-# Meta Ads
+# Meta 广告平台
 
 Meta Ads 覆盖 Facebook、Instagram 等 Meta 媒体上的广告投放。常见资源链路是 Ad Account → Campaign → Ad Set → Ad；Creative 承载素材、文案、身份、链接和追踪信息。
 

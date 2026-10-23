@@ -38,7 +38,7 @@ skills/
 
 ## 业务 Skill 示例
 
-### ecommerce (电商业务)
+### 电商业务
 ```yaml
 business:
   name: ecommerce
@@ -51,7 +51,7 @@ business:
     focus_metrics: [ROAS, CPA, CVR]
 ```
 
-### app (App 业务)
+### App 业务
 ```yaml
 business:
   name: app
@@ -63,7 +63,7 @@ business:
 App 推广的渠道、目标与平台原生 Campaign 类型由当前注册 Tool、蓝图和账户资格决定。
 除非业务确实需要强制限制，否则不要在 App Skill 中写过时的静态渠道/类型白名单或统一预算范围。
 
-### social (社交业务)
+### 社交业务
 ```yaml
 business:
   name: social

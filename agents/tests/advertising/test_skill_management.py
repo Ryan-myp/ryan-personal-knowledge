@@ -175,10 +175,10 @@ def test_channel_skill_body_is_available_to_model_context():
     runtime = AdvertisingComposition(require_llm=False, offline_mode=True)
     try:
         examples = {
-            "google-ads": ("查询 Google Ads campaign", "Google Ads API 专家 Skill"),
-            "meta": ("查询 Meta campaign performance", "Meta Marketing API 专家 Skill"),
-            "tiktok": ("查询 TikTok campaign performance", "TikTok Ads 专家 Skill"),
-            "dv360": ("查询 DV360 line item report", "Display & Video 360 专家 Skill"),
+                "google-ads": ("查询 Google Ads campaign", "Google Ads API 专家技能"),
+                "meta": ("查询 Meta campaign performance", "Meta Marketing API 专家技能"),
+                "tiktok": ("查询 TikTok campaign performance", "TikTok Ads 专家技能"),
+                "dv360": ("查询 DV360 line item report", "Display & Video 360 专家技能"),
         }
         for platform, (request, marker) in examples.items():
             # The test only needs a provider-owned contract to enter the
@@ -236,11 +236,11 @@ def test_builtin_account_diagnostics_is_advisory_and_selects_relevant_references
         assert skill.get_tools() == []
 
         report_context = runtime.tool_selector._triggered_skill_context(
-            "Google Ads search terms report disclosed-click coverage and omitted queries"
+                "Google Ads 搜索词报告可见点击覆盖率与缺失查询"
         )
         assert "[skill guidance: account-diagnostics]" in report_context
         assert "references/google-report-interpretation.md" in report_context
-        assert "disclosed-click coverage" in report_context
+        assert "披露的点击覆盖率" in report_context
         assert "simulated" in report_context
 
         audit_context = runtime.tool_selector._triggered_skill_context(
@@ -256,7 +256,7 @@ def test_builtin_account_diagnostics_is_advisory_and_selects_relevant_references
         )
         assert "[skill guidance: account-diagnostics]" in meta_context
         assert "references/meta-insights-interpretation.md" in meta_context
-        assert "The report Tools do not expose" in meta_context
+        assert "报告 Tools 不暴露" in meta_context
         assert "offline_no_client" in meta_context
 
         operation_context = runtime.tool_selector._triggered_skill_context(
@@ -460,8 +460,8 @@ def test_builtin_web_research_skill_loads_from_tool_binding_without_keyword_trig
         )
 
         assert "[skill guidance: web-research]" in context
-        assert "Treat a search result as a lead, not as the full page" in context
-        assert "A result snippet is not a structured dataset" in context
+        assert "将搜索结果视为线索，而非完整页面" in context
+        assert "结果摘要不是结构化数据集" in context
     finally:
         runtime.close(wait=True)
 

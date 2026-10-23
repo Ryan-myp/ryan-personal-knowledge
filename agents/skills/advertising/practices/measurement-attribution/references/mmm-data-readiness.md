@@ -1,41 +1,42 @@
-# MMM Data Readiness
+---
+# MMM 数据就绪度
 
-Use this checklist before recommending a media-mix model or interpreting a budget allocation as an MMM result. Meridian guidance is a practical reference, not a universal pass/fail rule for every MMM implementation.
+在推荐媒体组合模型（MMM）或将预算分配解读为 MMM 结果之前，请使用此检查清单。Meridian 的指导原则是实用参考，而非适用于所有 MMM 实施的通用通过/失败规则。
 
-## Minimum Dataset Shape
+## 最小数据集形状
 
-- Build a continuous panel by time, preferably weekly, and by geography when available.
-- Use a summable business KPI such as revenue, units, or conversions. Do not sum rates such as CTR, CPA, or ROAS.
-- For each paid channel, include media spend and a summable exposure metric such as impressions or clicks. Spend can proxy exposure only when physical delivery data is unavailable; disclose that price fluctuations may confound the proxy.
-- Add time-aligned control variables that capture plausible causes of both KPI changes and media planning. Record definitions, sources, and transformations.
-- Include sufficient pre-period media history for the configured carryover/max-lag window.
-- Make the geo/time panel complete. Treat confirmed inactive media as zero; investigate and justify imputation for KPI and controls rather than replacing missing values with zero.
+- 按时间（最好按周）和地理位置（如可得）构建连续的面板数据。
+- 使用可加总的业务 KPI，例如收入、销售数量或转化次数。不要加总比率类指标，例如 CTR、CPA 或 ROAS。
+- 对于每个付费渠道，包含媒体支出和可加总的曝光指标，例如展示次数或点击次数。只有在物理投放数据不可用时，支出才可作为曝光的代理变量；需披露价格波动可能会使该代理变量产生混淆。
+- 添加时间对齐的控制变量，这些变量需捕捉 KPI 变化和媒体计划的合理成因。记录定义、来源和转换过程。
+- 针对配置的留存/最大滞后窗口，包含足够的先验期媒体历史数据。
+- 确保地理/时间面板完整。将确认的未激活媒体视为零；对于 KPI 和控制变量，应调查并论证插补方法，而不是将缺失值替换为零。
 
-## History and Model Complexity
+## 历史数据与模型复杂度
 
-Google Meridian's general rule of thumb is at least two years of weekly data for geo-level models, three years for national-level models, and three years when using monthly observations. These are directional starting points, not guarantees or universal minimums.
+Google Meridian 的一般经验法则是：地理层面模型至少需要两年的周数据，国家层面模型需要三年，若使用月度观测数据则需三年。这些是方向性起点，并非保证或通用最小值。
 
-Assess history together with:
+需结合以下因素评估历史数据：
 
-- Number of media channels, controls, treatments, time effects/knots, and other estimated effects.
-- Variation in media spend/exposure and outcome; many flat or highly correlated channels are difficult to separate.
-- Geo count and whether geo-level pooling is plausible.
-- Data-to-parameter diagnostics, exploratory checks, convergence, posterior sensitivity, and credible intervals.
-- Whether important confounders and experimental calibration evidence are available.
+- 媒体渠道、控制变量、处理变量、时间效应/节点及其他估计效应的数量。
+- 媒体支出/曝光和结果的变化；许多持平或高度相关的渠道很难区分。
+- 地理数量及地理层面的池化是否合理。
+- 数据-参数诊断、探索性检查、收敛性、后验敏感性及可信区间。
+- 是否存在重要的混淆变量及实验校准证据。
 
-Meridian generally targets channel-level effects. Campaign-level reporting should be aggregated by channel and period for MMM; campaign-level optimization is a different, more granular question.
+Meridian 通常针对渠道层面效应进行建模。对于 MMM，活动层面的报告应按渠道和时期进行聚合；活动层面的优化是一个不同的、更细粒度的问题。
 
-## Decision Labels
+## 决策标签
 
-- **Not ready**: Only a short window, non-summable KPIs, missing media/control periods, no comparable channel definitions, or no credible outcome source. Do not claim an MMM estimate.
-- **Preparation only**: The minimum panel is being assembled or key controls, geographies, mature outcomes, or lag history are missing. Produce a data-gap plan, not a budget optimum.
-- **Candidate for modeling**: Dataset shape and history look plausible. This only authorizes a modeling/EDA review; it does not prove identifiability, convergence, causal validity, or reliable ROI.
+- **未就绪**：仅有短窗口、不可加总的 KPI、缺失的媒体/控制变量时期、无可比的渠道定义或无可信的结果来源。不得声称拥有 MMM 估计值。
+- **仅准备中**：最小面板正在组装，或缺少关键控制变量、地理区域、成熟结果或滞后历史数据。应产出数据缺口计划，而非预算最优解。
+- **建模候选**：数据集形状和历史数据看起来合理。这仅授权进行建模/探索性数据分析（EDA）审查；它不能证明可识别性、收敛性、因果有效性或可靠的 ROI。
 
-## Advertising Agent Boundary
+## 广告代理边界
 
-The cross-channel budget Tool is not an MMM. It computes a bounded historical-efficiency heuristic from caller-supplied weekly reports, blocks immature/non-live/incomparable inputs, and cannot independently verify report provenance. Label its output directional; do not call average historical ROAS marginal ROAS or causal lift.
+跨渠道预算 Tool 不是 MMM。它根据调用方提供的周报计算有界的基于历史效率的启发式值，拦截不成熟/未上线/不可比的输入，且无法独立验证报告的来源。将其输出标记为方向性；不要将历史平均 ROAS 称为边际 ROAS 或因果提升。
 
-References:
+参考链接：
 
-- Google Meridian, [Collect and organize your data](https://developers.google.com/meridian/docs/pre-modeling/collect-data)
-- Google Meridian, [Amount of data needed](https://developers.google.com/meridian/docs/pre-modeling/amount-data-needed)
+- Google Meridian，[收集和组织数据](https://developers.google.com/meridian/docs/pre-modeling/collect-data)
+- Google Meridian，[所需数据量](https://developers.google.com/meridian/docs/pre-modeling/amount-data-needed)

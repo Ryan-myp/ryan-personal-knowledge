@@ -1,39 +1,40 @@
-# Meta Insights Report Interpretation
+---
+# Meta 洞察报告解读
 
-Use this reference for Meta Campaign, Ad Set, Ad, and Insights report questions. The current registered Tool schema and exact returned fields are authoritative; this guide does not promise support for every Marketing API report parameter.
+使用本参考指南处理 Meta 营销活动（Campaign）、广告组（Ad Set）、广告（Ad）和洞察报告的查询。当前注册的 Tool 架构和确切返回的字段具有权威性；本指南不承诺支持所有 Marketing API 报告参数。
 
-## Current Agent Query Boundary
+## 当前 Agent 查询边界
 
-In the current repository contract:
+在当前仓库契约中：
 
-- Campaign reporting accepts campaign IDs, a date preset, and a row limit.
-- Ad Set and Ad reporting accept their resource IDs, a date range, requested fields, and a row limit.
-- The report Tools do not expose `breakdowns`, `action_breakdowns`, `time_increment`, or configurable attribution windows. Do not claim the Agent queried age, placement, device, action-type breakdowns, or a custom attribution window through these Tools. Analyze a user-provided/exported breakdown only when its source and query settings are identified.
-- The report response limit is a maximum. If the returned row count reaches that limit, treat completeness as Unknown unless the response proves the result was complete; narrow the scope or request a suitable export.
-- Offline fallback data is marked `data_status: offline_no_client` and `simulated: true`; it is not evidence from the user's Meta account.
+- 营销活动报告接受营销活动 ID、日期预设和行数限制。
+- 广告组和广告报告接受其资源 ID、日期范围、请求的字段和行数限制。
+- 报告 Tools 不暴露 `breakdowns`、`action_breakdowns`、`time_increment` 或可配置的归因窗口。请勿声称 Agent 通过这些 Tools 查询了年龄、投放位置、设备、操作类型细分或自定义归因窗口。仅在用户提供的/导出的细分数据其来源和查询设置已标识时，才对其进行解析。
+- 报告响应限制是最大值。如果返回的行数达到该限制，除非响应证明结果完整，否则将完整性视为未知（Unknown）；请缩小范围或请求合适的导出。
+- 离线后备数据被标记为 `data_status: offline_no_client` 和 `simulated: true`；它不是来自用户 Meta 账号的证据。
 
-These boundaries describe this repository's current Tool contract, not all capabilities of Meta's API.
+这些边界描述了此仓库当前的 Tool 契约，而非 Meta API 的所有功能。
 
-## Fix the Report Grain
+## 修正报告粒度
 
-Before comparing results, capture the ad account, resource level (Campaign, Ad Set, or Ad), IDs, date range, account timezone if available, currency, requested fields, filters, retrieval time, and source status. Compare like-for-like levels and windows. A Campaign total and a sum of child Ad Set or Ad rows can differ because of scope, delivery changes, missing children, row limits, or different query definitions; do not silently reconcile them.
+在比较结果之前，记录广告账号、资源层级（Campaign、Ad Set 或 Ad）、ID、日期范围、可用的账号时区、货币、请求的字段、过滤器、获取时间和来源状态。比较相同层级和窗口。营销活动总计与子级广告组或广告行的总和可能因范围、投放变更、缺失的子级、行数限制或不同的查询定义而存在差异；请勿静默地对账。
 
-The report client defaults to delivery and outcome fields including impressions, clicks, CTR, CPC, spend, purchase ROAS, cost per result, actions, and action values. Defaults can change with the Tool contract. State which fields were actually returned; absence of a field is not a zero.
+报告客户端默认使用投放和结果字段，包括展示次数、点击次数、点击率（CTR）、每次点击成本（CPC）、支出、购买投资回报率（ROAS）、每次操作成本、操作和操作值。默认设置可能随 Tool 契约而变化。说明实际返回了哪些字段；缺少某字段并不表示零。
 
-## Read Action Metrics Carefully
+## 仔细阅读操作指标
 
-- `actions` and `action_values` can contain multiple event/action types. Identify the exact `action_type` before describing a generic action as a purchase, lead, registration, or app event.
-- Keep event count, attributed result, and value distinct. An attributed result is not necessarily incremental, and platform-attributed values from separate channels must not be added into a business total.
-- Preserve the report's aggregation grain. Do not sum reach, frequency, or overlapping audience rows as if they were mutually exclusive.
-- If the returned result omits action-type or demographic/placement breakdowns, do not infer that those categories had no activity.
+- `actions` 和 `action_values` 可能包含多种事件/操作类型。在将通用操作描述为购买、潜在客户、注册或应用事件之前，请识别确切的 `action_type`。
+- 保持事件计数、归因结果和价值相互独立。归因结果不一定意味着增量，且来自不同渠道的平台归因值不得累加到业务总数中。
+- 保留报告的聚合粒度。请勿将触达数、频次或重叠受众行相加，仿佛它们是互斥的。
+- 如果返回的结果省略了操作类型或人口统计/投放位置细分，请勿推断这些类别没有活动。
 
-## Diagnose Before Recommending
+## 先诊断后建议
 
-1. Check whether the response is live, simulated/offline, failed, partial, capped, or missing provenance.
-2. Verify that resource level, date range, timezone, currency, fields, and account scope match the comparison being made.
-3. Separate delivery metrics (impressions, clicks, spend) from action counts and attributed value; state definitions and denominators for calculated rates.
-4. Check whether action names, account goals, attribution settings, event deduplication, and conversion maturity are known. If the Tool response does not provide them, mark them Unknown rather than guessing.
-5. Compare windows of equal length and note known campaign/ad set changes. Do not infer a cause from a trend alone.
-6. If a required breakdown, attribution setting, change history, or conversion-source reconciliation is not available through the current Tool, list it as an evidence/capability gap. Do not substitute a similar-looking metric.
+1. 检查响应是实时的、模拟/离线的、失败的、部分的、受限的还是缺少来源证明的。
+2. 验证资源层级、日期范围、时区、货币、字段和账号范围是否与所做的比较相匹配。
+3. 将投放指标（展示次数、点击次数、支出）与操作计数和归因值分开；陈述计算比率时的定义和分母。
+4. 检查操作名称、账号目标、归因设置、事件去重和转化成熟度是否已知。如果 Tool 响应未提供这些，请将其标记为未知（Unknown），而非猜测。
+5. 比较长度相同的窗口并记录已知的营销活动/广告组变更。不要仅从趋势推断原因。
+6. 如果所需的细分、归因设置、变更历史或转化来源对账无法通过当前 Tool 获取，请将其列为证据/能力差距。不要替换为外观相似的指标。
 
-Meta Insights level, fields, breakdown compatibility, and attribution behavior can vary with API version and request settings. Current Tool schemas and official platform documentation must be checked before treating a field or combination as supported.
+Meta 洞察的层级、字段、细分兼容性和归因行为可能随 API 版本和请求设置而变化。在将某字段或组合视为受支持之前，必须检查当前的 Tool 架构和官方平台文档。

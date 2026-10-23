@@ -20,7 +20,7 @@ evidence_level: "reviewed"
 last_verified_at: "2026-09-08"
 ---
 
-# Google Ads Campaign 与 Search 实战操作手册
+# Google Ads Campaign 与搜索实战操作手册
 
 本篇把 Google Search 从需求澄清到上线验证拆成可重放的步骤。它区分“业务要达成什么”“Google 资源如何承载”“当前 Tool 是否允许执行”三个问题，避免把知识建议误当成可直接发送的 API 请求。
 

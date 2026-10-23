@@ -1,5 +1,4 @@
-# Archived Queries
+# 归档问答
 
-This directory stores durable question-and-answer pages only when the answer
-adds reusable knowledge. A one-off runtime answer stays transient and does not
-become a source of truth automatically.
+此目录仅在回答能够沉淀可复用知识时保存长期问答页面。一次性的运行时回答保持临时状态，
+不会自动成为事实来源。

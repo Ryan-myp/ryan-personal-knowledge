@@ -8,7 +8,7 @@ tags: [tiktok, ads, smart-plus, spark-ads, ecommerce, app, lead-generation, pixe
 aliases: [tiktok ads, tiktok, douyin, 抖音]
 ---
 
-# TikTok Ads 专家 Skill
+# TikTok Ads 专家技能
 
 > 本 Skill 只提供 TikTok 广告业务知识、对象依赖、参数判断和 SOP。它不是 Tool 注册表，
 > 不持有认证材料，不执行 API。实际能力必须由当前 Registry 中 TikTok Tool Source
@@ -75,7 +75,7 @@ Spark 使用已授权的原生 TikTok 内容，需确认 creator/identity 授权
 引用、评论/互动使用方式、落地页和 tracking。Spark 的原生内容授权状态与广告创建状态不同；
 没有授权或 post ID 时不能用普通视频广告替代，也不能声称保留了原生互动。
 
-### App / Lead / Commerce
+### 应用 / Lead / Commerce
 
 - App：确认 app_id、操作系统、promotion type、深链/商店链接和转化事件。
 - Lead：确认 Page/表单引用、隐私政策和线索回传范围；页面/Instant Form 若不是当前 Ads

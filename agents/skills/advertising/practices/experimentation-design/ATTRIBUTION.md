@@ -1,5 +1,6 @@
-# Source Attribution
+---
+# 来源归属
 
-This is an original Chinese-language advisory Skill for the advertising Agent. Its experiment-planning and statistical-interpretation boundaries were informed by the locally installed `ab-testing` Skill (version 2.0.1) from [coreyhaines31/marketingskills](https://github.com/coreyhaines31/marketingskills).
+这是面向广告投放 Agent 的原创中文语言建议 Skill。其实验规划和统计解释边界，参考了本地已安装的 `ab-testing` Skill（版本 2.0.1），来源于 [coreyhaines31/marketingskills](https://github.com/coreyhaines31/marketingskills)。
 
-No upstream reference files, sample-size tables, scripts, assets, or integrations are included. The upstream project is MIT licensed; see its [LICENSE](https://github.com/coreyhaines31/marketingskills/blob/main/LICENSE). Copyright (c) 2025 Corey Haines.
+未包含任何上游参考文件、样本量表、脚本、资源或集成。上游项目采用 MIT 许可证；详见其 [LICENSE](https://github.com/coreyhaines31/marketingskills/blob/main/LICENSE)。版权所有 (c) 2025 Corey Haines。

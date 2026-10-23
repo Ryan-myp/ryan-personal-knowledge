@@ -1,4 +1,4 @@
-# TikTok Ads 操作清单
+# TikTok 广告操作清单
 
 ## 创建前 Preflight
 
@@ -15,7 +15,7 @@ advertiser scope
 动态字段必须记录 lookup 来源和账户范围；素材、identity、Pixel、catalog、product set 的
 ID 要区分所有权与生命周期。
 
-## Spark 检查
+## Spark Ads 检查
 
 - creator/item/post 是否已授权给目标 advertiser；
 - Spark 引用与普通上传视频字段不能混用；

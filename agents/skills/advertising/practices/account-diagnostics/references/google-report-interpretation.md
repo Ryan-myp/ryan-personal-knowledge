@@ -1,34 +1,45 @@
-# Google Ads Report Interpretation
+# Google Ads 报表解读
 
-Use this reference for Google Ads search-term, conversion, or campaign-report questions. The current registered Tool schema and the exact returned fields remain authoritative; this is not a promise that every report type is available through the application.
+本参考用于回答 Google Ads 搜索词、转化或 Campaign 报表问题。当前已注册的 Tool schema
+和实际返回字段始终是权威依据；这不表示应用已经支持每一种报表类型。
 
-## Search terms are incomplete evidence
+## 搜索词是不完整证据
 
-Google states that some search terms with insufficient query activity may be omitted from the Search terms report for privacy. Therefore, visible terms are not automatically a complete or representative sample of all searches.
+Google 说明，为保护隐私，查询活动不足的部分搜索词可能不会出现在搜索词报告中。因此，
+可见搜索词并不自动构成全部搜索的完整或代表性样本。
 
-- Do not infer that an absent query received no impressions or clicks.
-- If both the search-term report and a compatible campaign-level total are available, compare them only for the same account, campaign scope, date basis, and compatible metric definition. You may report disclosed-click coverage as `visible search-term clicks / compatible campaign clicks`; label it as report coverage, not as the share of all query intent.
-- If either denominator or compatible query is unavailable, state that coverage is Unknown. Do not estimate omitted query themes.
-- Confirm which campaign types the queried report covers. Google Ads exposes distinct report resources, and the standard `search_term_view` does not cover Performance Max; do not use its absence as evidence about PMax search demand.
-- Search-term report rows can be segmented. Preserve the requested grain and avoid double-counting when aggregating.
+- 不要推断未出现的查询没有获得展示或点击。
+- 如果搜索词报告和可比的 Campaign 层级总量都可用，只能针对同一账户、Campaign 范围、
+日期口径和兼容指标定义进行比较。你可以把披露的点击覆盖率表述为
+`visible search-term clicks / compatible campaign clicks`，但必须标注为报表覆盖率，
+不能表述为全部查询意图的占比。
+- 如果任一明确分母或兼容查询不可用，应说明覆盖率为 Unknown，不得估算缺失的查询主题。
+- 确认所查询报表覆盖哪些 Campaign 类型。Google Ads 提供不同的报表资源，标准
+`search_term_view` 不覆盖 Performance Max；不能因为其中没有数据就推断 PMax 没有搜索需求。
+- 搜索词报告行可以被细分。汇总时保留用户要求的粒度，并避免重复计数。
 
-## Conversion columns are different measures
+## 转化列代表不同度量
 
-`Conversions` and `All conversions` are not interchangeable. Google describes `All conversions` as including actions not included in the main `Conversions` column. Check the conversion actions and account/campaign goal semantics before describing a generic conversion as a purchase, qualified lead, or install.
+`Conversions` 与 `All conversions` 不可互换。Google 将 `All conversions` 定义为包含
+主 `Conversions` 列未纳入的转化动作。把泛化“转化”描述为购买、合格线索或安装之前，
+必须核对转化动作以及账户/Campaign 目标语义。
 
-When a report is segmented by conversion action, state that the row grain changed. Google documents that rows with all-zero metrics, including new conversion actions, may not be returned. An absent row is therefore not sufficient proof that the action does not exist or that it had no activity.
+当报表按转化动作细分时，应说明行的粒度已经变化。Google 文档说明，指标全为零的行，
+包括新建转化动作，可能不会返回。因此，缺失行不足以证明该动作不存在或没有活动。
 
-Conversion reporting may lag. Separate report date basis from conversion date: use a `by_conversion_date` metric when the question is explicitly about conversion occurrence date and the current query supports it. Do not silently compare click-date and conversion-date series.
+转化报表可能延迟。应区分报表日期口径和转化日期：当问题明确询问转化发生日期，且当前
+查询支持时，使用 `by_conversion_date` 指标。不要静默比较点击日期序列和转化日期序列。
 
-## Check the report before explaining performance
+## 解释效果前先核验报表
 
-Before interpreting a change:
+在解释变化之前：
 
-1. Confirm account, campaign type, object level, date range, timezone, filters, metrics, and any segments.
-2. Check whether the response is live, simulated/offline, failed, partial, or missing provenance. A simulated response is not current account evidence.
-3. Separate true zero values from empty rows, omitted rows, query errors, incomplete pages, and unavailable fields.
-4. Check whether campaign names are being mistaken for actual targeting or settings; verify the relevant returned resource fields.
-5. Compare equal windows and note changes to campaign configuration. If change history or experiment metadata is unavailable, do not invent a cause.
-6. Include sample sizes and data maturity. There is no universal number of clicks or conversions that makes every account conclusive.
+1. 确认账户、Campaign 类型、对象层级、日期范围、时区、筛选条件、指标和细分。
+2. 检查响应是实时、模拟/离线、失败、部分成功，还是缺少来源信息。模拟响应不能作为当前账户证据。
+3. 区分真实零值与空行、缺失行、查询错误、不完整分页和不可用字段。
+4. 检查是否把 Campaign 名称误认为实际定向或设置，并核对相关返回资源字段。
+5. 比较相同窗口，并记录 Campaign 配置变化。如果变更历史或实验元数据不可用，不要臆造原因。
+6. 包含样本量和数据成熟度。不存在适用于所有账户、能保证结论成立的通用点击或转化数量。
 
-If the current Tool cannot query the required search-term, conversion-action, experiment, landing-page, or change-history evidence, list it as a capability/evidence gap. Do not claim that the audit covered it.
+如果当前 Tool 无法查询所需的搜索词、转化动作、实验、落地页或变更历史证据，应将其列为
+能力/证据缺口，不得声称审计已经覆盖。

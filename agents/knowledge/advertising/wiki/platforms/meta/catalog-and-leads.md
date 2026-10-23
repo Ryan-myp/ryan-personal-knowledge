@@ -18,9 +18,9 @@ evidence_level: "reviewed"
 last_verified_at: "2026-09-08"
 ---
 
-# Meta Catalog、Lead 与转化质量运营
+# Meta 商品目录、线索与转化质量运营
 
-## Catalog 广告链路
+## 商品目录广告链路
 
 ```text
 Business / Catalog
@@ -38,11 +38,11 @@ Catalog、Product Set、Pixel、Page/Instagram identity 和 Ad Account 是不同
 
 购买事件要传递稳定订单标识、商品 ID、数量、币种和价值，且与 Catalog 中的商品 ID 对齐。发生商品 ID 不匹配、价值为空、重复事件或退款未处理时，平台可能继续优化到错误信号。复盘时按商品、毛利、客单价、新老客和退款拆分，而不是只看总 Purchase。
 
-## Lead 质量闭环
+## 线索质量闭环
 
 Lead 广告可以降低表单摩擦，但便宜线索不等于有效商机。建立 lead_id → CRM 联系人 → MQL → SQL → opportunity → closed-won 的去重和回传映射，记录销售响应时间、无效原因、地区与产品。优化目标从 lead 切换到 qualified lead 前，要确认事件量、延迟和归因窗口能支持学习。
 
-## Instant Form 与网站表单
+## 即时表单与网站表单
 
 原生表单适合降低到站摩擦，网站表单适合承载更复杂资格校验。二者需单独比较提交率、有效率、销售转化率和后续收入；不要因为原生表单 CPL 低就直接替代高质量网站流量。隐私政策、字段最小化和线索访问权限必须满足业务与地区要求。
 

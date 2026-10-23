@@ -1,4 +1,4 @@
-# LLM Wiki 使用指南
+# LLM 知识库使用指南
 
 ## 这套知识库解决什么问题
 
@@ -6,7 +6,7 @@
 
 ## 查询示例
 
-### CLI
+### 命令行
 
 ```bash
 ./scripts/ad-agent-python -m agents.applications.advertising.knowledge.wiki_query --action stats

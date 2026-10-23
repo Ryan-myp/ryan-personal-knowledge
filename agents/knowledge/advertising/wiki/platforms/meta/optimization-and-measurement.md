@@ -18,7 +18,7 @@ evidence_level: "reviewed"
 last_verified_at: "2026-09-08"
 ---
 
-# Meta Ads 素材、事件与 Insights 优化
+# Meta Ads 素材、事件与洞察优化
 
 ## 素材测试框架
 
@@ -38,7 +38,7 @@ last_verified_at: "2026-09-08"
 
 必须区分：服务端接收成功、匹配成功、去重成功、进入报表、被广告系统用于优化和最终归因。联调 test code 不能进入生产配置，事件异常优先查时间单位、命名、重复发送、Consent、像素/账户归属和报表延迟。
 
-## Insights 解读
+## 洞察解读
 
 查询前固定 advertiser、level（campaign/ad set/ad）、日期、时区、币种、归因设置、breakdown、fields 和分页。reach/frequency、actions、conversions、purchase value 可能受建模、窗口和维度限制影响；不同 level 或 breakdown 的指标不能直接相加。
 

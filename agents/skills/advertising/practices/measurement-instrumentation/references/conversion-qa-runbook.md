@@ -1,43 +1,43 @@
-# Conversion Tracking QA Runbook
+# 转化跟踪 QA 运行手册
 
-Use this runbook to verify a tracking path with sanitized, scoped evidence. It is a review and test plan, not an external-system connector.
+使用此运行手册来验证跟踪路径，并使用经过清洗和范围限定的证据。它是一项审查和测试计划，而非外部系统连接器。
 
-## Evidence by Stage
+## 各阶段证据
 
-| Stage | Minimum evidence | Common failure class |
+| 阶段 | 最低证据要求 | 常见故障类别 |
 |---|---|---|
-| Business event | Reproducible action, expected event count, canonical transaction/lead state | Trigger is absent, too early, or repeated on refresh |
-| Client/server capture | Test-only event name or flag, required properties present, consent state handled | Tag/SDK not fired, blocked request, app lifecycle gap |
-| Transport receipt | Sanitized request status, provider receipt/error category, batch/test identifier | Network failure, invalid schema, scope or permission rejection |
-| Deduplication and matching | Stable event key behavior and aggregate match/dedup status | Client/server keys differ, keys are reused, eligible identifiers omitted |
-| Attribution | Campaign/linkage fields, attribution setting and observation window | Click/link ID lost, incompatible window, consent or identity gap |
-| Reporting | Query level, date basis, time zone, refresh timestamp and maturity | Late arrival, report filter mismatch, modeled/backfilled data |
-| Business outcome | Deduplicated CRM/order counts, cancellations/refunds and value basis | Test traffic mixed into production, lead status mismatch, refund lag |
+| 业务事件 | 可复现的操作、预期的事件计数、规范的成交/潜在客户状态 | 触发器缺失、过早或刷新时重复 |
+| 客户端/服务器捕获 | 仅限测试的事件名称或标志、必需属性存在、已处理同意状态 | 标签/SDK 未触发、被阻止的请求、应用生命周期间隙 |
+| 传输回执 | 经过清洗的请求状态、提供商回执/错误类别、批次/测试标识符 | 网络故障、无效架构、范围或权限拒绝 |
+| 去重和匹配 | 稳定事件键的行为以及聚合匹配/去重状态 | 客户端/服务器键不同、键被重用、遗漏了符合条件的标识符 |
+| 归因 | 营销活动/链接字段、归因设置和观察窗口 | 点击/链接 ID 丢失、不兼容的窗口、同意或身份间隙 |
+| 报告 | 查询级别、日期基础、时区、刷新时间戳和成熟度 | 延迟到达、报告过滤器不匹配、建模/回填数据 |
+| 业务结果 | 去重后的 CRM/订单计数、取消/退款以及价值基础 | 测试流量混入生产环境、潜在客户状态不匹配、退款延迟 |
 
-Mark each stage `pass`, `fail`, or `unknown`. A successful browser event or API receipt is not evidence that downstream matching, attribution, reporting, or business reconciliation succeeded.
+标记每个阶段为 `pass`、`fail` 或 `unknown`。成功的浏览器事件或 API 回执并不是下游匹配、归因、报告或业务对账成功的证据。
 
-## Triage Order
+## 分诊顺序
 
-1. Fix the question and expected outcome: which event, population, date basis, platform, and business source are being checked?
-2. Confirm the issue with a small, repeatable test that is isolated from production optimization and reporting.
-3. Compare expected and observed aggregate counts at each stage; preserve event-time and receipt-time separately.
-4. Classify the first failing stage. Check schema/permissions before retrying; check stable idempotency before replaying; do not resend an entire batch when only some records failed.
-5. Make one minimal correction in the owning system, repeat the test, and read back the downstream state.
-6. Resume optimization only after the signal is valid, deduplicated, sufficiently mature, and mapped to the intended optimization event.
+1.  修正问题和预期结果：正在检查哪个事件、人群、日期基础、平台和业务来源？
+2.  使用小型、可重复且与生产环境优化和报告隔离的测试来确认问题。
+3.  在每个阶段比较预期和观察到的聚合计数；分别保留事件时间和接收时间。
+4.  分类第一个故障阶段。在重试之前检查架构/权限；在重放之前检查稳定的幂等性；当只有部分记录失败时，不要重新发送整个批次。
+5.  在所属系统中进行一项最小纠正，重复测试，并读回下游状态。
+6.  仅在信号有效、已去重、足够成熟并映射到预期的优化事件后，才恢复优化。
 
-## Failure Patterns
+## 故障模式
 
-| Symptom | Check first | Do not infer |
+| 症状 | 首先检查 | 不要推断 |
 |---|---|---|
-| Business outcomes exist but platform events fall | Trigger coverage, consent, transport errors, SDK/CAPI/MMP health and event-time lag | That media performance fell |
-| Platform events exceed business outcomes | Test traffic, repeated triggers, retries, duplicate keys, cancellations/refunds | A fixed percentage of platform conversions is false |
-| Event is received but not attributed | Event mapping, click/link continuity, time window, eligible match state and consent | That the event was not received |
-| Event appears in diagnostics but not report | Report level/filter, time zone, reporting delay, backfill and maturity | That a successful test event is a production conversion |
-| Value is missing or implausible | Amount units, currency, gross/net/refund basis, source transaction and event mapping | That the platform should infer a missing value |
-| Client and server both report success | Same business-event definition, stable shared event key, dedup response/status | That deduplication occurred merely because both requests succeeded |
+| 业务结果存在但平台事件下降 | 触发器覆盖范围、同意、传输错误、SDK/CAPI/MMP 健康状况以及事件时间滞后 | 媒体表现下降 |
+| 平台事件超过业务结果 | 测试流量、重复触发、重试、重复键、取消/退款 | 平台转化的一定比例是错误的 |
+| 事件已接收但未归因 | 事件映射、点击/链接连续性、时间窗口、符合条件的匹配状态和同意 | 事件未接收 |
+| 事件出现在诊断中但未出现在报告中 | 报告级别/过滤器、时区、报告延迟、回填和成熟度 | 成功的测试事件是生产转化 |
+| 值缺失或不合理 | 金额单位、货币、毛/净/退款基础、源交易和事件映射 | 平台应推断缺失的值 |
+| 客户端和服务器都报告成功 | 相同的业务事件定义、稳定的共享事件键、去重响应/状态 | 仅因为两个请求都成功就去重发生了 |
 
-## QA Record
+## 质量检查记录
 
-Record the event name/version, sanitized test case, expected and observed aggregate counts, test/production separation, timestamps and time zones, provider status/error category, report refresh time, privacy review, first failing stage, change owner, retest result, and rollback condition. Keep secrets and user-level identifiers out of the record.
+记录事件名称/版本、经过清洗的测试用例、预期和观察到的聚合计数、测试/生产环境分离、时间戳和时区、提供商状态/错误类别、报告刷新时间、隐私审查、第一个故障阶段、变更所有者、重新测试结果以及回滚条件。将机密信息和用户级标识符排除在记录之外。
 
-If the connected platform has no authorized diagnostic Tool, state which evidence is unavailable and give the user a safe manual verification path. Never claim the configuration was changed or the live event path passed based only on a proposed plan.
+如果连接的平台没有授权诊断 Tool，则说明哪些证据不可用，并为用户提供安全的手动验证路径。切勿仅基于拟议计划就声称配置已更改或实时事件路径通过。

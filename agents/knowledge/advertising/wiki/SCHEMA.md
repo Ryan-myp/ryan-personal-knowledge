@@ -1,4 +1,4 @@
-# LLM Wiki 文档规范
+# LLM 知识库文档规范
 
 本目录采用 Markdown-first 的 LLM Wiki 方式：文档是人和模型共同阅读的知识源，`index.md` 负责导航，`log.md` 记录变更。知识文件不包含可执行代码，也不通过 `workflow.yaml` 驱动流程。目录组织兼容 Karpathy 风格，同时保留广告 Agent 已稳定使用的领域目录，避免一次性搬家破坏来源引用。
 
@@ -123,7 +123,7 @@ subcategory: conversion-and-diagnostics
 
 `subcategory` 是分类下的稳定主题 slug，不用于替代正文标题。历史文档没有显式分类时，Provider 会按 `platforms/<platform>`、`business`、`expertise` 路径和 `knowledge_type` 确定性推导，不会因为重命名标题改变平台边界。目录 API 返回 `documents` 兼容旧客户端，同时返回按平台/分类组织的 `tree`。
 
-## Runtime 使用边界
+## 运行时使用边界
 
 - Runtime 只通过 `KnowledgeProvider` 读取已发布 Markdown 文档；它默认跳过
   `raw/`、`system` 页面和导航 README。

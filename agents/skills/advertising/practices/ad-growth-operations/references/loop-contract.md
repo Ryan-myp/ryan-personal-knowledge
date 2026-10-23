@@ -1,33 +1,30 @@
-# Paid Media Loop Contract
+# 付费媒体循环契约
 
-Use this checklist before creating or revising a recurring Agent task.
+在创建或修订任何定期 Agent 任务之前，请使用此检查清单。
 
-| Contract item | Required definition |
+| 契约项 | 所需定义 |
 |---|---|
-| Purpose | One business outcome and the decision this check informs |
-| Principal and scope | The trusted owner, allowed account/platform scope, and exclusions |
-| Inputs | Registered read Tools, fields, report window, timezone, freshness, completeness |
-| Cadence | Frequency justified by data refresh, conversion delay, and decision latency |
-| Decision condition | Evidence needed to produce HOLD, FIX, TEST, or INVESTIGATE |
-| Action level | Read-only report, staged proposal, or explicitly approved bounded write |
-| Idempotency | Per-occurrence identity plus business-action dedupe/cooldown where needed |
-| Stop conditions | Missing data, unknown scope, incomplete pages, tool failure, policy issue, unknown write outcome |
-| Recovery | Read back before retrying any potentially successful write |
-| Result | Findings, evidence, coverage gaps, actions staged, and run/task reference |
+| 目的 | 一项业务成果及该检查所支持的决策 |
+| 责任主体与范围 | 受信任的负责人、允许的账户/平台范围以及排除项 |
+| 输入 | 已注册的读取 Tool、字段、报表时间窗口、时区、新鲜度、完整性 |
+| 频率 | 由数据刷新、转化延迟和决策延迟所决定的执行频率 |
+| 决策条件 | 生成 HOLD、FIX、TEST 或 INVESTIGATE 所需的证据 |
+| 操作级别 | 只读报告、分阶段提案，或明确获批的有界写入 |
+| 幂等性 | 每次触发的唯一标识，以及在必要时针对业务操作的去重/冷却机制 |
+| 停止条件 | 数据缺失、范围未知、页面不完整、Tool 故障、策略问题、未知写入结果 |
+| 恢复 | 在重试任何可能已成功执行的写入之前，先读回验证 |
+| 结果 | 发现项、证据、覆盖缺口、已分阶段的操作，以及运行/任务引用 |
 
-The scheduler's unique run record prevents treating two occurrences as one execution, but it does not
-by itself deduplicate a business action repeated across separate runs. If the loop needs durable
-cross-run state and no registered storage capability supplies it, keep the loop read-only.
+调度器的唯一运行记录可防止将两次触发误视为同一次执行，但它本身无法对跨独立运行重复发生的业务操作进行去重。如果循环需要持久化的跨运行状态，且没有已注册的存储能力提供该支持，则保持循环为只读模式。
 
-## Safe Default
+## 安全默认值
 
 ```text
-read current evidence
-  -> validate completeness and maturity
-  -> compare against the declared decision condition
-  -> report evidence and proposed next step
-  -> wait for explicit approval before external mutation
+读取当前证据
+  -> 验证完整性与成熟度
+  -> 与已声明的决策条件进行比对
+  -> 报告证据及建议的下一步
+  -> 在外部变更之前等待明确批准
 ```
 
-Do not treat a missing report row, stale result, failed Tool call, or immature conversion window as a
-zero value. Do not pause, scale, or rotate campaigns based only on a single noisy metric.
+不要将缺失的报表行、过期结果、失败的 Tool 调用或尚未成熟的转化窗口视为零值。不要仅基于单一噪声指标就暂停、扩缩容或轮转营销活动。

@@ -20,7 +20,7 @@ evidence_level: "reviewed"
 last_verified_at: "2026-09-08"
 ---
 
-# Meta Insights 分层报表、Breakdown 与异步查询
+# Meta 洞察分层报表、细分维度与异步查询
 
 Meta Insights 是按请求契约返回的聚合视图，不是一个永远固定的事实表。level、fields、breakdowns、time_range、time_increment、action_breakdowns 和 attribution settings 改变后，结果的粒度、可加性和含义都会变化。
 
@@ -36,7 +36,7 @@ Meta Insights 是按请求契约返回的聚合视图，不是一个永远固定
 | 事件漏斗 | action breakdown | 事件发生和归因口径 |
 | 跨期复盘 | 固定层级与字段 | 归因窗口和回补延迟 |
 
-## Breakdown 与重复计数
+## 细分维度与重复计数
 
 年龄、性别、地域、版位、设备、平台和行动类型会把同一对象拆成多行。独立覆盖人数、频次和归因转化不能在不同 breakdown 行之间简单求和；花费、展示和点击也要确认维度是否互斥。报告层应保存原始行和聚合规则，不能用去重脚本掩盖粒度错误。
 
@@ -76,7 +76,7 @@ Meta Insights 是按请求契约返回的聚合视图，不是一个永远固定
 | 聚合入库 | 原始行、粒度、去重和公式 | partial 不得覆盖 success |
 | 对账 | 平台、MMP/CRM、订单快照 | 标记延迟与口径差异 |
 
-## Breakdown 可加性矩阵
+## 细分维度可加性矩阵
 
 | 指标 | 通常可在互斥维度求和 | 需要谨慎 |
 |---|---|---|

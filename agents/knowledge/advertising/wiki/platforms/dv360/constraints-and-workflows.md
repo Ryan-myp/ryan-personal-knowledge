@@ -20,7 +20,7 @@ last_verified_at: "2026-10-19"
 
 # DV360 预算、定向、创意与投放工作流
 
-## Preflight 顺序
+## 投放前检查顺序
 
 ```text
 Partner / Advertiser scope
@@ -51,7 +51,7 @@ asset uploaded -> creative definition -> associated to Line Item -> review pendi
 
 异步报告和长任务要记录 definition、run/result 关联、状态、轮询次数、超时和错误摘要。未知写入状态先 readback；参数、权限、父级、定向组合和创意审核问题停止重试。所有写操作默认 dry-run，并经过 live 权限、确认、幂等和审计。
 
-## Creative 审核状态与恢复
+## 创意审核状态与恢复
 
 - 在 Creative status 中分别读取 DV360 status 与 Exchange status。它们代表不同审核层；Exchange status 是汇总状态：`Servable` 表示至少一个自有审核流程的 Exchange 已批准，`Approved` 表示全部通过，`Rejected` 表示至少一个 Exchange 拒绝。
 - 汇总的 `Rejected` 不证明所有供给都拒绝，也不能仅凭聚合状态断言是某一个 Exchange；通过 Creative status 详情确认具体 Exchange/Publisher 和适用库存后再描述范围。

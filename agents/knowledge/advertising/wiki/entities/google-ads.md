@@ -19,7 +19,7 @@ tags: [google-ads, google, Google广告, 广告平台, 渠道介绍, 基础知�
 status: published
 ---
 
-# Google Ads
+# Google 广告平台
 
 Google Ads 是覆盖搜索、购物、应用、视频和自动化投放等场景的广告平台。基础资源关系通常从 Customer 开始，经由 Campaign、Ad Group 连接到 Ad、Keyword 或素材资源；具体子资源取决于 Campaign 类型。
 

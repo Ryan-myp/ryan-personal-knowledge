@@ -1,37 +1,38 @@
-# Event Measurement Contract
+---
+# 事件测量契约
 
-Use this template to produce an implementation-ready review artifact. It is a specification only; it does not configure a provider or analytics platform.
+使用此模板生成可立即实施的评审工件。该文档仅为规范说明，不对任何供应商或分析平台进行配置。
 
-## Event Dictionary
+## 事件字典
 
-| Field | Required description |
+| 字段 | 必填描述 |
 |---|---|
-| Business event | Stable business meaning and decision it supports |
-| Event name/version | Canonical name plus provider-specific mapping, if verified |
-| Trigger | Exact user or system condition; include exclusions |
-| Event unit/key | Source of uniqueness, scope, generation owner, and deduplication window |
-| Properties | Minimum required fields, type, allowed values, null behavior, and sensitive-data classification |
-| Value | Amount, currency, gross/net/refund basis, if applicable |
-| Source and owner | Client/server/system of record and accountable team |
-| Time | Event timestamp, account/property time zone, expected latency, and late-arrival handling |
-| Consent/retention | Applicable consent state, purpose, retention, deletion, and access constraints |
-| Validation | Test method, expected count/value, duplicate/missing checks, and evidence |
+| 业务事件 | 稳定的业务含义及其所支持的决策 |
+| 事件名称/版本 | 规范名称，如已验证则包含特定于供应商的映射 |
+| 触发条件 | 精确的用户或系统条件；包括排除项 |
+| 事件单元/键 | 唯一性来源、范围、生成责任方以及去重窗口 |
+| 属性 | 最低必需字段、类型、允许的值、空值处理行为以及敏感数据分类 |
+| 数值 | 金额、货币、总额/净额/退款基准（如适用） |
+| 来源与责任方 | 客户端/服务器/记录系统以及负责团队 |
+| 时间 | 事件时间戳、账户/属性时区、预期延迟以及迟到数据到达处理 |
+| 同意/保留 | 适用的同意状态、目的、保留期、删除以及访问限制 |
+| 验证 | 测试方法、预期数量/数值、重复/缺失检查以及证据 |
 
-## Validation Matrix
+## 验证矩阵
 
-| Check | Evidence to capture |
+| 检查项 | 需捕获的证据 |
 |---|---|
-| Correct trigger and exclusions | Reproducible test path and expected event count |
-| Required properties and types | Sanitized event sample and contract validation |
-| Duplicate protection | Repeated-submit/retry test and dedup key behavior |
-| Cross-domain/app handoff | Entry identity and downstream continuity, where permitted |
-| Client/server parity | Event IDs and provider receipt status without exposing personal data |
-| Currency/value semantics | Source transaction compared to the documented value basis |
-| Delay and maturity | Event-time versus receipt/report-time observation |
-| Privacy | Consent state, field allowlist, redaction and retention checks |
+| 正确的触发条件和排除项 | 可复现的测试路径及预期事件计数 |
+| 必需属性及其类型 | 净化后的事件样本及契约验证 |
+| 重复保护 | 重复提交/重试测试及去重键行为 |
+| 跨域/应用交接 | 入口身份及下游连续性（在允许的情况下） |
+| 客户端/服务器一致性 | 事件 ID 及供应商接收状态，不暴露个人数据 |
+| 货币/数值语义 | 源交易与文档记载的数值基准对比 |
+| 延迟与成熟度 | 事件时间与接收/报告时间的观察对比 |
+| 隐私 | 同意状态、字段允许列表、脱敏及保留检查 |
 
-Use test traffic clearly separated from production. Do not place raw emails, phone numbers, access tokens, advertising identifiers, or other direct identifiers in a Skill, prompt, ordinary log, or report. Hashing alone does not establish that collection or sharing is permitted.
+使用与生产环境明确隔离的测试流量。切勿将原始电子邮件、电话号码、访问令牌、广告标识符或其他直接标识符放入 Skill、提示词、普通日志或报告中。仅进行哈希处理并不能证明收集或共享已获得许可。
 
-## UTM Governance
+## UTM 治理
 
-Define one canonical owner and registry for `source`, `medium`, `campaign`, `content`, and `term`; document case normalization, separators, reserved values, platform mapping, and version changes. Avoid putting names, email addresses, account secrets, or other personal/sensitive values in URLs. A UTM label describes a link; it does not prove a conversion or causality.
+为 `source`、`medium`、`campaign`、`content` 和 `term` 定义唯一的规范责任方和注册表；记录大小写规范化、分隔符、保留值、平台映射以及版本变更。避免在 URL 中放置姓名、电子邮件地址、账户密钥或其他个人/敏感值。UTM 标签描述的是链接；它并不能证明转化或因果关系。

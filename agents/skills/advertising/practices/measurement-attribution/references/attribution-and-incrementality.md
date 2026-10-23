@@ -1,30 +1,30 @@
-# Attribution Reconciliation and Method Selection
+# 归因对账与方法选择
 
-This operational checklist complements the repository Wiki. It does not connect to analytics, CRM, MMP, or ad-platform systems.
+本操作清单是对仓库 Wiki 的补充。它不连接分析、CRM、MMP 或广告平台系统。
 
-## Reconciliation Table
+## 对账表
 
-| Source | Number and definition | Window/date basis | Deduplication and maturity | Known limitations |
+| 来源 | 数量及定义 | 窗口/日期基准 | 去重与成熟度 | 已知局限性 |
 |---|---|---|---|---|
-| Ad platform | Platform-attributed conversions/value | Click/view windows, account time zone | Platform event and model status | Self-credit, modeled data, overlapping platform claims |
-| Analytics | Observed sessions/events and configured attribution | Property time zone and attribution settings | Consent, identity and event deduplication | Lost referrers, cross-device gaps, modeled behavior |
-| Backend/CRM/finance | Business outcome and value | Business event timestamp and accounting rules | Canonical transaction/lead key, cancellations/refunds | Missing campaign linkage or manually entered source |
-| Survey | Respondent-reported discovery or influence | Survey point and response period | Sampling and non-response | Recall and response bias |
+| 广告平台 | 平台归因的转化/价值 | 点击/展示窗口，账户时区 | 平台事件和模型状态 | 自我归因、模型数据、重叠的平台归因主张 |
+| 分析 | 观察到的会话/事件及配置的归因 | 属性时区和归因设置 | 同意、身份和事件去重 | 丢失的推荐来源、跨设备缺口、行为建模 |
+| 后端/CRM/财务 | 业务结果和价值 | 业务事件时间戳和会计规则 | 规范的交易/潜在客户键值、取消/退款 | 缺少营销活动关联或手动输入的来源 |
+| 调查 | 受访者报告的发现或影响 | 调查时点和响应期间 | 抽样和无响应 | 回忆和响应偏差 |
 
-Do not force these columns to match. First align definitions, scope, time, currency, filters and maturity; then report the remaining gap and its plausible causes. Keep platform credit separate from deduplicated business outcomes.
+不要强行使这些列匹配。首先对齐定义、范围、时间、货币、过滤器和成熟度；然后报告剩余的差距及其可能原因。将平台归因与去重后的业务结果分开保留。
 
-## Choose the Method for the Decision
+## 为决策选择方法
 
-| Decision | Candidate evidence | Main limitation to disclose |
+| 决策 | 候选证据 | 需披露的主要局限性 |
 |---|---|---|
-| Day-to-day platform optimization | Mature platform reporting, optionally path analysis | Directional, platform-specific credit; not causal lift |
-| Journey contribution | MTA or rule-based path view | Only observed and successfully linked touches are represented |
-| Portfolio allocation across channels | MMM when suitable historical variation and outcome data exist | Aggregate, specification-dependent, slow-moving estimate |
-| Whether a channel/tactic caused additional outcomes | Randomized holdout or defensible quasi-experiment | Contamination, power, spillover and external changes |
-| Long-term customer value | Mature cohort outcomes joined to business value | Requires follow-up time and does not alone prove media causality |
+| 日常平台优化 | 成熟的平台报告，可选路径分析 | 方向性、平台特定的归因；非因果提升 |
+| 旅程贡献 | MTA 或基于规则的路径视图 | 仅表示观察到的并成功链接的触点 |
+| 跨渠道投资组合分配 | 当存在合适的历史变异和结果数据时使用 MMM | 汇总的、依赖于模型规格、缓慢变动的估计 |
+| 某个渠道/策略是否导致了额外的结果 | 随机保留组或可辩护的准实验 | 污染、统计功效、溢出效应和外部变化 |
+| 长期客户价值 | 成熟的队列结果与业务价值联接 | 需要后续跟踪时间，且单独无法证明媒体因果关系 |
 
-Before calling MMM suitable, also verify channel-level summable KPI and media inputs, complete time/geo coverage, controls, lag history, and enough independent signal for the model's complexity. See `mmm-data-readiness.md` for Meridian-oriented preparation checks.
+在认定 MMM 适用之前，还需验证渠道层面可加总的 KPI 和媒体输入、完整的时间/地理覆盖、控制变量、滞后历史以及足以支持模型复杂度的独立信号。请参阅 `mmm-data-readiness.md` 中针对 Meridian 的准备工作检查。
 
-## Incrementality Readout
+## 增量效应读出
 
-Report the treatment/control definition, assignment unit, exposure and contamination checks, period, primary outcome, uncertainty, sample adequacy, external events, and analysis method. Distinguish measured lift from platform-attributed conversions. When the design cannot support a causal claim, label it observational or inconclusive and state the next evidence needed.
+报告处理组/对照组的定义、分配单元、暴露和污染检查、期间、主要结果、不确定性、样本充分性、外部事件和分析方法。区分实测提升与平台归因的转化。当设计无法支持因果主张时，将其标记为观察性或结论不明确，并说明所需的下一步证据。

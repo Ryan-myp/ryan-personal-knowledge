@@ -19,7 +19,7 @@ tags: [tiktok, TikTok广告, 广告平台, 渠道介绍, 基础知识, campaign,
 status: published
 ---
 
-# TikTok Ads
+# TikTok 广告平台
 
 TikTok Ads 通过 Advertiser 账户管理广告。常见资源链路是 Advertiser → Campaign → Ad Group → Ad：Campaign 确定业务目标，Ad Group 配置预算、排期、受众、版位、优化和出价，Ad/Creative 承载素材、身份、落地页与追踪。
 

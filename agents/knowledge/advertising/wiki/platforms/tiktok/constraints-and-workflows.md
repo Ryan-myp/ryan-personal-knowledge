@@ -43,7 +43,7 @@ Advertiser scope
 
 Spark 是对原生 TikTok 内容的授权使用，不等同于上传普通视频。创建前确认 creator/identity 授权、item/post 引用、授权有效期、互动使用规则、advertiser 归属和 tracking。素材存在、授权有效、广告创建、审核通过和开始投放是不同状态；无授权时不能自动降级为普通视频来绕过阻塞。
 
-## Commerce 与 Lead
+## 商品销售与线索
 
 - Product Sales 先验证 `catalog_id`、`product_set_id`、商品状态、落地页和商品选择；名字不能替代 ID。
 - Lead 需要确认表单/页面、隐私政策、线索事件和回传范围；当前 Ads API 不支持的 Instant Page 管理不能伪造 CRUD。
@@ -53,7 +53,7 @@ Spark 是对原生 TikTok 内容的授权使用，不等同于上传普通视频
 
 写入默认 dry-run。超时或未知状态先 readback，已存在则核对或 update，不能重复 create。对限流和暂态网络错误做有界退避；参数、权限、资产不存在、政策拒审和账号资格错误要停止重试并返回具体缺口。
 
-## Ad/Ad Group 拒登与 One Click Appeal
+## 广告/广告组拒登与 One Click Appeal
 
 - 从 Campaign 下的 Ad 或 Ad Group 读取平台拒登详情、政策说明与状态；同时核对该 Ad Group 中所有广告、素材、落地页和相关身份资产。
 - 若确有问题，编辑具体内容并重新提交审核；只有怀疑误判且能说明证据时才申请复核。

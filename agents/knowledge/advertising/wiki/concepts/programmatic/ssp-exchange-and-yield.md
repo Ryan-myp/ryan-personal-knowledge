@@ -41,7 +41,7 @@ SSP 面向媒体供给侧，管理可售库存、买方接入、交易规则和�
 
 Exchange 负责什么、SSP 负责什么，需按架构和合同确定；同一场交易中可能存在 Exchange auction、SSP 内部筛选和 Publisher Ad Server 的最终决策多个阶段。“ADX 一定独立于 SSP”或“Exchange 选中的广告一定展示”都不是安全假设。
 
-## Waterfall 与 Header Bidding
+## 瀑布流与 Header Bidding
 
 | 方式 | 典型调度 | 常见优势 | 主要代价/风险 |
 |---|---|---|---|

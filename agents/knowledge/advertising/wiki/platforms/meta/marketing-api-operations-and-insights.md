@@ -20,7 +20,7 @@ evidence_level: "reviewed"
 last_verified_at: "2026-09-08"
 ---
 
-# Meta Marketing API 资源操作、Insights 与数据回传
+# Meta Marketing API 资源操作、洞察与数据回传
 
 Meta Marketing API 建立在 Graph API 的节点、边和字段模型上。Campaign、Ad Set、Ad 是投放层级，但页面、Instagram 账号、Pixel、Catalog、Audience 和 Creative 也是独立的资产边界。执行前必须确认广告账户和资产归属，不能只凭一个名称判断目标资源。
 
@@ -48,7 +48,7 @@ Meta 端点随 Graph API 版本演进，字段和权限也会变化。Tool Sourc
 4. 对状态转换、预算调整和创意替换记录资源 ID、变更摘要和确认信息。
 5. 接收到权限、策略或审核错误时停止相关动作，不通过盲目重试绕过平台约束。
 
-## Insights 报表方法
+## 洞察报表方法
 
 Insights 是分层聚合接口，`level`、fields、breakdowns、date preset 和 attribution setting 共同决定结果粒度。不同 breakdown 组合可能不兼容，不能把返回行数当成唯一指标，也不能将不同归因设置的结果直接拼接。
 

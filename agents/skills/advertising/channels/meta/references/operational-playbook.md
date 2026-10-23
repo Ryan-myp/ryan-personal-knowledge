@@ -1,4 +1,4 @@
-# Meta Ads 操作清单
+# Meta 广告操作清单
 
 ## 创建/更新 Preflight
 
@@ -15,7 +15,7 @@ Ad Account scope
 至少保留：账户、对象层级、父级 ID、objective、special ad category、budget mode、
 optimization goal、billing event、bid/cost cap、targeting 来源、素材引用和 live/dry-run 状态。
 
-## Insights 检查
+## 洞察检查
 
 - 先锁定对象层级和时间窗口，再选 fields/breakdowns。
 - 记录 account timezone、币种、attribution setting、数据拉取时间和分页。

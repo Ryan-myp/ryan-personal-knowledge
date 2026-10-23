@@ -18,7 +18,7 @@ evidence_level: "provisional"
 last_verified_at: "2026-09-08"
 ---
 
-# B2B Lead Gen 深度打法：线索质量、CRM 与销售闭环
+# B2B 线索获取深度打法：线索质量、CRM 与销售闭环
 
 ## 线索价值链
 

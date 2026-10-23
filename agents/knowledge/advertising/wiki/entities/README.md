@@ -1,9 +1,7 @@
-# Entities
+# 实体
 
-Entity pages identify stable platforms, products, people or other subjects.
-They provide orientation and aliases; platform rules and executable tool_source
-coverage remain in the canonical concept/runbook pages.
+实体页面用于标识稳定的平台、产品、人物或其他主题，提供定位和别名；平台规则与实际
+可执行的 tool_source 覆盖仍以规范概念页和运行手册页面为准。
 
-Cross-platform entities include [[programmatic-advertising-entity]], which
-introduces the programmatic advertising ecosystem and routes to its concept
-pages. It is advisory knowledge and does not imply runtime bidding capability.
+跨平台实体包括 [[programmatic-advertising-entity]]，它介绍程序化广告生态，并引导到
+相关概念页。该页面属于建议性知识，不表示运行时具备竞价能力。

@@ -9,7 +9,7 @@ aliases: [google, google ads, gads, 谷歌]
 parser_platform: google
 ---
 
-# Google Ads API 专家 Skill
+# Google Ads API 专家技能
 
 > 本 Skill 提供 Google Ads 业务知识、参数依赖和操作 SOP。它不是 Tool 注册表，也不直接
 > import Google SDK、读取凭证或发起 API 请求。可执行能力只能来自当前 Registry 中已注册、
@@ -67,19 +67,19 @@ Manager / Customer
 
 ## 素材和层级 SOP
 
-### Search
+### 搜索
 
 先确认 Campaign 与 AdGroup，再确认关键词文本、match type、否定关键词范围和 RSA 的
 headlines/descriptions 数量与重复度。关键词意图、落地页和广告文案要一致；不要因用户说
 “加关键词”而自动创建 Campaign。
 
-### Shopping / PMax
+### 购物 / PMax
 
 先确认 Merchant Center/feed 或商品资源是否可用，再选择商品分组或 AssetGroup。PMax 的
 文字资产、图片、Logo、视频、最终 URL 和 business name 是组合契约；缺少必需资产时要列出
 缺口。商品/素材资源 ID 不能由文件名或 URL 猜测，必须使用已注册的上传或 lookup 能力。
 
-### App
+### 应用
 
 App Ad 创意修改使用新建并绑定到目标 Ad Group，不原地更新旧 App Ad，也不自动删除或替换旧广告。
 Google Ads v24 拒绝此类 App Ad 使用 `PAUSED`；内置测试模板因此固定 Campaign 和 Ad Group
@@ -103,7 +103,7 @@ SHA-256 是参数事实源；已有 campaign/resource ID 和 Google App Ad 状�
 更新参数时保留已验证素材、Merchant Center、App、转化动作和商品树值，只改本轮明确要求的字段。
 E2E 完成后保留真实 Provider 回读与失败原因；更新模板必须同步更新参数锁、证据和回归测试。
 
-### Experiment
+### 实验
 
 Experiment 是独立生命周期，涉及基础 Campaign、实验类型、实验预算/流量、开始/结束时间和
 实验指标。不能把实验的 schedule/end/graduate/promote 当作普通 Campaign pause/update，

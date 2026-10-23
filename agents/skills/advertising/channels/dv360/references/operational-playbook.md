@@ -15,7 +15,7 @@ partner / advertiser scope
 对每次变更保存：advertiser、父级资源、目标层级、预算/币种、开始结束时间、采购类型、
 定向变更、创意审批状态和当前 Tool contract version。
 
-## Report 生命周期
+## 报表生命周期
 
 ```text
 definition requested -> definition accepted -> report running -> result ready/failed

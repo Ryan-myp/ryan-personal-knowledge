@@ -8,7 +8,7 @@ tags: [dv360, display-video, programmatic, insertion-order, line-item, targeting
 aliases: [display video 360, display & video 360, dv 360]
 ---
 
-# Display & Video 360 专家 Skill
+# Display & Video 360 专家技能
 
 > 本 Skill 提供 DV360 的媒体购买知识、层级关系、参数依赖和运营 SOP。它不是 Tool 注册表，
 > 不直接调用 Google API、不读取认证材料，也不把示例能力描述成已上线。

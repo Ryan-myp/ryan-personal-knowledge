@@ -18,7 +18,7 @@ evidence_level: "reviewed"
 last_verified_at: "2026-09-08"
 ---
 
-# Google Search 关键词、广告相关性与查询优化
+# Google 搜索关键词、广告相关性与查询优化
 
 ## 结构设计
 
@@ -42,7 +42,7 @@ Search 的基本单元是 `Campaign → AdGroup → Keyword/Ad`。Campaign 划�
 
 每个 AdGroup 至少应有清晰的意图主题、相匹配的 RSA 资产和对应页面。诊断“点击多、转化低”时按顺序看：搜索词是否带来真实需求 → 广告是否兑现承诺 → 页面是否首屏可用且速度稳定 → 表单/支付是否正常 → 转化事件是否准确。不要仅通过提高 CPC 解决相关性问题。
 
-## Ad Rank 的运营理解
+## 广告排名（Ad Rank）的运营理解
 
 曝光与位置受竞价、广告质量、相关性、资产、落地页、竞争和上下文影响。`lost IS (budget)` 与 `lost IS (rank)` 是不同问题：前者要评估预算/分配，后者先改善相关性、资产和出价策略。Quality Score 类诊断指标是方向信号，不应当被当作最终业务 KPI。
 

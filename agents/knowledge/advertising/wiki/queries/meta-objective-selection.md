@@ -51,15 +51,15 @@ Objective 和可选的 optimization goal、destination、billing event 之间存
 
 ## 高频混淆
 
-### Catalog Sales
+### 目录销售
 
 “Catalog Sales”是常见业务/广告形式说法，不应直接当作与 Sales 并列的第七个现代 ODAX 目标。若业务结果是商品购买，通常从 Sales 出发；是否使用 Catalog、Product Set、动态商品和目录事件，是之后要确认的投放配置。没有 Catalog 也不代表不能以网站 Purchase 为目标。
 
-### Conversion / 转化
+### 转化
 
 “转化”通常描述用户要完成的业务动作或衡量事件，并不总是当前 Campaign 层的目标名称。购买、注册、提交线索、安装 App 等动作应分别映射到适合的 Objective 和可用优化事件；不要把旧标签 `CONVERSIONS` 当作所有转化型需求的通用现代选择。
 
-### Messages / 私信
+### 私信
 
 “消息”描述一种目的地或优化结果，不宜机械地作为独立第七类 Objective。若希望增加对话量，检查当前可用的 Engagement/消息组合；若希望获得并筛选合格线索，检查 Leads 是否支持符合业务的目的地和优化方式。两者以“对话开始”还是“合格线索/后端销售”为成功标准来区分，具体组合以账户和当前 API/界面为准。
 
