@@ -28,13 +28,30 @@ function element() {
         addEventListener(name, callback) { listeners[name] = callback; },
         dispatch(name) { listeners[name]?.({ preventDefault() {} }); },
         appendChild(child) { children.push(child); return child; },
+        append(...items) { children.push(...items); },
+        insertBefore(child, before) {
+            const index = children.indexOf(before);
+            children.splice(index < 0 ? children.length : index, 0, child);
+            return child;
+        },
+        get firstChild() { return children[0] || null; },
         remove() {},
         setAttribute() {},
         querySelector(selector) {
-            if (selector === '.thinking-toggle') return this.toggle;
-            if (selector === '.thinking-content') return this.content;
-            if (selector === '.thinking-box') return this.box;
-            return null;
+            const className = selector.startsWith('.') ? selector.slice(1) : '';
+            const matches = node => (
+                Boolean(className)
+                && String(node.className || '').split(/\s+/).includes(className)
+            );
+            const visit = node => {
+                for (const child of node.children || []) {
+                    if (matches(child)) return child;
+                    const nested = visit(child);
+                    if (nested) return nested;
+                }
+                return null;
+            };
+            return visit(this);
         },
     };
 }
@@ -97,16 +114,18 @@ test('reasoning deltas stream into a collapsible box and auto-collapse', () => {
 
     const message = chatContainer.children[0];
     assert.ok(message);
-    assert.equal(message.content.textContent, '先分析需求。再确定输出。');
-    assert.equal(message.box.classList.contains('collapsed'), false);
+    const content = message.querySelector('.thinking-content');
+    const box = message.querySelector('.thinking-box');
+    assert.equal(content.textContent, '先分析需求。再确定输出。');
+    assert.equal(box.classList.contains('collapsed'), false);
 
-    message.toggle.dispatch('click');
-    assert.equal(message.box.classList.contains('collapsed'), true);
-    message.toggle.dispatch('click');
-    assert.equal(message.box.classList.contains('collapsed'), false);
+    message.querySelector('.thinking-toggle').dispatch('click');
+    assert.equal(box.classList.contains('collapsed'), true);
+    message.querySelector('.thinking-toggle').dispatch('click');
+    assert.equal(box.classList.contains('collapsed'), false);
 
     context.applyExecutionEvent({ type: 'done', status: 'succeeded' });
-    assert.equal(message.box.classList.contains('collapsed'), true);
+    assert.equal(box.classList.contains('collapsed'), true);
     assert.equal(message.id, '');
-    assert.equal(message.content.textContent, '先分析需求。再确定输出。');
+    assert.equal(content.textContent, '先分析需求。再确定输出。');
 });

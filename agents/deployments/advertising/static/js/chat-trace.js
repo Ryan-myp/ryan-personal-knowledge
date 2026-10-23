@@ -14,7 +14,9 @@
         }
 
         function resetStreamingThought() {
-            document.getElementById('activeThinkingMessage')?.remove();
+            document.querySelectorAll('.thinking-message-active').forEach(
+                message => message.classList.remove('thinking-message-active'),
+            );
         }
 
         function updateThinkingToggle(message, collapsed) {
@@ -25,34 +27,64 @@
             if (state) state.textContent = collapsed ? '展开' : '收起';
         }
 
+        function createThinkingBox(message) {
+            const box = document.createElement('div');
+            box.className = 'thinking-box';
+            const toggle = document.createElement('button');
+            toggle.type = 'button';
+            toggle.className = 'thinking-toggle';
+            toggle.setAttribute('aria-expanded', 'true');
+            const title = document.createElement('span');
+            title.textContent = '思考过程';
+            const state = document.createElement('small');
+            state.className = 'thinking-toggle-state';
+            state.textContent = '收起';
+            toggle.append(title, state);
+            const content = document.createElement('pre');
+            content.className = 'thinking-content';
+            content.setAttribute('aria-live', 'polite');
+            toggle.addEventListener('click', () => {
+                const collapsed = !box.classList.contains('collapsed');
+                box.classList.toggle('collapsed', collapsed);
+                updateThinkingToggle(message, collapsed);
+            });
+            box.append(toggle, content);
+            return box;
+        }
+
         function appendStreamingThought(delta) {
             const text = String(delta || '');
             if (!text) return;
             let message = document.getElementById('activeThinkingMessage');
             if (!message) {
-                message = document.createElement('div');
-                message.id = 'activeThinkingMessage';
-                message.className = 'message agent thinking-message';
-                message.innerHTML = `
-                    <div class="message-avatar">🤖</div>
-                    <div class="message-content">
-                        <div class="thinking-box">
-                            <button class="thinking-toggle" type="button" aria-expanded="true">
-                                <span>思考过程</span>
-                                <small class="thinking-toggle-state">收起</small>
-                            </button>
-                            <pre class="thinking-content" aria-live="polite"></pre>
-                        </div>
-                    </div>
-                `;
-                const toggle = message.querySelector('.thinking-toggle');
-                toggle?.addEventListener('click', () => {
-                    const box = message.querySelector('.thinking-box');
-                    const collapsed = !box.classList.contains('collapsed');
-                    box.classList.toggle('collapsed', collapsed);
-                    updateThinkingToggle(message, collapsed);
-                });
-                document.getElementById('chatContainer')?.appendChild(message);
+                message = document.getElementById('loadingMsg');
+                if (message) {
+                    message.id = 'activeThinkingMessage';
+                    message.classList.add(
+                        'thinking-message',
+                        'thinking-message-active',
+                    );
+                    message.querySelector('.loading-indicator')?.remove();
+                } else {
+                    message = document.createElement('div');
+                    message.id = 'activeThinkingMessage';
+                    message.className = (
+                        'message agent thinking-message thinking-message-active'
+                    );
+                    const avatar = document.createElement('div');
+                    avatar.className = 'message-avatar';
+                    avatar.textContent = '🤖';
+                    const contentHost = document.createElement('div');
+                    contentHost.className = 'message-content';
+                    message.append(avatar, contentHost);
+                    document.getElementById('chatContainer')?.appendChild(message);
+                }
+                const contentHost = message.querySelector('.message-content');
+                if (contentHost && !message.querySelector('.thinking-box')) {
+                    const box = createThinkingBox(message);
+                    const status = contentHost.querySelector('.loading-status');
+                    contentHost.insertBefore(box, status || contentHost.firstChild);
+                }
             }
             const content = message.querySelector('.thinking-content');
             if (!content) return;

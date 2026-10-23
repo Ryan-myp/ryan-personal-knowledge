@@ -43,6 +43,16 @@
             const attachments = uiOptions?.attachments || [];
             const feedbackTurnId = String(uiOptions?.feedback?.turnId || '').trim();
             if (!toolSummaryHtml && !chatMessageHasPresentation(content, tools, ui, attachments)) return null;
+            const activeThinkingMessage = type === 'agent'
+                ? [...document.querySelectorAll(
+                    '#chatContainer .message.agent.thinking-message-active',
+                )].at(-1) || null
+                : null;
+            const mergedThinkingBox = activeThinkingMessage?.querySelector('.thinking-box') || null;
+            if (mergedThinkingBox && typeof finalizeStreamingThought === 'function') {
+                finalizeStreamingThought();
+            }
+            activeThinkingMessage?.remove();
             const container = document.getElementById('chatContainer');
             const welcome = document.getElementById('welcomePage');
             if (welcome) welcome.style.display = 'none';
@@ -118,6 +128,11 @@
                     <div class="message-body">${bodyHtml}</div>
                 </div>
             `;
+            if (mergedThinkingBox) {
+                const contentHost = msg.querySelector('.message-content');
+                const bodyHost = msg.querySelector('.message-body');
+                contentHost?.insertBefore(mergedThinkingBox, bodyHost);
+            }
 
             if (ui?.cards?.length) {
                 msg.classList.add('has-ui-cards');
