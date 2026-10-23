@@ -8,6 +8,7 @@ Those concerns belong to an application adapter around this module.
 from __future__ import annotations
 
 import re
+from collections import deque
 from dataclasses import dataclass, field
 from typing import Any, Iterable, Optional, Sequence
 
@@ -27,10 +28,16 @@ _READ_CUES = (
     "which", "what", "available",
     "查一下", "查找", "找一下", "查询", "列出", "列表", "清单", "查看",
     "看下", "看看", "看一下", "帮我看", "瞧一下", "获取", "检索", "搜索",
-    "有哪些", "有啥", "哪几个", "哪些",
+    "有哪些", "有啥", "哪几个", "哪些", "展示",
 )
 _LIST_READ_CUES = ("list", "列出", "列表", "清单")
 _DETAIL_READ_CUES = ("detail", "details", "详情", "详细信息", "具体信息")
+_DESCENDANT_READ_CUES = (
+    "含下层级", "包含下层级", "包括下层级", "含下级", "包含下级",
+    "包括子级", "包含子级", "及其下级", "连同下级",
+    "with descendants", "including descendants", "including children",
+    "with child resources",
+)
 _READ_ACTION_CUES = tuple(
     cue for cue in _READ_CUES if cue not in {"which", "what", "available"}
 )
@@ -505,6 +512,90 @@ def _explicit_resource_list_tools(
     return [tool for _index, _score, tool in matches]
 
 
+def _descendant_roots(user_input: str, tools: Sequence[Any]) -> list[tuple[str, str]]:
+    text = str(user_input or "").casefold()
+    if not any(_contains_cue(text, cue) for cue in _DESCENDANT_READ_CUES):
+        return []
+    query_terms = _terms(user_input)
+    root_resources = {
+        (
+            normalize_namespace(_tool_field(tool, "namespace", "")),
+            str(_tool_field(tool, "resource_type", "")),
+        )
+        for tool in tools
+        if _is_read_tool(tool)
+        and (resource_terms := _terms(_tool_field(tool, "resource_type")))
+        and resource_terms <= query_terms
+    }
+    return sorted(
+        root_resources,
+        key=lambda key: (-len(_terms(key[1])), key),
+    )
+
+
+def _index_descendant_reads(
+    tools: Sequence[Any],
+) -> tuple[dict[tuple[str, str], dict[str, Any]],
+           dict[tuple[str, str], list[tuple[str, str]]]]:
+    by_resource: dict[tuple[str, str], dict[str, Any]] = {}
+    children: dict[tuple[str, str], list[tuple[str, str]]] = {}
+    for tool in tools:
+        if not _is_read_tool(tool):
+            continue
+        namespace = normalize_namespace(_tool_field(tool, "namespace", ""))
+        resource = str(_tool_field(tool, "resource_type", ""))
+        action = str(_tool_field(tool, "action", "")).casefold()
+        if action not in {"get", "list"}:
+            continue
+        by_resource.setdefault((namespace, resource), {}).setdefault(action, tool)
+        parent = str(_tool_field(tool, "parent_resource_type", "") or "")
+        if action == "list" and parent:
+            siblings = children.setdefault((namespace, parent), [])
+            if (namespace, resource) not in siblings:
+                siblings.append((namespace, resource))
+    return by_resource, children
+
+
+def _descendant_read_tools(
+    user_input: str,
+    tools: Sequence[Any],
+    limit: int,
+) -> list[Any]:
+    """Expand an explicitly named resource through registered read relations."""
+    roots = _descendant_roots(user_input, tools)
+    if not roots:
+        return []
+    by_resource, children = _index_descendant_reads(tools)
+    preferred = (
+        "get" if any(_contains_cue(user_input.casefold(), cue)
+                     for cue in _DETAIL_READ_CUES)
+        else "list"
+    )
+    result: list[Any] = []
+    seen_resources: set[tuple[str, str]] = set()
+    for root in roots:
+        if root in seen_resources or len(result) >= limit:
+            continue
+        actions = by_resource.get(root, {})
+        root_tool = actions.get(preferred) or actions.get("get") or actions.get("list")
+        if root_tool is None:
+            continue
+        result.append(root_tool)
+        seen_resources.add(root)
+        frontier = deque([root])
+        while frontier and len(result) < limit:
+            parent = frontier.popleft()
+            for child in children.get(parent, []):
+                if child in seen_resources:
+                    continue
+                result.append(by_resource[child]["list"])
+                seen_resources.add(child)
+                frontier.append(child)
+                if len(result) >= limit:
+                    break
+    return result
+
+
 def _alias_scoped_reads(user_input: str, tools: Sequence[Any]) -> list[Any]:
     """Honor explicit publisher query aliases without a domain vocabulary."""
     text = str(user_input or "").casefold()
@@ -845,6 +936,12 @@ class ToolSelector:
             candidates = explicitly_aliased_transform
         else:
             candidates = list(available_tools or ())
+        if read_only_request and not explicitly_named:
+            descendants = _descendant_read_tools(
+                user_input, candidates, min(limit, self.max_read_tools_per_turn),
+            )
+            if descendants:
+                return descendants
         targeted_candidates = [
             tool for tool in candidates
             if _matches_publisher_target(user_input, tool)

@@ -26,6 +26,9 @@ from agents.deployments.advertising.api.models import (
     ChatStreamRequest,
 )
 from agents.tools.advertising.shared.domain.conversation import visible_run_reply
+from agents.deployments.advertising.api.progress import (
+    StreamExecutionSummaries, private_progress_event, progress_language,
+)
 
 _STREAM_RUN_STATUSES = frozenset({
     "awaiting_confirmation",
@@ -397,6 +400,9 @@ def create_chat_router(context: ApiContext) -> APIRouter:
         try:
             principal = context.authorize_request(x_api_key, http_request)
             user_input = _validated_user_input(request.user_input, request.media_ids)
+            language = await run_in_threadpool(
+                progress_language, runtime, user_input, request.session_id, principal,
+            )
             input_media = await run_in_threadpool(
                 _load_chat_input_media,
                 context,
@@ -417,6 +423,8 @@ def create_chat_router(context: ApiContext) -> APIRouter:
                 )
 
             async def generate():
+                summaries = StreamExecutionSummaries(language)
+
                 def event(payload: dict[str, Any]) -> str:
                     return (
                         f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
@@ -481,21 +489,15 @@ def create_chat_router(context: ApiContext) -> APIRouter:
                                     },
                                 })
                             continue
+                        if private_progress_event(payload):
+                            continue
+                        summary = summaries.for_event(payload)
+                        if summary:
+                            yield event(context.redact(summary))
                         if payload.get("type") == "done":
                             final_event = payload
                         elif payload.get("type") == "reply":
                             reply_marker = payload
-                        elif payload.get("type") == "model_reasoning_delta":
-                            delta = payload.get("delta")
-                            if isinstance(delta, str) and delta:
-                                yield event({
-                                    "type": "reasoning_delta",
-                                    "event_type": "reasoning_delta",
-                                    "status": "running",
-                                    "content": context.redact(delta),
-                                })
-                        elif payload.get("type") == "model_delta":
-                            continue
                         else:
                             yield event(payload)
                     result = await task

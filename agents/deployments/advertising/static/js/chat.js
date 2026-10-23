@@ -24,7 +24,7 @@
     const load = index => {
         if (index >= sources.length) return;
         const script = document.createElement('script');
-        script.src = `/static/js/${sources[index]}?v=20261023-template-dialog-v9`;
+        script.src = `/static/js/${sources[index]}?v=20261023-progress-language-v10`;
         script.onload = () => load(index + 1);
         script.onerror = () => console.error(`Failed to load ${sources[index]}`);
         document.head.appendChild(script);

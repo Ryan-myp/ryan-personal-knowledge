@@ -11,6 +11,7 @@ from fastapi.responses import JSONResponse
 from starlette.concurrency import run_in_threadpool
 
 from agents.deployments.advertising.api.context import ApiContext
+from agents.deployments.advertising.api.progress import public_run_view
 from agents.agent_platform.evals.regression import RegressionAssertions
 from agents.deployments.advertising.api.models import (
     ConversationFeedbackRequest,
@@ -103,7 +104,7 @@ def create_sessions_router(context: ApiContext) -> APIRouter:
             raise HTTPException(status_code=422, detail=str(error)) from error
         if not conversation:
             raise HTTPException(status_code=404, detail="会话不存在或无权访问")
-        return conversation
+        return public_run_view(conversation)
 
     @router.patch("/sessions/{session_id}", tags=["sessions"])
     async def rename_session(
@@ -342,7 +343,7 @@ def create_sessions_router(context: ApiContext) -> APIRouter:
         )
         if not run:
             raise HTTPException(status_code=404, detail="运行记录不存在或无权访问")
-        return run
+        return public_run_view(run)
 
     @router.get("/runs/{run_id}/events", tags=["runs"])
     async def get_run_events(
@@ -367,7 +368,7 @@ def create_sessions_router(context: ApiContext) -> APIRouter:
         )
         if not run:
             raise HTTPException(status_code=404, detail="运行记录不存在或无权访问")
-        return run
+        return public_run_view(run)
 
     @router.delete("/sessions", tags=["sessions"])
     async def delete_sessions(

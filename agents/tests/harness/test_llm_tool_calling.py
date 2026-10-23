@@ -124,6 +124,28 @@ def test_llm_client_streams_analysis_as_reasoning_and_keeps_it_out_of_final_text
     assert completions.requests[0]["stream"] is True
 
 
+@pytest.mark.parametrize("model", ["agnes-3.0-flash", "another-compatible-model"])
+def test_stream_language_contract_uses_current_request_for_every_provider(model):
+    completions = _StreamingCompletions([SimpleNamespace(choices=[SimpleNamespace(
+        delta=SimpleNamespace(content="已整理结果。", tool_calls=[]),
+        finish_reason="stop",
+    )])])
+    client = LLMClient(model=model, api_key="test-only")
+    client._client = SimpleNamespace(chat=SimpleNamespace(completions=completions))
+    messages = [
+        AgentMessage.system("Use registered tools only."),
+        AgentMessage.user("Attached report text is in English."),
+    ]
+    list(client.stream(
+        messages, [], TurnRequest(user_input="查询 Google Ads 报表"),
+    ))
+    request = completions.requests[0]
+    assert "简体中文" in request["messages"][1]["content"]
+    assert "内部思维链" in request["messages"][1]["content"]
+    assert request["messages"][-1]["content"] == messages[-1].content
+    assert ("reasoning_effort" in request) is model.startswith("agnes-")
+
+
 def test_llm_client_implements_generic_harness_model_tool_call_contract():
     response_message = SimpleNamespace(
         content="先查询记录。",

@@ -24,21 +24,27 @@
             if (!button) return;
             button.setAttribute('aria-expanded', String(!collapsed));
             const state = button.querySelector('.thinking-toggle-state');
-            if (state) state.textContent = collapsed ? '展开' : '收起';
+            const english = button.dataset.summaryLanguage === 'en';
+            if (state) state.textContent = collapsed
+                ? (english ? 'Expand' : '展开')
+                : (english ? 'Collapse' : '收起');
         }
 
         function createThinkingBox(message) {
             const box = document.createElement('div');
             box.className = 'thinking-box';
+            const english = message?.dataset?.summaryLanguage === 'en';
+            box.setAttribute('lang', english ? 'en' : 'zh-CN');
             const toggle = document.createElement('button');
             toggle.type = 'button';
             toggle.className = 'thinking-toggle';
+            toggle.dataset.summaryLanguage = english ? 'en' : 'zh';
             toggle.setAttribute('aria-expanded', 'true');
             const title = document.createElement('span');
-            title.textContent = '思考过程';
+            title.textContent = english ? 'Execution Summary' : '执行说明';
             const state = document.createElement('small');
             state.className = 'thinking-toggle-state';
-            state.textContent = '收起';
+            state.textContent = english ? 'Collapse' : '收起';
             toggle.append(title, state);
             const content = document.createElement('pre');
             content.className = 'thinking-content';
@@ -46,13 +52,13 @@
             toggle.addEventListener('click', () => {
                 const collapsed = !box.classList.contains('collapsed');
                 box.classList.toggle('collapsed', collapsed);
-                updateThinkingToggle(message, collapsed);
+                updateThinkingToggle(box, collapsed);
             });
             box.append(toggle, content);
             return box;
         }
 
-        function appendStreamingThought(delta) {
+        function appendStreamingThought(delta, language = 'zh') {
             const text = String(delta || '');
             if (!text) return;
             let message = document.getElementById('activeThinkingMessage');
@@ -79,6 +85,7 @@
                     message.append(avatar, contentHost);
                     document.getElementById('chatContainer')?.appendChild(message);
                 }
+                message.dataset.summaryLanguage = language;
                 const contentHost = message.querySelector('.message-content');
                 if (contentHost && !message.querySelector('.thinking-box')) {
                     const box = createThinkingBox(message);
@@ -88,12 +95,19 @@
             }
             const content = message.querySelector('.thinking-content');
             if (!content) return;
+            const contentAtBottom = (
+                content.scrollHeight - content.scrollTop - content.clientHeight <= 32
+            );
+            const chatArea = document.getElementById('chatArea');
+            const chatAtBottom = chatArea && (
+                chatArea.scrollHeight - chatArea.scrollTop - chatArea.clientHeight <= 48
+            );
             const combined = `${content.textContent || ''}${text}`;
             content.textContent = combined.length > 16000
                 ? `…${combined.slice(-15999)}`
                 : combined;
-            const chatArea = document.getElementById('chatArea');
-            if (chatArea) chatArea.scrollTop = chatArea.scrollHeight;
+            if (contentAtBottom) content.scrollTop = content.scrollHeight;
+            if (chatAtBottom) chatArea.scrollTop = chatArea.scrollHeight;
         }
 
         function finalizeStreamingThought() {
@@ -597,9 +611,12 @@
         function applyExecutionEvent(event) {
             if (!event || !(event.type || event.event_type)) return null;
             if (String(event.type || event.event_type) === 'reasoning_delta') {
-                appendStreamingThought(event.content || event.delta || '');
+                if (event.content_type === 'execution_summary') {
+                    appendStreamingThought(event.content || '', event.language_code || 'zh');
+                }
                 return null;
             }
+            if (['model_reasoning_delta', 'model_delta'].includes(String(event.type || event.event_type))) return null;
             event = normalizeExecutionEvent(event);
             if (!event || !event.type) return null;
             const duplicateStart = event.type === 'start' && traceState.events.some(item => item.type === 'start');

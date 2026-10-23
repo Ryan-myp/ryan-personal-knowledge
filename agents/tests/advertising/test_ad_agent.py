@@ -2288,6 +2288,23 @@ class TestIterationContracts:
         assert isinstance(client._handle_error({"data": {}}, 429), RateLimitError)
         assert isinstance(client._handle_error({"data": {}}, 503), TemporaryError)
 
+    def test_google_permission_error_preserves_only_safe_structured_code(self):
+        client = GoogleAdsAPIClient({"access_token": "caller-token"})
+        denied = client._handle_error({
+            "data": {"error": {
+                "message": "The caller does not have permission; token=SECRET",
+                "details": [{"errors": [{
+                    "errorCode": {"authorizationError": "USER_PERMISSION_DENIED"},
+                    "message": "sensitive provider context",
+                }]}],
+            }},
+        }, 403)
+        assert denied.status_code == 403
+        assert "USER_PERMISSION_DENIED" in str(denied)
+        assert "SECRET" not in str(denied)
+        assert "sensitive provider context" not in str(denied)
+        assert denied.response is None or "SECRET" not in str(denied.response)
+
     def test_all_provider_clients_preserve_http_failures_and_do_not_retry_post(self):
         clients = [
             MetaAPIClient({"access_token": "caller-token"}),

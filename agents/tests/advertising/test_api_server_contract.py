@@ -2691,7 +2691,13 @@ def test_chat_stream_forwards_runtime_events_without_inventing_steps(fake_server
     assert body.index('"type": "node_started"') < body.index('"type": "reply"') < body.index('"type": "done"')
 
 
-def test_chat_stream_forwards_model_lifecycle_but_never_model_deltas(fake_server):
+@pytest.mark.parametrize("user_input,language,summary", [
+    ("执行这个任务", "zh", "正在检查"),
+    ("Please query the reports.", "en", "Checking the request"),
+])
+def test_chat_stream_forwards_model_lifecycle_but_never_model_deltas(
+    fake_server, user_input, language, summary,
+):
     received = {}
     protocol_text = (
         "<|tool_calls_section_end|> API Error: channel_id=\"\" "
@@ -2716,7 +2722,7 @@ def test_chat_stream_forwards_model_lifecycle_but_never_model_deltas(fake_server
         })
         observe({
             "type": "model_reasoning_delta",
-            "delta": "先分析任务，再给最终结论。",
+            "delta": "The user is asking to query reports. Private scratchpad.",
         })
         observe({
             "type": "model_end",
@@ -2731,7 +2737,7 @@ def test_chat_stream_forwards_model_lifecycle_but_never_model_deltas(fake_server
         response = client.post(
             "/chat/stream",
             headers={"X-API-Key": "test-key"},
-            json={"user_input": "执行这个任务"},
+            json={"user_input": user_input},
         )
 
     assert response.status_code == 200
@@ -2740,11 +2746,56 @@ def test_chat_stream_forwards_model_lifecycle_but_never_model_deltas(fake_server
     assert '"type": "model_start"' in response.text
     assert '"type": "model_end"' in response.text
     assert '"type": "reasoning_delta"' in response.text
-    assert "先分析任务，再给最终结论。" in response.text
+    assert '"content_type": "execution_summary"' in response.text
+    assert f'"language_code": "{language}"' in response.text
+    assert summary in response.text
+    assert "Private scratchpad" not in response.text
     assert "<|tool_" not in response.text
     assert "API Error:" not in response.text
     assert "40400 / invalid_user_id" in response.text
     assert "本次知识检索未执行" in response.text
+
+
+@pytest.mark.parametrize("path,method,nested", [
+    ("/sessions/session-a", "get_conversation", True),
+    ("/sessions/session-a/runs/latest", "get_latest_run", False),
+    ("/runs/run-a/events?after_seq=1", "get_run_events", False),
+])
+def test_public_history_filters_private_deltas_without_losing_cursor(
+    fake_server, monkeypatch, path, method, nested,
+):
+    monkeypatch.setenv("AD_AGENT_API_KEY_PRINCIPALS", json.dumps({
+        "scoped-key": {
+            "user_id": "operator", "tenant_id": "tenant",
+            "permissions": ["ads.read"],
+        },
+    }))
+    events = [
+        {"type": "model_start", "seq": 1},
+        {"type": "model_reasoning_delta", "delta": "private-scratchpad", "seq": 2},
+        {"type": "model_delta", "delta": "private-model-text", "seq": 3},
+    ]
+    stored = {"events": events, "latest_seq": 3}
+    if nested:
+        stored = {"execution_traces": {"turn-a": stored}, "messages": []}
+    seen = []
+
+    def read(**kwargs):
+        seen.append(kwargs)
+        return stored
+
+    setattr(fake_server, method, read)
+    with TestClient(api_server.app) as client:
+        response = client.get(path, headers={"X-API-Key": "scoped-key"})
+    assert response.status_code == 200
+    assert "private-scratchpad" not in response.text
+    assert "private-model-text" not in response.text
+    view = response.json()["execution_traces"]["turn-a"] if nested else response.json()
+    assert view["latest_seq"] == 3
+    assert [event["seq"] for event in view["events"]] == [1]
+    assert len(events) == 3
+    assert seen[0]["user_id"] == "operator"
+    assert seen[0]["tenant_id"] == "tenant"
 
 
 def test_schedule_run_list_is_available_as_one_scoped_collection(fake_server, monkeypatch):

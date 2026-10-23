@@ -25,6 +25,7 @@ from ..model_limits import (
     provider_input_chars,
 )
 from .timeouts import DEFAULT_EXECUTION_TIMEOUT_SECONDS
+from .response_language import response_language_instruction
 
 logger = logging.getLogger(__name__)
 
@@ -393,7 +394,7 @@ class LLMClient:
 
     def stream(self, messages, tools, request):
         """Stream reasoning deltas and return one normalized ModelTurn."""
-        state = self._prepare_completion_state(messages, tools, request)
+        state = self._prepare_completion_state(messages, tools, request, streaming=True)
         collector = _ACTIVE_USAGE_COLLECTOR.get()
         while True:
             try:
@@ -442,6 +443,8 @@ class LLMClient:
         messages: Any,
         tools: Any,
         request: Any,
+        *,
+        streaming: bool = False,
     ) -> _CompletionState:
         started_at = time.monotonic()
         try:
@@ -476,24 +479,13 @@ class LLMClient:
             else os.environ.get("LLM_REASONING_EFFORT", "low").strip().lower()
         )
         wants_reasoning = bool(
-            getattr(request, "streaming", False)
+            streaming or getattr(request, "streaming", False)
             or context_reasoning not in (None, "")
         )
-        if (
-            wants_reasoning
-            and str(self.model or "").casefold().startswith("agnes-")
-            and reasoning_effort in {"low", "medium", "high"}
-        ):
-            kwargs["reasoning_effort"] = reasoning_effort
+        if wants_reasoning:
             language_instruction = {
                 "role": "system",
-                "content": (
-                    "Reasoning language rule: write the reasoning/analysis and "
-                    "the final answer in the user's current language. If the "
-                    "user writes Chinese, use Simplified Chinese even if your "
-                    "internal reasoning defaults to English. Never mix English "
-                    "reasoning with a Chinese answer."
-                ),
+                "content": response_language_instruction(request, messages),
             }
             last_system = max(
                 (
@@ -503,20 +495,13 @@ class LLMClient:
                 default=-1,
             )
             provider_messages.insert(last_system + 1, language_instruction)
-            for message in reversed(provider_messages):
-                if message.get("role") != "user":
-                    continue
-                content = message.get("content")
-                if isinstance(content, str):
-                    instruction = (
-                        "【语言要求：推理过程、分析和最终回答全部使用简体中文，"
-                        "不要使用英文。】"
-                        if re.search(r"[\u4e00-\u9fff]", content)
-                        else "Reason in the user's language and keep the final answer in that language."
-                    )
-                    message["content"] = f"{instruction}\n{content}"
-                break
             kwargs["messages"] = provider_messages
+        if (
+            wants_reasoning
+            and str(self.model or "").casefold().startswith("agnes-")
+            and reasoning_effort in {"low", "medium", "high"}
+        ):
+            kwargs["reasoning_effort"] = reasoning_effort
         initial_tool_choice = getattr(request, "initial_tool_choice", None)
         if provider_tools:
             kwargs["tools"] = provider_tools

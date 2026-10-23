@@ -514,8 +514,35 @@ class GoogleAdsAPIClient(BasePlatformClient):
         
         # 权限/资源错误
         if status_code == 403:
-            error_msg = data.get('error', {}).get('message', 'Permission denied')
-            return AuthError(f"Google Ads: {error_msg}")
+            details = (
+                data.get('error', {}).get('details', [])
+                if isinstance(data, dict) and isinstance(data.get('error'), dict)
+                else []
+            )
+            codes = []
+            for detail in details if isinstance(details, list) else []:
+                if not isinstance(detail, dict):
+                    continue
+                for failure in detail.get('errors', []) or []:
+                    if not isinstance(failure, dict):
+                        continue
+                    error_code = failure.get('errorCode')
+                    if not isinstance(error_code, dict):
+                        continue
+                    for value in error_code.values():
+                        if isinstance(value, str) and re.fullmatch(r'[A-Z_]{3,64}', value):
+                            codes.append(value)
+                    if len(codes) >= 3:
+                        break
+                if len(codes) >= 3:
+                    break
+            safe_codes = list(dict.fromkeys(codes[:3]))
+            suffix = f" ({', '.join(safe_codes)})" if safe_codes else ""
+            return AuthError(
+                f"Google Ads HTTP 403: Provider denied access{suffix}",
+                status_code=403,
+                response={"error": {"codes": safe_codes}},
+            )
         
         # 限流
         if status_code == 429:

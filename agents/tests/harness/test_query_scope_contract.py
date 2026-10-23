@@ -10,7 +10,9 @@ def test_query_contract_forbids_unrequested_child_queries_and_rounded_counts():
     prompt = " ".join(CORE_AGENT_SYSTEM_PROMPT.split())
     assert "QUERY SCOPE" in prompt
     assert "Do not fetch child resources" in prompt
+    assert "explicitly requests descendants" in prompt
     assert "Do not round counts" in prompt
+    assert "not supplied for this turn" in prompt
 
 
 def test_architecture_diagrams_do_not_trigger_business_data_tools():
@@ -115,6 +117,54 @@ def test_explicit_data_query_requires_a_fresh_tool_but_capability_questions_do_n
     assert selector.requires_tool_call("查询 Meta campaign 123 的详情", tools)
     assert not selector.requires_tool_call("Meta 支持哪些 campaign 查询能力？", tools)
     assert not selector.requires_tool_call("汇总刚才查询的 campaign 结果", tools)
+
+
+def test_campaign_detail_with_descendants_loads_registered_tiktok_read_tools():
+    tools = [binding.definition for binding in create_tool_source("tiktok").list_bindings()]
+    selector = ToolSelector()
+    request = "这个campaign：1879821177383105的详情展示一下含下层级"
+    selected = selector.select_relevant(
+        request, tools, limit=16, contextual_namespaces=("tiktok",),
+    )
+
+    names = {tool.name for tool in selected}
+    assert {
+        "tiktok_get_campaign", "tiktok_list_adgroups", "tiktok_list_ads",
+    } <= names
+    assert all(tool.effect_class.value == "read" for tool in selected)
+    assert selector.requires_tool_call(request, selected)
+
+
+def test_descendant_read_selection_uses_resource_metadata_and_is_bounded():
+    tools = [
+        {
+            "name": name, "namespace": namespace, "resource_type": resource,
+            "parent_resource_type": parent, "action": action,
+            "effect_class": effect, "description": f"{action} {resource}",
+        }
+        for name, namespace, resource, parent, action, effect in [
+            ("get_folder", "files", "folder", None, "get", "read"),
+            ("list_documents", "files", "document", "folder", "list", "read"),
+            ("list_pages", "files", "page", "document", "list", "read"),
+            ("delete_page", "files", "page", "document", "delete", "write"),
+            ("list_other", "other", "document", "folder", "list", "read"),
+        ]
+    ]
+    selector = ToolSelector(max_read_tools_per_turn=3)
+    selected = selector.select_relevant(
+        "展示 files folder 123 详情，包含下层级",
+        tools, limit=3,
+    )
+    assert [tool["name"] for tool in selected] == [
+        "get_folder", "list_documents", "list_pages",
+    ]
+    assert selector.requires_tool_call(
+        "展示 files folder 123 详情，包含下层级", selected,
+    )
+    plain = selector.select_relevant(
+        "展示 files folder 123 详情", tools, limit=3,
+    )
+    assert "list_documents" not in [tool["name"] for tool in plain]
 
 
 def test_colloquial_concept_comparison_does_not_route_provider_tools():
