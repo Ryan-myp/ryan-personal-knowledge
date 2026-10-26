@@ -28,8 +28,9 @@ _SENSITIVE_CANONICAL_PARTS = frozenset(
 )
 
 
-def _sensitive_key(key: Any) -> bool:
-    canonical = str(key).lower().replace("_", "").replace("-", "")
+def is_sensitive_key(key: Any) -> bool:
+    """Identify credential-like field names before untrusted data is projected."""
+    canonical = "".join(char for char in str(key).casefold() if char.isalnum())
     return any(part in canonical for part in _SENSITIVE_CANONICAL_PARTS)
 
 _TEXT_PATTERNS = (
@@ -62,7 +63,7 @@ def redact_for_persistence(value: Any) -> Any:
                     and type(child) is int and child >= 0
                 )
                 else "<redacted>"
-                if _sensitive_key(key)
+                if is_sensitive_key(key)
                 else redact_for_persistence(child)
             )
             for key, child in value.items()
@@ -83,4 +84,4 @@ def redact_for_persistence(value: Any) -> Any:
     return value
 
 
-__all__ = ["redact_for_persistence"]
+__all__ = ["is_sensitive_key", "redact_for_persistence"]

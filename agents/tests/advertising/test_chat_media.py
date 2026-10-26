@@ -205,6 +205,51 @@ def test_chat_documents_are_scoped_and_extract_bounded_text(
         )
 
 
+def test_chat_documents_reject_sensitive_table_headers_before_model_preview(tmp_path):
+    store = ChatMediaStore(tmp_path)
+    attachment = store.save(
+        b"Assignee,bc_id\nA,private-value\n",
+        filename="report.csv", content_type="text/csv",
+        session_id="session-a", tenant_id="tenant-a", user_id="user-a",
+    )
+    with pytest.raises(ValueError, match="敏感"):
+        store.load_for_model(
+            [attachment["id"]],
+            session_id="session-a", tenant_id="tenant-a", user_id="user-a",
+        )
+
+    spaced = store.save(
+        b"Assignee,API Key backup\nA,private-value\n",
+        filename="spaced.csv", content_type="text/csv",
+        session_id="session-a", tenant_id="tenant-a", user_id="user-a",
+    )
+    with pytest.raises(ValueError, match="敏感"):
+        store.load_for_model(
+            [spaced["id"]],
+            session_id="session-a", tenant_id="tenant-a", user_id="user-a",
+        )
+
+    from openpyxl import Workbook
+
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.append(["Assignee", "api_key_backup"])
+    sheet.append(["A", "private-value"])
+    output = io.BytesIO()
+    workbook.save(output)
+    workbook.close()
+    attachment = store.save(
+        output.getvalue(), filename="report.xlsx",
+        content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        session_id="session-a", tenant_id="tenant-a", user_id="user-a",
+    )
+    with pytest.raises(ValueError, match="敏感"):
+        store.load_for_model(
+            [attachment["id"]],
+            session_id="session-a", tenant_id="tenant-a", user_id="user-a",
+        )
+
+
 def test_chat_store_accepts_pdf_signature_but_reports_invalid_pdf_content(tmp_path):
     store = ChatMediaStore(tmp_path)
     attachment = store.save(

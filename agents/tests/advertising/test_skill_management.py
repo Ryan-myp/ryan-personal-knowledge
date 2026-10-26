@@ -81,7 +81,7 @@ def test_builtin_skill_catalog_lists_standard_packages_as_read_only():
     assert "references/answer-structure.md" in knowledge_explainer["files"]
     web_research = catalog.get_version("web-research", "1.0.4")
     assert web_research["location"] == "web-research"
-    visualization = catalog.get_version("data-visualization", "1.2.0")
+    visualization = catalog.get_version("data-visualization", "1.2.1")
     assert visualization["location"] == "practices/data-visualization"
     assert "references/chart-visual-review.md" in visualization["files"]
     app_growth = catalog.get_version("app-growth", "1.1.1")
@@ -500,7 +500,7 @@ def test_data_visualization_skill_is_loaded_for_chart_requests():
     try:
         skill = runtime.skill_loader.get("data-visualization")
         assert skill is not None
-        assert skill.version == "1.2.0"
+        assert skill.version == "1.2.1"
 
         context = runtime.tool_selector._triggered_skill_context(
             "帮我画深圳未来10天温度折线图",

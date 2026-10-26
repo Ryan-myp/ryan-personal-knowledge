@@ -57,6 +57,62 @@ def clarification_origin(
     return ""
 
 
+def _pending_tool_record(message: Any) -> dict[str, Any] | None:
+    metadata = getattr(message, "metadata", {}) or {}
+    if not isinstance(metadata, Mapping) or not metadata.get("needs_input"):
+        return None
+    interaction = metadata.get("interaction")
+    if interaction is not None and (
+        not isinstance(interaction, Mapping)
+        or not isinstance(interaction.get("payload"), Mapping)
+    ):
+        return None
+    tool_name = str(getattr(message, "name", "") or "")
+    if not tool_name:
+        return None
+    return {
+        "turn_id": str(getattr(message, "turn_id", "") or ""),
+        "tool_name": tool_name,
+        "interaction": interaction,
+    }
+
+
+def pending_input_interaction(
+    turn_id: str,
+    transcript: Sequence[Any],
+    *,
+    choice: str = "",
+) -> Mapping[str, Any] | None:
+    """Return only the most recent, explicitly paused Tool interaction."""
+    pending: dict[str, Any] | None = None
+    repeated_choices = 0
+    for message in reversed(transcript):
+        if turn_id and getattr(message, "turn_id", "") == turn_id:
+            continue
+        role = getattr(message, "role", "")
+        if role == "user":
+            if (
+                pending is None and choice
+                and str(getattr(message, "content", "") or "").strip() == choice
+                and repeated_choices < 2
+            ):
+                repeated_choices += 1
+                continue
+            if pending and pending["turn_id"] == getattr(message, "turn_id", ""):
+                source = str(getattr(message, "content", "") or "").strip()
+                if source and len(source) <= 1200:
+                    return {**pending, "source_input": source}
+            return None
+        if role != "tool":
+            continue
+        if pending:
+            continue
+        pending = _pending_tool_record(message)
+        if pending is None:
+            return None
+    return None
+
+
 def catalog_selection_input(
     choice: str,
     turn_id: str,

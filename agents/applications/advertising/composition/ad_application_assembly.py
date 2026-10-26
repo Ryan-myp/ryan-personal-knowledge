@@ -622,6 +622,67 @@ class AdApplicationAssembly:
         return matches[0] if len(matches) == 1 else None
 
     @staticmethod
+    def _account_option_allowed(
+        runtime: Any, tool: Any, account_id: str,
+        interaction: Any, scope: Any,
+    ) -> bool:
+        namespace = str(getattr(tool, "namespace", "") or "")
+        if scope is None or not runtime._validate_account_with_principal(
+            namespace, account_id, False, scope,
+        )[0]:
+            return False
+        if interaction is None:
+            return account_id in runtime._available_accounts_for_request(
+                namespace, scope,
+            )
+        if not isinstance(interaction, Mapping) or (
+            interaction.get("type") != "account_selection"
+        ):
+            return False
+        payload = interaction.get("payload")
+        if not isinstance(payload, Mapping):
+            return False
+        options = payload.get("account_options")
+        return (
+            payload.get("tool") == tool.name
+            and runtime._canonical_platform(str(payload.get("namespace") or ""))
+            == runtime._canonical_platform(namespace)
+            and isinstance(options, list)
+            and any(
+                isinstance(option, Mapping)
+                and str(option.get("value") or "") == account_id
+                for option in options[:20]
+            )
+        )
+
+    @staticmethod
+    def _resume_account_read(
+        runtime: Any, request: TurnRequest, tools: Any,
+    ) -> Any | None:
+        context = request.context if isinstance(request.context, Mapping) else {}
+        pending = context.get("_agent_pending_interaction")
+        if not isinstance(pending, Mapping) or not pending.get("source_input"):
+            return None
+        account_id = str(context.get("account_id") or "").strip()
+        # Match the UI's selection command exactly so a new question cannot
+        # revive a prior operation merely because it also names an account.
+        if not account_id or request.user_input.strip() != f"使用账户 {account_id} 继续":
+            return None
+        tool = next((
+            tool for tool in tools
+            if getattr(tool, "name", None) == pending.get("tool_name")
+            and getattr(tool, "is_read_tool", False)
+        ), None)
+        if tool is None:
+            return None
+        scope = getattr(request.principal, "account_scope", None)
+        if not AdApplicationAssembly._account_option_allowed(
+            runtime, tool, account_id, pending.get("interaction"), scope,
+        ):
+            return None
+        return tool
+
+    @staticmethod
     def _tool_selector(
         runtime: Any,
         selector: ToolSelector,
@@ -631,10 +692,19 @@ class AdApplicationAssembly:
                 request.context if isinstance(request.context, Mapping) else {}
             )
             preview = pending_template_input_tool(runtime, request, tools)
-            selected = [preview] if preview is not None else _select_blueprint_tools(
-                runtime, request_context, tools,
-                include_lookups=str(request.execution_mode or "dry_run") == "live",
+            resume = AdApplicationAssembly._resume_account_read(
+                runtime, request, tools,
             )
+            if preview is not None:
+                selected = [preview]
+            elif resume is not None:
+                selected = [resume]
+                request_context["_agent_tool_choice_required"] = True
+            else:
+                selected = _select_blueprint_tools(
+                    runtime, request_context, tools,
+                    include_lookups=str(request.execution_mode or "dry_run") == "live",
+                )
             allow_clarification = selected is None
             if selected is None:
                 conversation_context = tuple(

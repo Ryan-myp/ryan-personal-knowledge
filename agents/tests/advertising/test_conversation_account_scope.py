@@ -52,6 +52,10 @@ class QueryClient:
         self.calls.append(("ads", account_id, adgroup_id))
         return [{"ad_id": "301", "adgroup_id": adgroup_id}]
 
+    def get_campaign_report(self, account_id, campaign_ids, time_range=None, **kwargs):
+        self.calls.append(("report", account_id, tuple(campaign_ids), time_range))
+        return [{"campaign_id": "101", "spend": "12.50"}]
+
 
 def _runtime(tmp_path, namespace="meta", client=None):
     validator = AccountWhitelistValidator.__new__(AccountWhitelistValidator)
@@ -94,8 +98,11 @@ def _chat_client(runtime, principal):
     return TestClient(app)
 
 
-def _prompt(client, text, session="page-conversation", endpoint="/chat"):
-    response = client.post(endpoint, json={"user_input": text, "session_id": session})
+def _prompt(client, text, session="page-conversation", endpoint="/chat", account_id=None):
+    payload = {"user_input": text, "session_id": session}
+    if account_id is not None:
+        payload["account_id"] = account_id
+    response = client.post(endpoint, json=payload)
     assert response.status_code == 200, response.text
     if endpoint == "/chat/stream":
         import json
@@ -259,6 +266,110 @@ def test_account_directory_then_campaign_then_detail_survives_session_reload(tmp
             ("campaign", ("101",)),
             ("adsets", "test-account", "101"),
         ]
+    finally:
+        _close(runtime)
+
+
+@pytest.mark.parametrize("endpoint", ["/chat", "/chat/stream"])
+def test_meta_report_account_selection_resumes_report_tool(tmp_path, endpoint):
+    provider = QueryClient("meta")
+    runtime = _runtime(tmp_path, client=provider)
+    try:
+        install(runtime, ModelTurn(tool_calls=(call(
+            "meta_get_campaign_report", {},
+        ),)))
+        with _chat_client(runtime, _principal()) as client:
+            first = _prompt(client, "查询 Meta Ads 报表", endpoint=endpoint)
+            assert first["ui"]["account_selection"]["account_options"]
+            if endpoint == "/chat":
+                assert any(
+                    message["role"] == "tool"
+                    and message.get("metadata", {}).get("needs_input")
+                    for message in first.get("messages", ())
+                ), first.get("messages")
+            runtime._sessions.clear()
+            model = install(
+                runtime,
+                ModelTurn(tool_calls=(call(
+                    "meta_get_campaign_report", {},
+                ),)),
+                ModelTurn(content="Meta Campaign 报表：spend 12.50。"),
+            )
+            second = _prompt(
+                client, "使用账户 test-account 继续",
+                endpoint=endpoint, account_id="test-account",
+            )
+        assert "meta_get_campaign_report" in model.tool_names[0], model.tool_names
+        assert second["status"] == "succeeded", second
+        assert provider.calls == [("report", "test-account", (), None)]
+        assert second["results"][0]["data"]["data_status"] == "live"
+    finally:
+        _close(runtime)
+
+
+def test_new_question_after_account_selection_does_not_resume_pending_report(tmp_path):
+    provider = QueryClient("meta")
+    runtime = _runtime(tmp_path, client=provider)
+    try:
+        install(runtime, ModelTurn(tool_calls=(call(
+            "meta_get_campaign_report", {},
+        ),)))
+        with _chat_client(runtime, _principal()) as client:
+            first = _prompt(client, "查询 Meta Ads 报表")
+            assert first["ui"]["account_selection"]["account_options"]
+            model = install(runtime, ModelTurn(content="报表是统计指标的汇总。"))
+            second = _prompt(
+                client, "先解释一下报表是什么",
+                account_id="test-account",
+            )
+        assert second["status"] == "succeeded", second
+        assert second["results"] == []
+        assert provider.calls == []
+        assert len(model.tool_names) == 1
+    finally:
+        _close(runtime)
+
+
+def test_existing_account_choice_survives_legacy_metadata_and_retry(tmp_path, monkeypatch):
+    provider = QueryClient("meta")
+    runtime = _runtime(tmp_path, client=provider)
+    try:
+        install(runtime, ModelTurn(tool_calls=(call(
+            "meta_get_campaign_report", {},
+        ),)))
+        with _chat_client(runtime, _principal()) as client:
+            first = _prompt(client, "查询 Meta Ads 报表")
+            assert first["ui"]["account_selection"]["account_options"]
+            runtime._sessions.clear()
+            store = runtime.platform_application.agent.transcript_store
+            original_load = store.load
+
+            def load_legacy_messages(*args, **kwargs):
+                messages = original_load(*args, **kwargs)
+                for message in messages:
+                    if message.role == "tool":
+                        message.metadata.pop("interaction", None)
+                return messages
+
+            monkeypatch.setattr(store, "load", load_legacy_messages)
+            install(runtime, ModelTurn(content="当前没有可用的报表 Tool。"))
+            retry = _prompt(
+                client, "使用账户 test-account 继续",
+                account_id="test-account",
+            )
+            assert retry["status"] == "succeeded"
+            model = install(
+                runtime,
+                ModelTurn(tool_calls=(call("meta_get_campaign_report", {}),)),
+                ModelTurn(content="Meta Campaign 报表：spend 12.50。"),
+            )
+            result = _prompt(
+                client, "使用账户 test-account 继续",
+                account_id="test-account",
+            )
+        assert "meta_get_campaign_report" in model.tool_names[0]
+        assert result["status"] == "succeeded", result
+        assert provider.calls == [("report", "test-account", (), None)]
     finally:
         _close(runtime)
 

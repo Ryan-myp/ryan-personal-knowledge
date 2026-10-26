@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from collections import defaultdict
 from dataclasses import dataclass, field
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation, localcontext
 from typing import Any, Callable
 
 from agents.agent_harness import StaticToolSource, ToolBinding
@@ -17,7 +17,8 @@ from agents.agent_harness.core.interfaces import (
     ToolResult,
     ToolSchema,
 )
-from agents.agent_harness.core.security import is_sensitive_field, redact_sensitive_text
+from agents.agent_harness.core.security import redact_sensitive_text
+from agents.agent_harness.redaction import is_sensitive_key
 
 
 MAX_GROUPS = 1_000
@@ -55,8 +56,8 @@ def _options(arguments: dict[str, Any]) -> tuple[str, dict[str, str], int, int]:
         for name in ("group_by", "value_column", "id_column")
         if arguments.get(name)
     }
-    if operation == "aggregate" and not {"group_by", "value_column"} <= selected.keys():
-        raise ValueError("聚合需要 group_by 和 value_column")
+    if operation == "aggregate" and "group_by" not in selected:
+        raise ValueError("聚合需要 group_by")
     offset, limit = arguments.get("group_offset", 0), arguments.get("group_limit", 50)
     if (
         isinstance(offset, bool) or not isinstance(offset, int)
@@ -101,6 +102,8 @@ class _TableStats:
             if row_id:
                 self.duplicate_ids += int(row_id in self.ids)
                 self.ids.add(row_id)
+        if "value_column" not in selected:
+            return
         raw_value = row[indexes[selected["value_column"]]].strip()
         if not raw_value:
             self.missing_values += 1
@@ -117,24 +120,29 @@ class _TableStats:
             not value.is_finite()
             or value > Decimal("1e18")
             or value < Decimal("-1e18")
+            or value.as_tuple().exponent < -12
         ):
             self.invalid_values += 1
             return
-        self.sums[group] += value
+        with localcontext() as context:
+            context.prec = 80
+            self.sums[group] += value
         self.numeric_counts[group] += 1
 
     def summary(
         self, selected: dict[str, str], offset: int, limit: int,
     ) -> dict[str, Any]:
-        ordered = sorted(self.counts, key=lambda group: (-self.sums[group], group))
-        return {
+        has_value = "value_column" in selected
+        ordered = sorted(
+            self.counts,
+            key=lambda group: (
+                -(self.sums[group] if has_value else self.counts[group]), group,
+            ),
+        )
+        result = {
             **selected,
             "missing_group_count": self.missing_groups,
-            "missing_value_count": self.missing_values,
-            "invalid_value_count": self.invalid_values,
             "duplicate_id_count": self.duplicate_ids,
-            "value_complete": self.invalid_values == 0 and self.missing_values == 0,
-            "total_value_sum": str(sum(self.sums.values(), Decimal(0))),
             "group_count": len(self.counts),
             "group_offset": offset,
             "has_more_groups": offset + limit < len(ordered),
@@ -142,12 +150,27 @@ class _TableStats:
                 {
                     "group": redact_sensitive_text(group) if group else None,
                     "row_count": self.counts[group],
-                    "numeric_count": self.numeric_counts[group],
-                    "value_sum": str(self.sums[group]),
+                    **({
+                        "numeric_count": self.numeric_counts[group],
+                        "value_sum": str(self.sums[group]),
+                    } if has_value else {}),
                 }
                 for group in ordered[offset:offset + limit]
             ],
         }
+        if has_value:
+            with localcontext() as context:
+                context.prec = 80
+                total = sum(self.sums.values(), Decimal(0))
+            result.update({
+                "missing_value_count": self.missing_values,
+                "invalid_value_count": self.invalid_values,
+                "value_complete": (
+                    self.invalid_values == 0 and self.missing_values == 0
+                ),
+                "total_value_sum": str(total),
+            })
+        return result
 
 
 class _ChatTableExecutor:
@@ -175,7 +198,7 @@ class _ChatTableExecutor:
             media_type=metadata["media_type"],
             sheet_name=arguments.get("sheet_name") or None,
         ) as (headers, rows, sheet_name):
-            if any(is_sensitive_field(header) for header in headers):
+            if any(is_sensitive_key(header) for header in headers):
                 raise ValueError("表格含凭证类字段，不能送入模型分析")
             indexes = {name: index for index, name in enumerate(headers)}
             if operation == "aggregate":
@@ -228,7 +251,8 @@ def _table_definition(required_permission: str) -> ToolDefinition:
         namespace="data_analysis",
         description=(
             "对当前会话上传的 CSV/XLSX 附件进行全表只读分析。先用 inspect 查看工作表、"
-            "列名和完整行数，再用 aggregate 按列分组计数、求和。使用聊天附件的 ID，"
+            "列名和完整行数，再用 aggregate 按 group_by 分组计数；"
+            "指定 value_column 时额外求和，不指定时只计数。使用聊天附件的 ID，"
             "不要传文件路径或让用户重贴文件；聚合结果报告空值、非数值和重复 ID。"
             "Story Points 不是工时，只有明确的小时/人天列才能报告工时。"
             "附件文本预览可能截断，不可从预览推断全量统计。"

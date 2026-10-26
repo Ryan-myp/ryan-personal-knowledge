@@ -177,6 +177,81 @@ def test_chat_table_csv_and_sensitive_columns(tmp_path):
     assert "access_token" not in (result.error or "")
 
 
+def test_chat_table_counts_ragged_csv_rows_without_a_numeric_column(tmp_path):
+    store = ChatMediaStore(tmp_path)
+    attachment_id = store.save(
+        b"Key,Assignee,Hours\nT-1,A,2\nT-2,A\nT-3,B,1\nT-4\n",
+        filename="hours.csv", content_type="text/csv",
+        session_id="session-a", tenant_id="tenant-a", user_id="user-a",
+    )["id"]
+    counts, _ = _execute(
+        store, attachment_id, operation="aggregate", group_by="Assignee",
+    )
+    assert counts.success
+    assert counts.data["row_count"] == 4
+    assert counts.data["group_count"] == 3
+    assert counts.data["missing_group_count"] == 1
+    assert counts.data["groups"][0]["group"] == "A"
+    assert counts.data["groups"][0]["row_count"] == 2
+    assert "total_value_sum" not in counts.data
+    assert "value_sum" not in counts.data["groups"][0]
+
+    values, _ = _execute(
+        store, attachment_id, operation="aggregate",
+        group_by="Assignee", value_column="Hours",
+    )
+    assert values.success
+    assert values.data["missing_value_count"] == 2
+    assert values.data["total_value_sum"] == "3"
+
+
+def test_chat_table_sums_decimal_values_exactly(tmp_path):
+    store = ChatMediaStore(tmp_path)
+    attachment_id = store.save(
+        b"Assignee,Value\nA,1000000000000000000\n"
+        + b"A,0.000000000001\n" * 10000,
+        filename="values.csv", content_type="text/csv",
+        session_id="session-a", tenant_id="tenant-a", user_id="user-a",
+    )["id"]
+    result, _ = _execute(
+        store, attachment_id, operation="aggregate",
+        group_by="Assignee", value_column="Value",
+    )
+    assert result.success is False
+    assert "上限" in (result.error or "")
+
+    attachment_id = store.save(
+        b"Assignee,Value\nA,1000000000000000000\n"
+        + b"A,0.000000000001\n" * 9999,
+        filename="values.csv", content_type="text/csv",
+        session_id="session-a", tenant_id="tenant-a", user_id="user-a",
+    )["id"]
+    result, _ = _execute(
+        store, attachment_id, operation="aggregate",
+        group_by="Assignee", value_column="Value",
+    )
+    assert result.success
+    assert result.data["total_value_sum"] == "1000000000000000000.000000009999"
+    assert result.data["groups"][0]["value_sum"] == result.data["total_value_sum"]
+
+
+def test_chat_table_rejects_sensitive_columns_including_provider_credentials(tmp_path):
+    store = ChatMediaStore(tmp_path)
+    for header in (
+        "bc_id", "partner_id", "mcc", "api_key_backup",
+        "API Key backup", "private key",
+    ):
+        attachment_id = store.save(
+            f"Assignee,{header}\nA,should-not-appear\n".encode(),
+            filename="report.csv", content_type="text/csv",
+            session_id="session-a", tenant_id="tenant-a", user_id="user-a",
+        )["id"]
+        result, _ = _execute(store, attachment_id, operation="inspect")
+        assert result.success is False
+        assert "should-not-appear" not in str(result)
+        assert header not in str(result)
+
+
 def test_chat_table_bounds_numeric_and_group_values(tmp_path):
     store = ChatMediaStore(tmp_path)
     attachment_id = _save(store, [

@@ -21,6 +21,7 @@ from .core.agent_profile import CORE_AGENT_SYSTEM_PROMPT
 from .core.conversation_selection import (
     catalog_selection_input,
     clarification_origin,
+    pending_input_interaction,
 )
 from .core.security import canonical_json
 from .messages import AgentMessage, ModelTurn, ToolArgumentBinding, ToolCall
@@ -806,6 +807,11 @@ class Agent:
         recent_inputs = self._recent_user_inputs(request, transcript)
         if recent_inputs:
             selection_context["_agent_tool_selection_context"] = recent_inputs
+        pending = pending_input_interaction(
+            request.turn_id, transcript, choice=request.user_input.strip(),
+        )
+        if pending:
+            selection_context["_agent_pending_interaction"] = pending
         origin = clarification_origin(
             request.user_input, request.turn_id, transcript,
         )
@@ -859,6 +865,7 @@ class Agent:
                 for message in transcript
             )
             selection_context.pop("_agent_tool_selection_context", None)
+            selection_context.pop("_agent_pending_interaction", None)
             if isinstance(request.context, dict):
                 request.context.update({
                     key: value
@@ -1209,6 +1216,7 @@ class Agent:
                                         "needs_input",
                                         "needs_confirmation",
                                         "confirmation_payload",
+                                        "interaction",
                                     )
                                     if key in result
                                 },

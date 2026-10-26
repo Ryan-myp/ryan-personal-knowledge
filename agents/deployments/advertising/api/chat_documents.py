@@ -13,6 +13,8 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
+from agents.agent_harness.redaction import is_sensitive_key
+
 
 MIB = 1024 * 1024
 MAX_DOCUMENT_BYTES = 20 * MIB
@@ -202,7 +204,7 @@ def _bounded_csv_rows(reader: Any, column_count: int) -> Iterator[list[str]]:
                 raise ValueError("表格超过 10000 行分析上限，无法计算全量统计")
             if len(row) > column_count:
                 raise ValueError("CSV 数据行列数超过表头")
-            yield [str(cell).strip() for cell in row]
+            yield [str(cell).strip() for cell in row] + [""] * (column_count - len(row))
     except csv.Error as error:
         raise ValueError("CSV 格式无效，无法读取表格") from error
 
@@ -353,7 +355,13 @@ def _validate_table_headers(values: Any) -> list[str]:
         raise ValueError("表格 header 必须非空且不能重复")
     if any(len(header) > 200 for header in headers):
         raise ValueError("表格 header 单元格不能超过 200 个字符")
+    _reject_sensitive_headers(headers)
     return headers
+
+
+def _reject_sensitive_headers(headers: Any) -> None:
+    if any(is_sensitive_key(header) for header in headers):
+        raise ValueError("表格包含敏感凭证列，不能用于聊天分析或预览")
 
 
 def _table_cell(value: Any) -> str:
@@ -392,6 +400,8 @@ def _extract_csv(text: str) -> str:
             if row_index >= MAX_SHEET_ROWS:
                 output.append("[内容已截断：最多读取 1000 行]")
                 break
+            if row_index == 0:
+                _reject_sensitive_headers(row)
             cells = [
                 " ".join(str(cell).replace("|", "\\|").split())[:500]
                 for cell in row[:MAX_SHEET_COLUMNS]
@@ -461,11 +471,14 @@ def _extract_xlsx(content: bytes) -> str:
                 truncated = True
             if (worksheet.max_column or 0) > MAX_SHEET_COLUMNS:
                 truncated = True
-            for row in worksheet.iter_rows(
+            rows = worksheet.iter_rows(
                 max_row=max_row,
                 max_col=max_column,
                 values_only=True,
-            ):
+            )
+            for row_index, row in enumerate(rows):
+                if row_index == 0:
+                    _reject_sensitive_headers(row)
                 cells = [
                     _xlsx_cell(value)
                     for value in row
