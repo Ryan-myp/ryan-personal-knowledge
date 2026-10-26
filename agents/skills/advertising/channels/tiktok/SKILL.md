@@ -1,7 +1,7 @@
 ---
 name: tiktok-ads-expert
 description: "TikTok Ads 专家 Skill：负责广告层级、Smart/电商/应用/Lead/Spark 创意、定向与素材资产、Pixel/CAPI、报表和投放诊断"
-version: 2.0.1
+version: 2.0.2
 author: Ryan
 created: 2026-09-08
 tags: [tiktok, ads, smart-plus, spark-ads, ecommerce, app, lead-generation, pixel, reporting]
@@ -135,8 +135,11 @@ Campaign 或 Ad Group 已成功创建后，子级失败只能从该父级恢复�
 实测拒绝省略两条 URL。内置测试模板采用 TikTok 帮助页的 AppsFlyer Android 示例格式并替换为
 测试包名，但它是合成占位值，只允许在 Ad 保持 DISABLE 的演示测试中使用，不能启用投放；
 真实投放必须替换为 MMP 控制台生成的链接。App Promotion 视频广告按模板同时传入图片和视频素材。
-暂停演示层级已验证：Campaign `1879169312562338`、Ad Group `1879169302541826`、
-Ad `1879192935209457` 均为 DISABLE，Ad 查询与列表回读通过。后续先复用并回读，不要重复创建；
+2026-10-26 App Promotion 暂停演示层级的创建、回读和支持的更新字段已通过，
+但 Ad 名称更新不受支持。Product Sales 仅 Campaign/Ad Group 已暂停创建和
+回读；Ad 遇到 `Invalid product selection`，当前 Catalog 的 Product Set 列表
+为空，不得声称商品销售三层均已通过。具体最新 ID、模板版本和恢复状态以
+`provider_live_e2e_memory.json` 为准；不要复制历史示例 ID 重建父级。
 这不代表真实 MMP 归因或实际投放已验证。
 
 写操作默认 dry-run；当前格式若仅支持部分模拟或声明能力，必须显式说明。请求超时、未知

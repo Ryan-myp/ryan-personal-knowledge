@@ -1,4 +1,7 @@
+from pathlib import Path
+
 import pytest
+import yaml
 
 from agents.agent_harness import ModelTurn
 from agents.applications.advertising.knowledge.wiki import MarkdownWikiKnowledgeProvider
@@ -14,6 +17,36 @@ from agents.agent_harness.core.interfaces import ParsedIntent, ToolContext
 from agents.applications.advertising.persistence.store import AdAgentStore
 from agents.applications.advertising.composition.ad_application import AdvertisingComposition
 from agents.applications.advertising.integrations.ad_turn_context import AdTurnContext, AdTurnContextService
+
+
+def test_live_e2e_wiki_tracks_current_machine_memory_without_claiming_full_success():
+    path = Path("agents/knowledge/advertising/wiki/concepts/provider-live-e2e-memory.md")
+    text = path.read_text(encoding="utf-8")
+    frontmatter = yaml.safe_load(text.split("---", 2)[1])
+
+    assert frontmatter["last_verified_at"] == "2026-10-26"
+    assert "截至 2026-10-16" not in text
+    assert "Invalid product selection" in text
+    assert "Product Set" in text
+    assert "Meta App" in text and "原生一键 live" in text
+    assert "删除" in text and "未验证" in text
+
+
+def test_channel_specific_query_retrieves_scoped_live_e2e_guidance():
+    provider = MarkdownWikiKnowledgeProvider("agents/knowledge/advertising/wiki")
+    for query, expected in (
+        (
+            "TikTok Product Sales Invalid product selection Product Set 恢复测试账号",
+            "tiktok-product-sales-live-verification",
+        ),
+        (
+            "Meta App Promotion 原生一键 live 模板 child-only 失败",
+            "meta-app-live-verification",
+        ),
+    ):
+        rows = provider.query(query, limit=5)
+        assert expected in {row.document_id for row in rows}
+        assert all(row.platform != "all" for row in rows)
 
 
 def test_markdown_wiki_is_canonical_and_metadata_is_source_addressable(tmp_path):

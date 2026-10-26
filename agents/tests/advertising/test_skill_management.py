@@ -47,10 +47,12 @@ def test_builtin_skill_catalog_lists_standard_packages_as_read_only():
     creative = catalog.get_version("creative-strategy", "1.0.1")
     assert creative["location"] == "practices/creative-strategy"
     assert "references/creative-roadmap.md" in creative["files"]
-    diagnostics = catalog.get_version("account-diagnostics", "1.3.1")
+    diagnostics = catalog.get_version("account-diagnostics", "1.4.0")
     assert diagnostics["location"] == "practices/account-diagnostics"
     assert "references/google-report-interpretation.md" in diagnostics["files"]
     assert "references/meta-insights-interpretation.md" in diagnostics["files"]
+    assert "references/tiktok-report-interpretation.md" in diagnostics["files"]
+    assert "references/dv360-report-interpretation.md" in diagnostics["files"]
     assert "references/operating-check.md" in diagnostics["files"]
     assert "references/report-context-contract.md" in diagnostics["files"]
     experimentation = catalog.get_version("experimentation-design", "1.0.1")
@@ -253,6 +255,8 @@ def test_builtin_account_diagnostics_is_advisory_and_selects_relevant_references
         assert "[skill guidance: account-diagnostics]" in audit_context
         assert "Unknown** 表示缺少证据" in audit_context
         assert "standard `search_term_view` does not cover Performance Max" not in audit_context
+        assert "[references/tiktok-report-interpretation.md]" not in audit_context
+        assert "[references/dv360-report-interpretation.md]" not in audit_context
 
         meta_context = runtime.tool_selector._triggered_skill_context(
             "Meta Insights 报表 breakdown action_breakdowns attribution window "
@@ -262,6 +266,21 @@ def test_builtin_account_diagnostics_is_advisory_and_selects_relevant_references
         assert "references/meta-insights-interpretation.md" in meta_context
         assert "报告 Tools 不暴露" in meta_context
         assert "offline_no_client" in meta_context
+        assert "[references/tiktok-report-interpretation.md]" not in meta_context
+
+        tiktok_context = runtime.tool_selector._triggered_skill_context(
+            "TikTok 报表 campaign adgroup 花费为零，诊断数据口径"
+        )
+        assert "[skill guidance: account-diagnostics]" in tiktok_context
+        assert "references/tiktok-report-interpretation.md" in tiktok_context
+        assert "AUCTION_ADGROUP" in tiktok_context
+
+        dv360_context = runtime.tool_selector._triggered_skill_context(
+            "DV360 line item 报表为空，查询失败后如何恢复"
+        )
+        assert "[skill guidance: account-diagnostics]" in dv360_context
+        assert "references/dv360-report-interpretation.md" in dv360_context
+        assert "Campaign-level report" in dv360_context
 
         operation_context = runtime.tool_selector._triggered_skill_context(
             "做一次周度广告账户检查，按 HOLD、FIX、TEST、INVESTIGATE 给出结论"

@@ -1,18 +1,30 @@
 ---
 name: account-diagnostics
 description: "基于当前账户报表和可追溯证据进行广告账户审计、效果诊断与数据解读"
-version: "1.3.1"
+version: "1.4.0"
 namespace: advertising
 triggers:
   - [账户诊断, 账户审计, 广告账户体检, 广告账户审计, 广告账户做审计, 账户表现诊断, account audit, account diagnosis, performance diagnosis, performance audit]
   - [搜索词报告, search terms report, wasted spend, 浪费预算, 报表可信度, conversions 为零, 广告效果下降, why performance dropped]
   - [Meta Insights, Meta 广告报表, Meta Ads report, action_breakdowns, Meta breakdown, Meta 转化报表]
+  - [TikTok 报表, TikTok 账户诊断, TikTok 广告花费为零, AUCTION_ADGROUP, TikTok reporting]
+  - [DV360 报表, DV360 line item 报表, DV360 账户诊断, DV360 report, Line Item 报表]
   - [周度广告账户检查, 周度账户复盘, 广告账户周报, weekly account review, daily account check, weekly performance readout, spend pacing, 投放节奏检查]
 ---
 
 # 广告账户诊断与数据解读
 
 本 Skill 用于解释当前广告账户查询结果、审计数据覆盖情况，并提出可验证的下一步检查。它补充 `evidence-driven-performance-diagnosis` 和渠道 Skill，不复制账户报表或渠道 API 能力。
+
+## 证据标签
+
+- **Verified**：本次 Run 的当前只读结果，来源和口径明确，且不是模拟或未完成结果。
+- **Inferred**：由已核验结果推导，但仍有其他可能解释。
+- **Stale**：来自历史报告、文档或用户回忆，必须附原始日期。
+- **Unknown**：数据、权限、范围、成熟度或报告完整性不足以判断。
+
+不能把 Inferred 或 Stale 写成 Verified；不能把 Unknown 计为 Fail 或零表现。
+审计清单中的 **Pass/Fail** 必须由证据支持；**Unknown** 表示缺少证据并降低覆盖率，不降低健康度；**N/A** 不进入健康度或覆盖率。健康度和证据覆盖率按 Wiki 中的项目约定分开呈现。
 
 ## 诊断顺序
 
@@ -27,18 +39,9 @@ triggers:
 - `references/report-context-contract.md`：统一报表元数据、空结果/截断判读及跨渠道可比边界。
 - `references/google-report-interpretation.md`：Google Ads 搜索词、转化和日期口径。
 - `references/meta-insights-interpretation.md`：Meta Insights 分层指标、actions/action_values、归因与当前 Tool 查询边界。
+- `references/tiktok-report-interpretation.md`：TikTok 报表粒度、空结果、预算诊断与当前 Tool 查询边界。
+- `references/dv360-report-interpretation.md`：DV360 Line Item 报表范围、任务状态与空结果恢复。
 - `references/operating-check.md`：日/周账户检查顺序、HOLD/FIX/TEST/INVESTIGATE 决策和简短 readout。
-
-## 证据标签
-
-- **Verified**：本次 Run 的当前只读结果，来源和口径明确，且不是模拟或未完成结果。
-- **Inferred**：由已核验结果推导，但仍有其他可能解释。
-- **Stale**：来自历史报告、文档或用户回忆，必须附原始日期。
-- **Unknown**：数据、权限、范围、成熟度或报告完整性不足以判断。
-
-不能把 Inferred 或 Stale 写成 Verified；不能把 Unknown 计为 Fail 或零表现。
-
-审计清单中的 **Pass/Fail** 必须由证据支持；**Unknown** 表示缺少证据并降低覆盖率，不降低健康度；**N/A** 不进入健康度或覆盖率。健康度和证据覆盖率按 Wiki 中的项目约定分开呈现。
 
 ## 执行边界
 

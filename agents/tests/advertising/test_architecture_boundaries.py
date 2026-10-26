@@ -323,6 +323,25 @@ def test_app_business_policy_does_not_block_registered_cross_channel_app_types()
         assert policy.validate_intent(intent) == []
 
 
+def test_business_guidance_does_not_hard_block_registered_campaign_types():
+    skills_root = Path(__file__).resolve().parents[2] / "skills" / "advertising"
+    for business, platform, campaign_type in (
+        ("ecommerce", "tiktok", "PRODUCT_SALES"),
+        ("social", "dv360", "VIDEO"),
+    ):
+        policy = BusinessSkillPolicy.from_skill_file(business, str(skills_root))
+        intent = ParsedIntent(
+            intent_type="create_campaign",
+            raw_input="create campaign",
+            namespaces=[platform],
+            campaign_type=campaign_type,
+            budget=75,
+        )
+        assert policy.filter_namespaces([platform]) == [platform]
+        assert policy.validate_intent(intent) == []
+        assert policy.rules.get("min_budget") is None
+
+
 def test_execution_plan_is_provider_neutral_and_validates_dependencies():
     campaign = ToolDefinition(
         name="provider_create_campaign",

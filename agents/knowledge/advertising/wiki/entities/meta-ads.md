@@ -11,10 +11,10 @@ source_ref: platforms/meta/canonical-campaign-and-adset-runbook.md
 source_kind: internal
 authority: repository
 evidence_level: reviewed
-last_verified_at: "2026-10-18"
-version: "1.1.0"
+last_verified_at: "2026-10-26"
+version: "1.1.1"
 confidence: 0.93
-updated_at: "2026-10-18"
+updated_at: "2026-10-26"
 tags: [meta, facebook ads, Instagram广告, 广告平台, 渠道介绍, 基础知识, campaign, ad-set, creative, advantage-plus]
 status: published
 ---
@@ -33,3 +33,4 @@ Campaign 表达业务目标和上层预算策略；Ad Set 负责预算/排期、
 - [[Meta 投放目标选择：从业务结果到 Campaign Objective]]：业务结果、Campaign objective 与 Ad Set 优化目标的关系。
 - [[Meta Catalog、Lead 与转化质量运营]]：商品目录和线索场景的主要前置条件。
 - [[Meta Insights 分层报表、Breakdown 与异步查询]]：报表粒度、归因窗口和异步查询边界。
+- [[Meta App Promotion 测试账号模板与逐层验收边界]]：原生一键 live 模板与分层续建的验证差异。

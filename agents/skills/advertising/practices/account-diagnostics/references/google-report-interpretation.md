@@ -1,3 +1,7 @@
+---
+reference_scope: [Google, 谷歌]
+---
+
 # Google Ads 报表解读
 
 本参考用于回答 Google Ads 搜索词、转化或 Campaign 报表问题。当前已注册的 Tool schema

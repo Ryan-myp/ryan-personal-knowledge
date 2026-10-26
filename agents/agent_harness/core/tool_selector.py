@@ -242,6 +242,7 @@ class DynamicToolSelector:
                     references,
                     max_documents=2,
                     max_chars=reference_budget,
+                    scope_query=user_input,
                 )
                 if reference_text:
                     excerpt += "\n\n" + reference_text
@@ -288,6 +289,7 @@ class DynamicToolSelector:
                     _skill_reference_query(user_input, skill),
                     references,
                     max_documents=2,
+                    scope_query=user_input,
                     max_chars=1200,
                 )
                 if reference_text:

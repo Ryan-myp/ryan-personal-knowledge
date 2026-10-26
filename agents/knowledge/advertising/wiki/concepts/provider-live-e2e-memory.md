@@ -11,8 +11,8 @@ source_ref: agents/tools/advertising/contracts/provider_live_e2e_memory.json
 source_kind: code
 authority: repository
 evidence_level: reviewed
-last_verified_at: "2026-10-16"
-version: "1.0.1"
+last_verified_at: "2026-10-26"
+version: "1.1.0"
 confidence: 1.0
 updated_at: "2026-10-26"
 tags: [e2e, test-account, templates, regression, live]
@@ -58,19 +58,21 @@ status: published
 - TikTok App Promotion 的 child-only 恢复必须从当前内置模板读取 App、Identity、素材和 tracking URL，并为当前 session 重新签发选择令牌；不能复制旧 case 的 `identity_id`。历史 Singapore identity Ad 保持暂停并作为失败证据保留，不覆盖 Indonesia 模板的验证结论。
 - 如果 Ad 列表发生短暂 `ConnectionError`/502，先只重试读取，并用单 Ad `get` 对账；不要因读取失败重发创建或更新。若读取持续失败，准确报告未验证，保留现有资源 ID。
 - Google Ads 测试账号 `9055507554` 的 Campaign `24366769615`、Ad Group `204899076647` 已实测为 `PAUSED`。v24 对该 App Ad 类型拒绝 `PAUSED` 状态，正确演示方式是只在两个暂停父级下创建 `ENABLED` App Ad；任何父级状态未知或启用时必须拒绝子级写入。先续用这组父级，不要重复创建。
-- Meta App 模板记录过 `ValueError`，但历史 case 只保留异常类型，没有安全的错误消息和失败字段。因此根因仍未知；恢复既有 Campaign 后采集脱敏错误上下文，并先加回归测试，不能把独立 Tool 创建成功说成模板链已通过。
+- Meta App 历史模板记录过 `ValueError`，具体旧根因不可追溯；2026-10-26 当前模板参数已通过三层 dry-run 和回归，暂停 Campaign、Ad Set、Ad 经 child-only 恢复创建并回读。原生一键 live 模板仍未通过：Campaign 成功后重交整卡被重复写门禁挡住。只续建缺失子级，不把分层通过说成一键模板通过。
 - 历史 TikTok App 测试中，省略 tracking URL 会被拒；通用 `example.com` URL 也因格式错误被拒。当前模板的 AppsFlyer click/impression 示例链接已由暂停演示的真实创建和回读验证为 API 可接受，但它们是合成占位值，不证明真实 MMP 归因或可投放性。App 视频创建还必须同时带模板图片和视频。
 
 ## 当前范围与状态
 
-截至 2026-10-16，范围为 Google Ads PMax、Shopping、App；Meta Traffic、Catalog Sales、Conversion、App Promotion；TikTok Traffic、Product Sales、App Promotion。TikTok Lead Generation 按用户要求暂不测试。
+截至 2026-10-26，范围为 Google Ads PMax、Shopping、App；Meta Traffic、Catalog Sales、Conversion、App Promotion；TikTok Traffic、Product Sales、App Promotion。TikTok Lead Generation 按用户要求暂不测试。2026-10-26 验收细节见 `agents/docs/advertising/campaign-validation-20261026.md`，下述状态必须与结构化账本和当前 Provider 回读相互核对。
 
 - Meta Traffic、Catalog Sales、Conversion：当前记录为真实 `/chat` 创建、更新和回读通过。
-- Meta App Promotion：Campaign 与子级资源有真实测试，但原生模板链发生参数解析错误；模板 E2E 尚未通过。
+- Meta App Promotion：暂停 Campaign、Ad Set、Ad 已分层创建、改名和回读；Ad 配置状态为 `PAUSED`，但回读 `effective_status=IN_PROCESS`。原生一键 live 模板未完整通过，不能宣传为单次模板 E2E 已通过。
 - Google PMax、Shopping：存在真实创建/更新/读取证据，但仍有未完成的当前模板覆盖或 Product Group 更新限制。
 - Google App：模板已改为 Campaign/Ad Group `PAUSED`、App Ad `ENABLED`，并保留父级状态核验。2026-10-16 的后续 live 核验在只读 Campaign/Ad Group 查询阶段遇到 HTTP 401 后 403（`The caller does not have permission`），没有发出写请求；因此新模板的 ENABLED App Ad 创建与回读仍待测试账号权限恢复后完成。
-- TikTok Traffic：当前模板参数对应的 Campaign、Ad Group、Smart+ Ad 已通过测试账号真实创建；三层名称更新和逐层详情读取已通过，更新后 Ad 列表返回正确的 Smart+ Ad ID、最新名称及 Ad `DISABLE`。Campaign `1879182108006450`、Ad Group `1879182124055009`、Ad `1879183742331441` 和 Creative `1879183744241697` 已写入机器记忆，后续测试默认复用而不重建。列表早期返回的 Creative ID/状态混淆、更新时模型注入 `status`、一次短暂读取连接失败均已记录根因与恢复方式。
-- TikTok Product Sales：历史真实测试在广告组要求 Pixel 时被 Provider 拒绝，当前模板链未完成。
-- TikTok App Promotion：当前模板 paused demo 的真实创建、精确 get 和 Ad Group list 已通过。Campaign `1879169312562338`、Ad Group `1879169302541826`、Ad `1879196654038418` 均为 DISABLE；回读的 App 为 Shopee Indonesia，identity 为 `36a059a7-2b1d-51c3-bb40-236ae6f84515`。此前两条 Singapore identity Ads `1879192935209457`、`1879195024030513` 仍保留且暂停，不作为当前模板通过证据。模板 URL 是合成 AppsFlyer 占位值；真实 MMP 归因未验证，启用前必须换成 MMP 控制台生成的链接。
+- TikTok Traffic：本轮另建暂停层级 `1880079487888913` / `1880080345882434` / `1880080658604161`，Campaign、Ad Group、Ad 的创建、改名与回读通过；Smart+ Ad 的 `DISABLE` 不能从关联 Creative 的 `ENABLE` 推断。旧资源仍在账本，恢复时从机器记忆取当前 ID 并先查状态。
+- TikTok Product Sales：本轮暂停 Campaign `1880083317565154` 与 Ad Group `1880083336090337` 已创建、改名、回读。Ad 先因 BC_AUTH_TT 帖子与身份不匹配被拒；换受控身份和完整追踪后 Provider 报 `Invalid product selection`，对应 Catalog 的 Product Set 只读列表为 0。Ad 未创建，不得把旧的“缺 Pixel”当作本轮唯一根因；待测试账号提供有效商品选择后，只恢复缺失 Ad，不写独立 Catalog。
+- TikTok App Promotion：本轮暂停 Campaign `1880085399156082`、Ad Group `1880085378463186`、Ad `1880085435261650` 创建并回读；Campaign / Ad Group 改名与 Ad 状态更新已核验，Ad 名称更新不受支持，不能计入已通过。合成 tracking URL 只用于暂停演示，真实 MMP 归因和启用投放未验证。
+
+三个渠道的删除 Tool 仍未开启 live，本轮均未测试删除；不能宣称完整 CRUD。Google 测试账户读取遇到 `CUSTOMER_NOT_ENABLED`，本轮未对 Google 执行写入。Meta Catalog Sales 的 Ad 首次遇到上游限流，先核查列表为空再只续建 Ad；Meta App 创建超时先对账确认无写入再重试。所有这些记录都不能代替原始只读回验和当前账户权限检查。
 
 具体逐层状态、模板版本、参数哈希、已知资源 ID 和证据锚点以机器账本及其追加观察为准。不得把 `partial_live`、`blocked_by_provider` 或 `not_run` 简写成“已打通”。历史资源若缺少 ID 或实际状态，先用查询 Tool 对账；不能通过重新创建来“验证”。

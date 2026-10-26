@@ -1,4 +1,7 @@
 ---
+reference_scope: [Meta, Facebook, Instagram]
+---
+
 # Meta 洞察报告解读
 
 使用本参考指南处理 Meta 营销活动（Campaign）、广告组（Ad Set）、广告（Ad）和洞察报告的查询。当前注册的 Tool 架构和确切返回的字段具有权威性；本指南不承诺支持所有 Marketing API 报告参数。

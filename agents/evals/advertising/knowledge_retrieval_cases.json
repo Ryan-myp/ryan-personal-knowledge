@@ -42,6 +42,8 @@
   {"query": "广告素材疲劳如何实验", "expected": ["cross-platform-creative-testing", "tiktok-creative-lifecycle-and-testing"]},
   {"query": "广告报表为空应该怎么诊断", "expected": ["google-ads-measurement-and-diagnostics", "dv360-reporting-and-diagnostics"]},
   {"query": "广告 Agent 写入需要什么安全门禁", "expected": ["four-platform-ad-agent-handbook", "ad-best-practices"]},
+  {"query": "2026-10-26 TikTok Product Sales 父级通过但 Ad Invalid product selection Product Set 为空，如何只恢复 Ad", "expected": ["tiktok-product-sales-live-verification"]},
+  {"query": "Meta App Promotion 原生一键 live 模板链通过了吗，child-only 续建和 Ad IN_PROCESS 是什么情况", "expected": ["meta-app-live-verification"]},
   {"query": "如何从业务目标和漏斗规划渠道、平台目标、预算、KPI 与实验", "expected": ["full-funnel-campaign-planning"]},
   {"query": "CRM 有线索但广告事件质量差，离线转化回传、去重、隐私和诊断怎么做", "expected": ["conversion-signal-quality-operations"]},
   {"query": "广告转化事件 QA 阶段验收 业务触发 客户端服务端捕获 平台接收 去重 归因 报表成熟 CRM 对账", "expected": ["conversion-signal-quality-operations"], "expected_top": "conversion-signal-quality-operations"},

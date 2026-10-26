@@ -215,6 +215,93 @@ def test_generic_audit_terms_do_not_select_provider_specific_reference():
     assert selected == ""
 
 
+def test_scoped_reference_requires_matching_request_scope():
+    references = {
+        "references/tiktok-report.md": (
+            "---\nreference_scope: [TikTok]\n---\n"
+            "TikTok 账户报表为空，检查数据口径和完整性。"
+        ),
+        "references/operating-check.md": (
+            "周度广告账户报表检查，给出 HOLD FIX TEST INVESTIGATE。"
+        ),
+    }
+    general = select_reference_excerpts(
+        "周度广告账户报表检查",
+        references,
+        max_documents=2,
+    )
+    assert "references/operating-check.md" in general
+    assert "references/tiktok-report.md" not in general
+
+    scoped = select_reference_excerpts(
+        "TikTok 账户报表为空",
+        references,
+        max_documents=2,
+    )
+    assert "references/tiktok-report.md" in scoped
+    assert "reference_scope" not in scoped
+
+
+def test_scoped_reference_matches_platform_next_to_chinese_but_not_inside_latin_word():
+    references = {
+        "references/meta-report.md": (
+            "---\nreference_scope: [Meta, Facebook]\n---\n"
+            "Meta 广告报表需要先核对归因窗口。"
+        ),
+        "references/generic.md": "广告报表需先核对数据口径。",
+    }
+    for request in ("Meta广告报表怎么查", "Facebook广告报表怎么查"):
+        assert "references/meta-report.md" in select_reference_excerpts(
+            request, references, max_documents=2,
+        )
+    assert "references/meta-report.md" not in select_reference_excerpts(
+        "Metabase 广告报表怎么查", references, max_documents=2,
+    )
+    assert "references/google-report.md" in select_reference_excerpts(
+        "谷歌广告报表怎么查",
+        {
+            "references/google-report.md": (
+                "---\nreference_scope: [Google, 谷歌]\n---\n"
+                "谷歌广告报表需要核对转化窗口。"
+            ),
+        },
+    )
+
+
+def test_scoped_reference_requires_string_list_and_no_skill_description_match():
+    references = {
+        "references/dv360-report.md": (
+            "---\nreference_scope: [DV360]\n---\n"
+            "DV360 报表完整性检查。"
+        ),
+        "references/generic.md": "通用报表完整性检查。",
+    }
+    selected = select_reference_excerpts(
+        "通用报表完整性检查\naccount-diagnostics\n"
+        "Skill covering DV360 and Meta reporting",
+        references,
+        max_documents=2,
+        scope_query="通用报表完整性检查",
+    )
+    assert "references/dv360-report.md" not in selected
+    assert "references/generic.md" in selected
+
+
+def test_invalid_reference_scope_fails_closed_without_losing_generic_reference():
+    selected = select_reference_excerpts(
+        "报表完整性检查",
+        {
+            "references/invalid.md": (
+                "---\nreference_scope: anyone\n---\n报表完整性检查"
+            ),
+            "references/generic.md": "报表完整性检查。",
+        },
+        max_documents=2,
+    )
+    assert "references/invalid.md" not in selected
+    assert "references/generic.md" in selected
+
+
 def test_markdown_skill_source_loads_advisory_text_references_only(tmp_path):
     skill_dir = tmp_path / "creative-strategy"
     references_dir = skill_dir / "references"

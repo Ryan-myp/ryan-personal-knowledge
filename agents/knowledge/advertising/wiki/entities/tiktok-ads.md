@@ -11,10 +11,10 @@ source_ref: platforms/tiktok/canonical-campaign-and-adgroup-runbook.md
 source_kind: internal
 authority: repository
 evidence_level: reviewed
-last_verified_at: "2026-10-18"
-version: "1.1.0"
+last_verified_at: "2026-10-26"
+version: "1.1.1"
 confidence: 0.93
-updated_at: "2026-10-18"
+updated_at: "2026-10-26"
 tags: [tiktok, TikTok广告, 广告平台, 渠道介绍, 基础知识, campaign, ad-group, creative, spark, smart-plus]
 status: published
 ---
@@ -33,3 +33,4 @@ TikTok Ads 通过 Advertiser 账户管理广告。常见资源链路是 Advertis
 - [[TikTok Smart+、Spark Ads 与创意规模化方法]]：自动探索、Spark 身份授权和创意测试。
 - [[TikTok 创意生命周期、Spark 与素材测试]]：素材状态、变量设计和表现诊断。
 - [[TikTok Pixel、Events API 与归因信号]]：事件、去重、身份和归因边界。
+- [[TikTok Product Sales 测试账号逐层验收与商品选择失败]]：受控测试父级状态与缺失 Ad 的恢复边界。

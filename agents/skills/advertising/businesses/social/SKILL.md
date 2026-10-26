@@ -1,91 +1,35 @@
 ---
 business:
   name: social
-  version: "1.0.0"
-  description: "社交媒体广告投放 Skill - 专注于品牌曝光、用户互动"
-  allowed_channels:
-    - meta
-    - google
-    - tiktok
-  disallowed_channels:
-    - dv360
-  allowed_campaign_types:
-    - BRAND_AWARENESS
-    - ENGAGEMENT
-    - TRAFFIC
-    - VIDEO_VIEW
+  version: "1.1.0"
+  description: "品牌触达、内容互动和视频广告的目标选择与质量诊断"
   business_rules:
-    min_budget: 200
-    max_budget: 200000
-    focus_metrics:
-      - CPM
-      - Reach
-      - Engagement
-      - Video_View_Rate
-    default_objective: "BRAND_AWARENESS"
+    focus_metrics: [Reach, Frequency, Qualified_Engagement, Incremental_Lift]
 ---
 
-# 社交媒体业务 Skill
+# 品牌与社交业务技能
 
-## 可用渠道
+本 Skill 讨论受众、内容和品牌效果，不按“社交”标签硬禁用某个渠道。
+Meta、TikTok、Google/YouTube 与 DV360 都要按本次目标、可用广告格式、
+账户权限及当前注册 Tool 判断；不能把互动、视频观看、品牌提升误写成
+所有渠道共享的 `campaign_type`。
 
-| 渠道 | 状态 | 说明 |
-|------|------|------|
-| Meta | ✅ 可用 | Facebook/Instagram 品牌广告 |
-| Google | ✅ 可用 | YouTube/Display 品牌广告 |
-| TikTok | ✅ 可用 | Spark Ads、品牌挑战赛 |
-| DV360 | ❌ 不可用 | 社交业务暂不支持 |
+## 决策顺序
 
-## 业务规则
+1. 区分触达、视频观看、互动、站外访问和最终业务结果；为每一层指定
+   对应指标、观察窗口和可用的只读证据，不用点赞数代替购买或增量。
+2. 核对素材权属、创作者授权、落地页承诺、审核状态、版位与频次；
+   Spark/原帖授权、普通视频资产和 DV360 Creative 是不同依赖。
+3. 在具体渠道查当前广告类型和格式，再确认父级、素材和定向依赖；
+   只给出当前 Tool 实际支持的查询或 dry-run 计划。
+4. 判断频次疲劳与内容衰减时，对齐时段、受众、投放状态、覆盖率和
+   数据成熟度；缺少增量实验时，品牌提升只作为待验证假设。
+5. 提出最小创意或受众实验，记录可证伪指标与回退条件；
+   不把“预算翻倍”或统一人民币下限当作运营标准。
 
-- **预算范围**: ¥200 - ¥200,000
-- **核心指标**: CPM、Reach、Engagement、Video_View_Rate
-- **默认目标**: BRAND_AWARENESS（品牌认知）
+## 执行边界
 
-## 常用场景
-
-### 场景 1: 品牌曝光
-```yaml
-objective: BRAND_AWARENESS
-campaign_types:
-  - VIDEO_VIEW    # YouTube 视频广告
-  - DISPLAY       # Google Display
-channels:
-  - google
-  - meta
-```
-
-### 场景 2: 用户互动
-```yaml
-objective: ENGAGEMENT
-campaign_types:
-  - POST_ENGAGEMENT  # Facebook 帖子互动
-  - VIDEO_VIEW       # TikTok 视频观看
-channels:
-  - meta
-  - tiktok
-```
-
-### 场景 3: 社交裂变
-```yaml
-objective: VIRAL_CAMPAIGN
-campaign_types:
-  - SPARK_AD         # TikTok Spark Ads
-  - UGC_CAMPAIGN     # 用户生成内容
-channels:
-  - tiktok
-  - meta
-```
-
-## 工具发现
-
-本业务 Skill 不维护固定 Tool 名称。运行时会根据当前已注册的渠道
-Tool Source、广告类型目录和 Tool Schema 动态选择可用的 Campaign、下级资源、
-报表和素材能力；若某个广告类型只有 `declared_only` 或 `partial_dry_run`，
-必须在计划中明确提示缺口。
-
-## 注意
-
-- 禁止使用 DV360 渠道
-- 预算低于 ¥200 将被拒绝
-- 建议先测试 TikTok Spark Ads，再扩展 Meta/Google
+渠道覆盖、目标枚举、币种、最低预算和字段组合均由当前 Registry、
+Provider Tool schema 与账户资格确定。没有注册 Tool 时仅能给方案，
+不能声称已查询、创建或发布；所有写入必须走 dry-run、确认、权限、
+幂等与审计门禁。

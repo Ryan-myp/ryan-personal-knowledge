@@ -25,9 +25,9 @@ skills/
     └── SKILL.md
 
 # 可执行能力不放在上面的 Markdown 目录中：
-tools/providers/<platform>/provider.py  # 渠道 Tool Source + ToolDefinition
-api_clients/<platform>_client.py        # 可选 Provider Client
-skills/<name>/tools.py                  # 仅受信任源码扩展，不属于上传 Skill
+agents/tools/advertising/providers/<platform>/provider.py  # 渠道 Tool Source + ToolDefinition
+agents/tools/advertising/clients/<platform>_client.py      # 可选 Provider Client
+agents/skills/advertising/<domain>/<skill>/SKILL.md        # Advisory，不提供执行代码
 ```
 
 ## 技能定义格式
@@ -58,6 +58,9 @@ SKILL.md，而由对应 Tool Source 在 Registry 中注册。
 增长组合。它们补充而不复制渠道 Skill、知识 Wiki 或 Tool contract；references 按请求
 相关性限量加载。没有对应注册 Tool 时，Skill 只能给出分析、草案或待查询项，不能暗示
 已取数、抓取外部素材、修改广告/网站或执行自动化。
+平台专属 reference 可用 `reference_scope: [Meta]` 等标准 YAML frontmatter
+声明适用的用户请求词。未指定对应平台时不加载该 reference；这只限制 advisory
+片段选择，不改变 Skill 的触发、Registry 或 Tool 权限。
 
 ## 已吸收的营销方法
 
@@ -114,16 +117,16 @@ Skills 的官方来源与边界。
 跨渠道 Skill 提供业务层流程和统一口径；真正的查询/计划/执行能力仍来自已注册的
 平台 Tool Source 和 Tool：
 
-1. **Campaign 总览** - 统一查看各平台 Campaign 状态
-2. **预算分配** - 跨平台预算智能分配
-3. **性能对比** - 对比各平台 ROI/CPA
-4. **批量操作** - 一键启停多个平台 Campaign
+1. **Campaign 总览** - 仅对已授权账户调用对应渠道的查询 Tool
+2. **预算规划** - 对齐币种、日期、指标和归因，先给出可审计建议
+3. **性能对比** - 数据口径不一致时分渠道陈述，不编造统一 ROI/CPA
+4. **跨渠道变更** - 逐项按当前 Tool 契约、dry-run 和确认执行，不承诺一键启停
 
 ## 扩展新渠道
 
 按以下边界扩展：
 
 1. 创建 `skills/channels/{channel}/SKILL.md`，描述专家知识、SOP 和安全边界
-2. 创建 `tools/providers/{channel}/provider.py`，导出约定的 Tool Source factory
-3. 按需创建 `api_clients/{channel}_client.py` 或 Skill plugin
+2. 创建 `agents/tools/advertising/providers/{channel}/provider.py`，导出约定的 Tool Source factory
+3. 按需创建 `agents/tools/advertising/clients/{channel}_client.py`；Skill 不提供可执行 plugin
 4. 让 Runtime 自动发现；Tool 仍需通过统一 Registry、schema 和 Harness 安全门禁

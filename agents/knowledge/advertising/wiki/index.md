@@ -1,6 +1,6 @@
 # LLM 知识库索引
 
-> **版本**: v2.10.1
+> **版本**: v2.10.2
 > **更新时间**: 2026-10-26
 > **定位**: 为单 Agent 提供可检索、可引用、不可执行的广告业务上下文
 
@@ -90,6 +90,7 @@ knowledge_base/
 | “数据为什么异常？” | `optimization-diagnostic-framework` + 对应平台 measurement 文档 |
 | “账户审计覆盖不完整，健康分应该怎么算？” | `evidence-driven-performance-diagnosis` |
 | “Google 搜索词/转化报表或 Meta Insights 数据可信吗，指标如何解读？” | `agents/skills/advertising/practices/account-diagnostics/` + 对应平台 measurement/reporting 文档 |
+| “TikTok 报表没有花费，DV360 Line Item 报表为空？” | `agents/skills/advertising/practices/account-diagnostics/` 的平台参考 + TikTok/DV360 报表专题；先核实当前 Tool 的查询层级、状态与完整性 |
 | “Google 关键词规划建议、搜索量和竞争指数怎么查和解读？” | `agents/skills/advertising/practices/keyword-research/` + `platforms/google/keyword-planning-and-search-intent` |
 | “除了广告投放，还有哪些增长路径适合当前业务？” | `agents/skills/advertising/practices/growth-strategy/` + `business/unit-economics-and-channel-mix` |
 | “网站 SEO/自然搜索表现应该如何诊断和优先修复？” | `agents/skills/advertising/practices/seo-growth/` + PageSpeed Insights 单页 Tool + `agents/skills/advertising/web-research/` |
@@ -100,6 +101,7 @@ knowledge_base/
 | “四个平台整体怎么设计和排查？” | `four-platform-ad-agent-handbook` + 对应平台 Canonical Runbook |
 | “这个操作系统支持吗？” | 先查当前 Registry/Tool Source，不以知识文档代替能力审计 |
 | “测试账号某种广告类型上次真实创建到哪一步，失败怎么恢复？” | `concepts/provider-live-e2e-memory` + `agents/tools/advertising/contracts/provider_live_e2e_memory.json` |
+| “TikTok Product Sales 是否完整通过、Meta App 模板能否一键创建？” | 对应平台 `queries/tiktok-product-sales-live-verification`、`queries/meta-app-live-verification` + 结构化 E2E 账本；区分逐层通过与原生模板/Ad 缺口 |
 
 ## 重要边界
 
@@ -111,13 +113,13 @@ knowledge_base/
 
 ## 当前统计
 
-截至 2026-10-21，Runtime 实际加载 **83 个发布 Markdown 文档**：
+截至 2026-10-26，Runtime 实际加载 **85 个发布 Markdown 文档**：
 
 | 范围 | 文档数 | 覆盖 |
 |---|---:|---|
 | Google | 16 | 1 个实体页 + 15 篇平台规则、Search/PMax、Campaign/Search Runbook、转化、关键词规划、GAQL、素材级报表与优化 |
-| Meta | 13 | 1 个实体页 + 11 篇平台规则 + 1 篇目标选择 Query，覆盖 ODAX、Catalog/Lead、Pixel/CAPI、Insights 与优化 |
-| TikTok | 12 | 1 个实体页 + 11 篇平台规则、Smart+/Spark、Commerce、事件、报表与素材 |
+| Meta | 14 | 1 个实体页 + 11 篇平台规则 + 2 篇目标选择/测试验收 Query，覆盖 ODAX、Catalog/Lead、Pixel/CAPI、Insights 与优化 |
+| TikTok | 13 | 1 个实体页 + 11 篇平台规则 + 1 篇 Product Sales 验收 Query，覆盖 Smart+/Spark、Commerce、事件、报表与素材 |
 | DV360 | 12 | 1 个实体页 + 11 篇平台规则、IO/Line Item、Deal、Floodlight、报告与恢复 |
 | 跨平台业务 | 18 | 四平台总览、层级、全漏斗规划、行业、预算节奏、边际效率、受众、创意、数据契约、转化信号质量、商品 Feed、审核拒登恢复、证据驱动诊断、归因、电商、App/游戏、B2B、渠道组合 |
 | 程序化广告 | 6 | 1 个实体导航页 + 5 篇概念专题，覆盖生态/交易类型、RTB/OpenRTB、DSP 决策、SSP/ADX/Header Bidding、供应链质量、隐私与指标诊断 |

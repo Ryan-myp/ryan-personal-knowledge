@@ -331,6 +331,7 @@ class InMemorySkillCatalog:
                 )),
                 skill.reference_documents,
                 max_documents=2,
+                scope_query=user_input,
                 max_chars=min(
                     _MAX_REFERENCE_CONTEXT_CHARS,
                     max(0, remaining // 3),

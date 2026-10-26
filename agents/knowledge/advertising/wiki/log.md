@@ -1,5 +1,13 @@
 # LLM 知识库更新日志
 
+## 2026-10-26（知识与 Skill 一致性）
+
+- 将 Live E2E 记忆页升至 `1.1.0`，与当天 Meta/TikTok 的逐层验收对齐；保留 Product Sales Ad、Meta App 原生一键 live 模板、Google 账户和删除未通过的证据边界。
+- 电商、社交业务 Skills 升至 `1.1.0`，移除无来源的静态渠道/类型白名单和人民币固定预算门槛；它们曾通过 `BusinessSkillPolicy` 误拦已注册能力。能力仍以当前 Tool schema 和账户为准。
+- 账户诊断 Skill 升至 `1.4.0`，补充 TikTok 和 DV360 报表参考及可执行查询层级边界，维持仅 advisory、不增加工具权限。
+- 平台专属 reference 使用声明式适用词，避免通用周报误加载其他渠道片段。保留渠道检索的硬边界：新增 Meta App 与 TikTok Product Sales 两篇渠道专属问答，引用跨平台 E2E 总账而不把 `platform: all` 内容注入指定渠道；Meta/TikTok 实体导航页升级到 `1.1.1`。
+- 索引增补两个真实用户问法，Skill 系统说明移除过期路径与“一键启停”等未验证承诺。更新相应离线回归，不因内容增加宣称 Provider 实测通过。
+
 ## 2026-10-26
 
 - 将广告 Skill 和知识目录的用户可读说明统一为中文，补齐知识分类、类型、平台的中文显示，以及 Skill 编辑器默认文案。

@@ -5,6 +5,8 @@ from __future__ import annotations
 import re
 from typing import Collection, Mapping
 
+import yaml
+
 
 _REFERENCE_STOPWORDS = frozenset({
     "a", "an", "and", "are", "as", "at", "based", "by", "can", "for",
@@ -29,12 +31,43 @@ def reference_terms(
     return terms
 
 
+def _reference_body(value: str, request: str) -> str:
+    match = re.match(r"\A---\s*\n(.*?)\n---\s*\n", value, re.DOTALL)
+    if not match:
+        return value
+    if match.end() > 4096:
+        return ""
+    try:
+        metadata = yaml.safe_load(match.group(1))
+    except yaml.YAMLError:
+        return ""
+    if not isinstance(metadata, dict):
+        return ""
+    scopes = metadata.get("reference_scope")
+    if scopes is not None:
+        if not isinstance(scopes, list) or not scopes or any(
+            not isinstance(scope, str) or not scope.strip() for scope in scopes
+        ):
+            return ""
+        normalized = request.casefold()
+        if not any(
+            re.search(
+                r"(?<![a-z0-9_])" + re.escape(scope.casefold()) + r"(?![a-z0-9_])",
+                normalized,
+            )
+            for scope in scopes
+        ):
+            return ""
+    return value[match.end():]
+
+
 def select_reference_excerpts(
     query: str,
     documents: Mapping[str, str],
     *,
     max_documents: int = 2,
     max_chars: int = 1600,
+    scope_query: str | None = None,
 ) -> str:
     """Choose bounded reference passages by lexical relevance to one request."""
     if max_documents <= 0 or max_chars <= 0 or not isinstance(documents, Mapping):
@@ -44,7 +77,9 @@ def select_reference_excerpts(
         return ""
     ranked: list[tuple[int, str, str]] = []
     for path, raw_content in documents.items():
-        content = str(raw_content or "")
+        content = _reference_body(str(raw_content or ""), str(scope_query if scope_query is not None else query))
+        if not content.strip():
+            continue
         path_hits = len(terms & reference_terms(str(path)))
         paragraphs = [
             item.strip()
