@@ -1,10 +1,10 @@
 ---
 name: data-visualization
-description: "根据有来源的数据选择合适图表，检查数据粒度、单位、缺失值和误导风险"
-version: 1.0.1
+description: "根据有来源的数据选择图表，并检查口径、缺失值、视觉层级和可读性"
+version: 1.1.0
 namespace: advertising
 triggers:
-  - [画图, 画图表, 做图表, 图表, 可视化, 趋势图, 折线图, 柱状图, 饼图, 数据图, visualization, visualize, chart, plot, graph]
+  - [画图, 画图表, 做图表, 图表, 可视化, 趋势图, 折线图, 柱状图, 饼图, 数据图, 图表视觉评审, visualization, visualize, chart, plot, graph]
 ---
 
 # 有证据的数据可视化
@@ -33,5 +33,6 @@ triggers:
 - 标题准确描述展示内容，不将“搜索摘要”包装成“天气趋势”或已验证结论。轴必须有单位，日期范围、来源和数据状态应清楚。
 - 图表附带一句文字摘要；颜色不能成为区分数据的唯一方式，关键差异需能通过标签或文字读出。
 - 展示前核对数据点数、横轴和值的对应关系、单位、范围以及标题是否超出证据。图表结论不得强于底层数据。
+- 交付时检查信息层级、文字与数据标记的对比、图例和标签在目标尺寸是否可读。若实际渲染或移动端预览不可用，就标为待人工检查，不声称已完成视觉验收。
 
-按需结合 `web-research` 判断搜索证据粒度，或结合 `account-diagnostics` 核对广告报表口径。所有查询仍由当前 Run 中已注册且获准的 Tool 完成。
+按需参考 [chart-visual-review.md](references/chart-visual-review.md) 核对图表视觉质量；结合 `web-research` 判断搜索证据粒度，或结合 `account-diagnostics` 核对广告报表口径。所有查询仍由当前 Run 中已注册且获准的 Tool 完成。

@@ -47,6 +47,11 @@ def test_builtin_skill_catalog_lists_standard_packages_as_read_only():
     creative = catalog.get_version("creative-strategy", "1.0.1")
     assert creative["location"] == "practices/creative-strategy"
     assert "references/creative-roadmap.md" in creative["files"]
+    production = catalog.get_version("creative-production", "1.1.0")
+    assert production["location"] == "practices/creative-production"
+    assert "references/production-workflow.md" in production["files"]
+    assert "references/visual-quality-review.md" in production["files"]
+    assert "references/brand-asset-check.md" in production["files"]
     diagnostics = catalog.get_version("account-diagnostics", "1.4.0")
     assert diagnostics["location"] == "practices/account-diagnostics"
     assert "references/google-report-interpretation.md" in diagnostics["files"]
@@ -76,8 +81,9 @@ def test_builtin_skill_catalog_lists_standard_packages_as_read_only():
     assert "references/answer-structure.md" in knowledge_explainer["files"]
     web_research = catalog.get_version("web-research", "1.0.4")
     assert web_research["location"] == "web-research"
-    visualization = catalog.get_version("data-visualization", "1.0.1")
+    visualization = catalog.get_version("data-visualization", "1.1.0")
     assert visualization["location"] == "practices/data-visualization"
+    assert "references/chart-visual-review.md" in visualization["files"]
     app_growth = catalog.get_version("app-growth", "1.1.1")
     assert app_growth["location"] == "practices/app-growth"
     assert "references/store-listing-review.md" in app_growth["files"]
@@ -494,7 +500,7 @@ def test_data_visualization_skill_is_loaded_for_chart_requests():
     try:
         skill = runtime.skill_loader.get("data-visualization")
         assert skill is not None
-        assert skill.version == "1.0.1"
+        assert skill.version == "1.1.0"
 
         context = runtime.tool_selector._triggered_skill_context(
             "帮我画深圳未来10天温度折线图",
@@ -503,6 +509,41 @@ def test_data_visualization_skill_is_loaded_for_chart_requests():
         assert "[skill guidance: data-visualization]" in context
         assert "每个数据点必须有来源明确的横轴和值" in context
         assert "不能把搜索摘要拼成趋势数据" in context
+    finally:
+        runtime.close(wait=True)
+
+
+def test_visual_design_guidance_is_context_only_and_loaded_on_demand():
+    runtime = AdvertisingComposition(require_llm=False, offline_mode=True)
+    try:
+        production = runtime.skill_loader.get("creative-production")
+        visualization = runtime.skill_loader.get("data-visualization")
+        assert production is not None and production.get_tools() == []
+        assert visualization is not None and visualization.get_tools() == []
+        assert production.version == "1.1.0"
+
+        review = runtime.tool_selector._triggered_skill_context(
+            "帮我做广告素材设计和素材视觉评审，核对品牌 logo 的来源与授权",
+            max_chars=6000,
+        )
+        assert "[skill guidance: creative-production]" in review
+        assert "references/visual-quality-review.md" in review
+        assert "不强制三版" in review
+
+        brand = runtime.tool_selector._triggered_skill_context(
+            "核对品牌 logo 素材权属、来源和授权",
+        )
+        assert "[skill guidance: creative-production]" in brand
+        assert "references/brand-asset-check.md" in brand
+        assert "素材权属" in brand
+
+        chart = runtime.tool_selector._triggered_skill_context(
+            "画广告报表趋势图，做图表视觉评审，核对轴、标签和移动端可读性",
+            max_chars=6000,
+        )
+        assert "[skill guidance: data-visualization]" in chart
+        assert "references/chart-visual-review.md" in chart
+        assert "不补造数据" in chart
     finally:
         runtime.close(wait=True)
 
