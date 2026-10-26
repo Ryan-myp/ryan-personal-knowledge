@@ -678,10 +678,44 @@ class AdApplicationAssembly:
                         contextual_namespaces=contextual_namespaces,
                     )
                 )
-                if selected and selector.requires_tool_call(
-                    request.user_input,
-                    selected,
-                    conversation_context=conversation_context,
+                attached_read_required = False
+                if not blocked_resource_target:
+                    media_types = {
+                        str(getattr(media, "media_type", "") or "")
+                        for media in getattr(request, "input_media", ()) or ()
+                    }
+                    compatible = [
+                        tool for tool in tools
+                        if any(
+                            f"accepts_media:{media_type}"
+                            in (getattr(tool, "traits", ()) or ())
+                            for media_type in media_types
+                        )
+                    ]
+                    attached_read_required = bool(compatible) and all(
+                        tool in compatible
+                        or "semantic_discovery" in (getattr(tool, "traits", ()) or ())
+                        for tool in selected
+                    )
+                    if (
+                        attached_read_required
+                        and not selector.explicitly_requests_discovery(
+                            request.user_input, tools,
+                        )
+                    ):
+                        selected = compatible
+                    selected = list({
+                        tool.name: tool for tool in (
+                            *compatible, *selected,
+                        )
+                    }.values())[:MAX_RELEVANT_TOOLS_PER_TURN]
+                if selected and (
+                    attached_read_required
+                    or selector.requires_tool_call(
+                        request.user_input,
+                        selected,
+                        conversation_context=conversation_context,
+                    )
                 ):
                     request_context["_agent_tool_choice_required"] = True
             selected = _filter_unapproved_live_write_tools(

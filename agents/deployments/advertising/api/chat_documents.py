@@ -8,6 +8,8 @@ import io
 import math
 import re
 import zipfile
+from contextlib import contextmanager
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -20,6 +22,7 @@ MAX_XLSX_SHEETS = 20
 MAX_SHEET_ROWS = 1_000
 MAX_SHEET_COLUMNS = 80
 MAX_IMPORT_PREVIEW_ROWS = 100
+MAX_ANALYSIS_ROWS = 10_000
 MAX_XLSX_ARCHIVE_ENTRIES = 5_000
 MAX_XLSX_UNCOMPRESSED_BYTES = 64 * MIB
 MAX_XLSX_COMPRESSION_RATIO = 500
@@ -162,6 +165,94 @@ def read_chat_document_table(
     if extension == ".xlsx" and media_type == _XLSX_TYPE:
         return _read_xlsx_table(content, sheet_name=sheet_name)
     raise ValueError("广告配置导入仅支持 CSV 和 XLSX 文件")
+
+
+@contextmanager
+def open_chat_document_table(
+    content: bytes,
+    *,
+    filename: str,
+    media_type: str,
+    sheet_name: str | None = None,
+) -> Iterator[tuple[list[str], Iterator[list[str]], str]]:
+    """Stream one bounded CSV/XLSX sheet without exposing the whole file to the LLM."""
+    if len(content) > MAX_DOCUMENT_BYTES:
+        raise ValueError("文档附件超过 20 MiB 限制")
+    extension = Path(filename).suffix.lower()
+    if extension == ".csv" and media_type == "text/csv":
+        if sheet_name:
+            raise ValueError("CSV 文件没有工作表")
+        reader = csv.reader(io.StringIO(_decode_text(content), newline=""))
+        try:
+            headers = _validate_table_headers(next(reader, ()) or ())
+        except csv.Error as error:
+            raise ValueError("CSV 格式无效，无法读取表格") from error
+        yield headers, _bounded_csv_rows(reader, len(headers)), ""
+        return
+    if extension != ".xlsx" or media_type != _XLSX_TYPE:
+        raise ValueError("表格分析仅支持 CSV 和 XLSX 文件")
+    with _open_xlsx_analysis(content, sheet_name) as table:
+        yield table
+
+
+def _bounded_csv_rows(reader: Any, column_count: int) -> Iterator[list[str]]:
+    try:
+        for index, row in enumerate(reader):
+            if index >= MAX_ANALYSIS_ROWS:
+                raise ValueError("表格超过 10000 行分析上限，无法计算全量统计")
+            if len(row) > column_count:
+                raise ValueError("CSV 数据行列数超过表头")
+            yield [str(cell).strip() for cell in row]
+    except csv.Error as error:
+        raise ValueError("CSV 格式无效，无法读取表格") from error
+
+
+def _bounded_xlsx_rows(iterator: Any, worksheet: Any) -> Iterator[list[str]]:
+    for index, row in enumerate(iterator):
+        if index >= MAX_ANALYSIS_ROWS:
+            raise ValueError("表格超过 10000 行分析上限，无法计算全量统计")
+        yield [_table_cell(value) for value in row]
+    if (worksheet.max_row or 0) > MAX_ANALYSIS_ROWS + 1:
+        raise ValueError("表格超过 10000 行分析上限，无法计算全量统计")
+
+
+@contextmanager
+def _open_xlsx_analysis(
+    content: bytes, sheet_name: str | None,
+) -> Iterator[tuple[list[str], Iterator[list[str]], str]]:
+    from openpyxl import load_workbook
+    from openpyxl.utils.exceptions import InvalidFileException
+
+    _validate_xlsx_archive(content)
+    workbook = None
+    try:
+        workbook = load_workbook(
+            io.BytesIO(content), read_only=True, data_only=True, keep_links=False,
+        )
+        if len(workbook.worksheets) > MAX_XLSX_SHEETS:
+            raise ValueError("XLSX 最多支持 20 个工作表")
+        if sheet_name:
+            if sheet_name not in workbook.sheetnames:
+                raise ValueError("指定的 XLSX 工作表不存在")
+            worksheet = workbook[sheet_name]
+        elif workbook.worksheets:
+            worksheet = workbook.worksheets[0]
+        else:
+            raise ValueError("XLSX 中没有可读取的工作表")
+        if (worksheet.max_column or 0) > MAX_SHEET_COLUMNS:
+            raise ValueError("XLSX 列数超过 80 列限制")
+        iterator = worksheet.iter_rows(
+            max_row=MAX_ANALYSIS_ROWS + 2,
+            max_col=min(worksheet.max_column or MAX_SHEET_COLUMNS, MAX_SHEET_COLUMNS),
+            values_only=True,
+        )
+        headers = _validate_table_headers(next(iterator, ()) or ())
+        yield headers, _bounded_xlsx_rows(iterator, worksheet), str(worksheet.title)
+    except (InvalidFileException, KeyError, OSError, zipfile.BadZipFile) as error:
+        raise ValueError("无法读取 XLSX 工作簿，请检查文件是否损坏") from error
+    finally:
+        if workbook is not None:
+            workbook.close()
 
 
 def _read_csv_table(content: bytes) -> dict[str, Any]:
@@ -457,8 +548,10 @@ __all__ = [
     "MAX_IMPORT_PREVIEW_ROWS",
     "MAX_DOCUMENT_BYTES",
     "MAX_DOCUMENT_TEXT_CHARS",
+    "MAX_ANALYSIS_ROWS",
     "VIDEO_EXTENSIONS",
     "detect_chat_attachment_type",
     "extract_chat_document_text",
+    "open_chat_document_table",
     "read_chat_document_table",
 ]

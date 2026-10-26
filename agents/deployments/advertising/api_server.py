@@ -68,6 +68,8 @@ from agents.agent_platform.infrastructure.durable.filesystem_asset_store import 
 from agents.deployments.advertising.api.security import RequestAuthorizer
 from agents.deployments.advertising.api.context import ApiContext
 from agents.deployments.advertising.api.chat_media import ChatMediaStore
+from agents.deployments.advertising.api.chat_documents import open_chat_document_table
+from agents.tools.data_analysis.chat_table import chat_table_tool_source
 from agents.deployments.advertising.api.routes.chat import create_chat_router
 from agents.deployments.advertising.api.routes.catalog import create_catalog_router
 from agents.deployments.advertising.api.routes.knowledge import create_knowledge_router
@@ -305,6 +307,17 @@ def _init_runtime():
             turn_timeout_seconds=execution_timeout,
             task_timeout_seconds=execution_timeout,
             metrics=agent_runtime_metrics,
+        )
+        table_source = chat_table_tool_source(
+            chat_media_store, open_chat_document_table,
+            required_permission="ads.read",
+        )
+        runtime.register_tool_source(table_source)
+        runtime._register_builtin_plugin(
+            table_source.source_id,
+            table_source,
+            (PluginKind.TOOL_SOURCE.value,),
+            description="Built-in scoped read-only CSV/XLSX attachment analysis Tool",
         )
 
         credentials = {}

@@ -3057,8 +3057,10 @@ def test_runtime_initialization_registers_all_builtin_tool_sources(monkeypatch, 
         "creative-media", "public-calendar", "public-economics", "public-finance",
         "public-environment", "public-knowledge", "public-research", "public-trends",
         "public-weather", "public-app-research", "public-site-quality",
+        "data-analysis",
     }
     definitions = runtime.registry.list_all()
+    assert any(item.name == "agent_chat_table_analyze" for item in definitions)
     assert len(definitions) >= 128
     assert {
         "creative_generate_image",
