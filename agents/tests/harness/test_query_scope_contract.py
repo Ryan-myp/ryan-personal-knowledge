@@ -11,6 +11,7 @@ def test_query_contract_forbids_unrequested_child_queries_and_rounded_counts():
     assert "QUERY SCOPE" in prompt
     assert "Do not fetch child resources" in prompt
     assert "explicitly requests descendants" in prompt
+    assert "Do not ask the user to resend the same request" in prompt
     assert "Do not round counts" in prompt
     assert "not supplied for this turn" in prompt
 
@@ -165,6 +166,65 @@ def test_descendant_read_selection_uses_resource_metadata_and_is_bounded():
         "展示 files folder 123 详情", tools, limit=3,
     )
     assert "list_documents" not in [tool["name"] for tool in plain]
+
+
+def test_short_meta_descendant_detail_followup_loads_child_detail_tools():
+    tools = [binding.definition for binding in create_tool_source("meta").list_bindings()]
+    selector = ToolSelector()
+    selected = selector.select_relevant(
+        "下层级详细信息呢？",
+        tools,
+        conversation_context=(
+            "查询一下meta 的campaign 列表",
+            "查询这个campaign ：120251918088900251",
+        ),
+        contextual_namespaces=("meta",),
+    )
+    assert {"meta_get_adset", "meta_get_ad"} <= {tool.name for tool in selected}
+    assert "meta_get_campaign_report" not in {tool.name for tool in selected}
+    assert selector.requires_tool_call("下层级详细信息呢？", selected)
+
+
+def test_child_detail_followup_needs_prior_resource_and_never_crosses_namespace():
+    tools = [
+        {
+            "name": name, "namespace": namespace, "resource_type": resource,
+            "parent_resource_type": parent, "action": action,
+            "effect_class": "read", "description": f"{action} {resource}",
+        }
+        for name, namespace, resource, parent, action in [
+            ("get_folder", "files", "folder", None, "get"),
+            ("get_document", "files", "document", "folder", "get"),
+            ("list_documents", "files", "document", "folder", "list"),
+            ("get_page", "files", "page", "document", "get"),
+            ("list_pages", "files", "page", "document", "list"),
+            ("get_foreign_document", "other", "document", "folder", "get"),
+        ]
+    ]
+    selector = ToolSelector(max_read_tools_per_turn=4)
+    selected = selector.select_relevant(
+        "下层级详细信息呢？", tools,
+        conversation_context=("查询 files folder 123",),
+        contextual_namespaces=("files",),
+    )
+    assert {"get_document", "get_page"} <= {
+        tool["name"] for tool in selected
+    }
+    assert len(selected) <= 4
+    assert all(tool["namespace"] == "files" for tool in selected)
+    assert selector.select_relevant(
+        "下层级详细信息呢？", tools, contextual_namespaces=("files",),
+    ) == []
+    assert selector.select_relevant(
+        "下层级详细信息呢？", tools,
+        conversation_context=("查询 files folder 列表",),
+        contextual_namespaces=("files",),
+    ) == []
+    assert selector.select_relevant(
+        "讲讲下层级的概念", tools,
+        conversation_context=("查询 files folder 123",),
+        contextual_namespaces=("files",),
+    ) == []
 
 
 def test_colloquial_concept_comparison_does_not_route_provider_tools():

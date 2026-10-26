@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 from collections import deque
 from dataclasses import dataclass, field
-from typing import Any, Iterable, Optional, Sequence
+from typing import Any, Callable, Iterable, Optional, Sequence
 
 from .interfaces import ParsedIntent, ToolDefinition
 from .namespace import normalize_namespace
@@ -37,6 +37,9 @@ _DESCENDANT_READ_CUES = (
     "包括子级", "包含子级", "及其下级", "连同下级",
     "with descendants", "including descendants", "including children",
     "with child resources",
+)
+_DESCENDANT_FOLLOWUP_CUES = (
+    "下层级", "下级", "子级", "子资源", "child resources", "descendants",
 )
 _READ_ACTION_CUES = tuple(
     cue for cue in _READ_CUES if cue not in {"which", "what", "available"}
@@ -183,7 +186,10 @@ def _request_verbs(user_input: str, tools: Sequence[Any]) -> str:
 def _is_read_only_request(user_input: str) -> bool:
     text = str(user_input or "").casefold()
     return (
-        _has_unnegated_action_cue(text, _READ_CUES)
+        (
+            _has_unnegated_action_cue(text, _READ_CUES)
+            or _is_descendant_detail_followup(text)
+        )
         and not _has_unnegated_action_cue(text, _WRITE_CUES)
     )
 
@@ -214,6 +220,8 @@ def _needs_conversation_context(user_input: str, tools: Sequence[Any]) -> bool:
     text = str(user_input or "").strip()
     if not text:
         return False
+    if _is_descendant_detail_followup(text):
+        return True
     if (
         _is_read_only_request(_request_verbs(text, tools))
         and any(
@@ -241,6 +249,16 @@ def _needs_conversation_context(user_input: str, tools: Sequence[Any]) -> bool:
         residual = residual.replace(cue.casefold(), " ")
     residual = re.sub(r"\b\d+\b", " ", residual)
     return not _terms(residual)
+
+
+def _is_descendant_detail_followup(text: str) -> bool:
+    normalized = str(text or "").casefold().strip()
+    return (
+        len(normalized) <= 64
+        and any(_contains_cue(normalized, cue) for cue in _DESCENDANT_FOLLOWUP_CUES)
+        and any(_contains_cue(normalized, cue) for cue in _DETAIL_READ_CUES)
+        and not _has_unnegated_write_cue(normalized)
+    )
 
 
 def _is_process_explanation_request(
@@ -512,11 +530,8 @@ def _explicit_resource_list_tools(
     return [tool for _index, _score, tool in matches]
 
 
-def _descendant_roots(user_input: str, tools: Sequence[Any]) -> list[tuple[str, str]]:
-    text = str(user_input or "").casefold()
-    if not any(_contains_cue(text, cue) for cue in _DESCENDANT_READ_CUES):
-        return []
-    query_terms = _terms(user_input)
+def _named_resource_roots(text: str, tools: Sequence[Any]) -> list[tuple[str, str]]:
+    query_terms = _terms(text)
     root_resources = {
         (
             normalize_namespace(_tool_field(tool, "namespace", "")),
@@ -531,6 +546,13 @@ def _descendant_roots(user_input: str, tools: Sequence[Any]) -> list[tuple[str, 
         root_resources,
         key=lambda key: (-len(_terms(key[1])), key),
     )
+
+
+def _descendant_roots(user_input: str, tools: Sequence[Any]) -> list[tuple[str, str]]:
+    text = str(user_input or "").casefold()
+    if not any(_contains_cue(text, cue) for cue in _DESCENDANT_READ_CUES):
+        return []
+    return _named_resource_roots(text, tools)
 
 
 def _index_descendant_reads(
@@ -594,6 +616,56 @@ def _descendant_read_tools(
                 if len(result) >= limit:
                     break
     return result
+
+
+def _descendant_followup_tools(
+    prior_inputs: Sequence[str],
+    tools: Sequence[Any],
+    namespaces: Sequence[str],
+    limit: int,
+    detect_namespaces: Callable[[str], Sequence[str]],
+) -> list[Any]:
+    by_resource, children = _index_descendant_reads(tools)
+    allowed = {normalize_namespace(namespace) for namespace in namespaces}
+    roots: list[tuple[str, str]] = []
+    for text in reversed(prior_inputs):
+        named = [
+            root for root in _named_resource_roots(text, tools)
+            if root[0] in allowed
+        ]
+        if not named:
+            continue
+        mentioned = {
+            normalize_namespace(namespace)
+            for namespace in detect_namespaces(text)
+        }
+        if mentioned and not mentioned <= allowed:
+            break
+        has_id = (
+            re.search(r"\b\d{2,}\b", text)
+            or re.search(r"\b(?:id|编号)\s*[:=#]\s*[\w-]+", text, re.I)
+        )
+        if has_id and not _is_explicit_list_request(text):
+            roots = named
+        break
+    selected: list[Any] = []
+    visited = set(roots)
+    frontier = deque(roots)
+    while frontier and len(selected) < limit:
+        parent = frontier.popleft()
+        for child in children.get(parent, []):
+            if child in visited:
+                continue
+            visited.add(child)
+            actions = by_resource[child]
+            selected.extend(
+                tool for action in ("get", "list")
+                if (tool := actions.get(action)) is not None
+            )
+            frontier.append(child)
+            if len(selected) >= limit:
+                break
+    return selected[:limit]
 
 
 def _alias_scoped_reads(user_input: str, tools: Sequence[Any]) -> list[Any]:
@@ -779,6 +851,7 @@ class ToolSelector:
         )
         if (
             _is_short_comparative_followup(text)
+            and not _is_descendant_detail_followup(text)
             and not _has_explicit_read_action(verb_text)
             and not _has_unnegated_write_cue(verb_text)
             and not publisher_target_match
@@ -793,6 +866,10 @@ class ToolSelector:
             prior_inputs = []
         prior_inputs = _bounded_context_inputs(prior_inputs, max_chars=1200)
         read_only_request = _is_read_only_request(verb_text)
+        descendant_followup = (
+            read_only_request and _is_descendant_detail_followup(user_input)
+            and not publisher_target_match
+        )
         detected_namespaces = self.detect_namespaces(
             user_input, available_tools,
         )
@@ -852,7 +929,8 @@ class ToolSelector:
                 ) else []
             )
         if active_namespaces:
-            prior_inputs = []
+            if not descendant_followup:
+                prior_inputs = []
         else:
             for prior_input in reversed(prior_inputs):
                 active_namespaces = self.detect_namespaces(
@@ -936,6 +1014,12 @@ class ToolSelector:
             candidates = explicitly_aliased_transform
         else:
             candidates = list(available_tools or ())
+        if descendant_followup:
+            return _descendant_followup_tools(
+                prior_inputs, candidates, active_namespaces,
+                min(limit, self.max_read_tools_per_turn),
+                lambda text: self.detect_namespaces(text, available_tools),
+            )
         if read_only_request and not explicitly_named:
             descendants = _descendant_read_tools(
                 user_input, candidates, min(limit, self.max_read_tools_per_turn),
@@ -1143,6 +1227,12 @@ class ToolSelector:
             return True
         if historical_summary or not (write_request or read_request):
             return False
+        if read_request and _is_descendant_detail_followup(user_input):
+            return any(
+                _is_read_tool(tool)
+                and _tool_field(tool, "parent_resource_type", None)
+                for tool in selected_tools or ()
+            )
         terms = _terms(user_input)
         for cue in (*_WRITE_CUES, *_READ_CUES):
             terms.difference_update(_terms(cue))

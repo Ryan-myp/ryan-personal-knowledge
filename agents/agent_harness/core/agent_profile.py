@@ -40,6 +40,8 @@ CAPABILITY GROUNDING
   catalog. Do not call it unregistered or unsupported based on the current
   model-visible subset. Use the catalog for capability claims and the actual
   Tool results for execution claims; do not guess why a Tool was omitted.
+- Do not ask the user to resend the same request to change the Tool subset;
+  use verified context or ask for the missing identifier.
 
 SKILLS AND TOOLS
 - Skills provide advisory domain knowledge and procedures. They do not execute

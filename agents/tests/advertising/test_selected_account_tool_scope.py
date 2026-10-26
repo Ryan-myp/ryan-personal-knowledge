@@ -76,6 +76,32 @@ def test_successful_read_scope_keeps_channel_when_http_account_was_never_selecte
     assert context["_agent_tool_namespaces"] == ["tiktok"]
 
 
+def test_meta_child_detail_followup_keeps_account_scope_and_requires_fresh_reads():
+    selected, context = _selection(
+        None,
+        "下层级详细信息呢？",
+        {"google-ads": {"google-test"}, "meta": {"meta-test"}},
+        read_scopes={"meta": "meta-test"},
+        history=(
+            "查询一下meta 的campaign 列表",
+            "查询这个campaign ：120251918088900251",
+        ),
+    )
+    assert {"meta_get_adset", "meta_get_ad"} <= {tool.name for tool in selected}
+    assert {tool.namespace for tool in selected} == {"meta"}
+    assert context["_agent_tool_choice_required"] is True
+
+
+def test_child_detail_followup_does_not_override_current_account_with_stale_channel():
+    selected, _context = _selection(
+        None, "下层级详细信息呢？",
+        {"meta": {"meta-test"}, "tiktok": {"tiktok-test"}},
+        read_scopes={"meta": "meta-test"},
+        history=("查询 TikTok campaign 1879821177383105",),
+    )
+    assert selected == []
+
+
 def test_explicit_channel_switch_overrides_remembered_read_scope():
     selected, _ = _selection(
         None, "查询 Google campaign 列表",
