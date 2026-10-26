@@ -7,11 +7,11 @@ knowledge_type: workflow
 category: programmatic_advertising
 subcategory: auction-mechanics
 platform: all
-source: Personal advertising knowledge base synthesis; IAB Tech Lab OpenRTB and Programmatic Auction Definitions
+source: 个人广告知识库归纳；IAB Tech Lab OpenRTB 与 Programmatic Auction Definitions
 source_ref: "knowledge/advertising/rtb-system-design-deep.md; knowledge/advertising/rtb-flow-implementation-deep.md; knowledge/advertising/ad-protocol-openrtb-tcf-deep.md; https://iabtechlab.com/programmatic-auction-definitions/; https://github.com/InteractiveAdvertisingBureau/openrtb2.x/releases"
-version: "1.0.0"
+version: "1.0.1"
 confidence: 0.88
-updated_at: "2026-10-19"
+updated_at: "2026-10-26"
 tags: [rtb, openrtb, bid-request, bid-response, auction, impression, bid-floor, timeout, selling-platform, final-auctioneer, multi-stage-auction, ad-rendering]
 status: published
 wiki_type: concept

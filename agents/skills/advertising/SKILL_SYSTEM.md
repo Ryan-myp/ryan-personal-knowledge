@@ -44,6 +44,12 @@ Skill 包遵循标准目录约定：至少包含 `SKILL.md`，也可以包含 `r
 Runtime 自动导入或执行；`workflow.yaml` 不是上传、编辑或执行入口。只有仓库内经
 验证的源码扩展才可以提供 Tool，用户上传的同名文件不会被当作插件加载。
 
+面向中文用户的 Skill 描述、正文、流程和 references 使用中文；保留标准包名、触发词
+中的英文检索同义词，以及 Google Ads、Meta、TikTok、DV360 的资源原名（如
+`Account`、`Campaign`、`Ad Group`、`Ad Set`、`Ad`、`Asset Group`、`Line Item`）。
+schema key、API 字段、枚举、代码块中的请求/响应示例和来源链接保持原值；不要把
+平台原生层级硬译为新的资源类型。已发布 Skill 修改时递增版本，并验证目录发现和召回。
+
 SKILL.md 的 frontmatter 只建议声明 Skill 身份和版本等元数据；专家知识、流程和
 安全边界使用自然语言 Markdown 编写。渠道 Tool、参数 schema 和 handler 不写入
 SKILL.md，而由对应 Tool Source 在 Registry 中注册。

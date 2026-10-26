@@ -1,7 +1,7 @@
 ---
 name: ad-growth-operations
-description: "把广告账户检查设计成有证据、可复盘、有停止条件的定期 Agent 任务 (safe recurring paid-media operations loops)"
-version: "1.0.0"
+description: "把广告账户检查设计成有证据、可复盘、有停止条件的定期 Agent 任务"
+version: "1.0.1"
 namespace: advertising
 triggers:
   - [定期检查广告, 周度账户检查, 每天检查投放, recurring ad review, weekly ads review, weekly paid media review, paid media review loop]

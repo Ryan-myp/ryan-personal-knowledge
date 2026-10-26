@@ -1,7 +1,7 @@
 ---
 name: app-growth
-description: "评估 App 付费获客、商店页转化与安装后激活、留存和价值之间的增长链路 (app paid acquisition and post-install growth)"
-version: "1.1.0"
+description: "评估 App 付费获客、商店页转化与安装后激活、留存和价值之间的增长链路"
+version: "1.1.1"
 namespace: advertising
 triggers:
   - [App 增长, app growth, 应用推广, 应用安装广告, app campaign, app promotion]

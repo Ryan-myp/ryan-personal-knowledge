@@ -1,7 +1,7 @@
 ---
 name: experimentation-design
-description: "为广告、创意和落地页决策设计可解释的实验，明确假设、实验单位、主指标、护栏、样本和停止规则 (evidence-led advertising experiment design)"
-version: "1.0.0"
+description: "为广告、创意和落地页决策设计可解释的实验，明确假设、实验单位、主指标、护栏、样本和停止规则"
+version: "1.0.1"
 namespace: advertising
 triggers:
   - [A/B test, A/B 测试, split test, experiment design, 实验设计, 广告实验, 创意测试方案]

@@ -1,7 +1,7 @@
 ---
 name: paid-landing-page-review
-description: "审查付费广告点击后的落地页体验、广告承诺匹配、转化路径和可验证的优化假设 (paid traffic post-click landing page review)"
-version: "1.0.0"
+description: "审查付费广告点击后的落地页体验、广告承诺匹配、转化路径和可验证的优化假设"
+version: "1.0.1"
 namespace: advertising
 triggers:
   - [广告落地页, 广告着陆页, 检查落地页, 点击后页面, 广告点击后, 广告页面匹配, 广告承诺和页面, landing page, paid landing page, post-click conversion]

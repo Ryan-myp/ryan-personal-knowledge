@@ -1,7 +1,7 @@
 ---
 name: creative-strategy
-description: "按证据规划广告创意路线图与制作产能（evidence-ranked creative roadmaps and production capacity）"
-version: "1.0.0"
+description: "按证据规划广告创意路线图与制作产能"
+version: "1.0.1"
 namespace: advertising
 triggers:
   - [创意策略, 创意路线图, creative strategy, creative roadmap, creative slate]

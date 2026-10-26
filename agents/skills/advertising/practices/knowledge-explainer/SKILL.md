@@ -1,7 +1,7 @@
 ---
 name: knowledge-explainer
-description: "把广告投放知识解释得清楚、准确且贴合提问场景。Use when the user asks “这是什么”“为什么要这样做”“有什么区别”“怎么理解”或“应该怎么选”，而不是查询真实账户数据或执行广告操作。"
-version: 1.0.5
+description: "清楚、准确地解释广告知识；适用于“这是什么”“为什么要这样做”“有什么区别”“怎么理解”“应该怎么选”，不用于查询真实账户数据或执行广告操作。"
+version: 1.0.6
 namespace: advertising
 triggers:
   - [相关知识, 基础知识, 基础概念, 知识介绍, 讲下, 讲讲, 讲一讲, 介绍一下, 介绍下, 给我介绍, 告诉我, 科普一下, 流程图, 画流程, 讲流程, 详解, 详细讲解, 详细解释, 讲解一下, 讲解下, 解释一下, 解释下, 怎么理解, 是什么意思, 是什么概念, 有什么区别, 有何区别, 对比一下, 为什么要区分, 为什么不是, 广告原理, 投放机制, what is, what are, tell me about, overview, basics, fundamentals, explain, difference between, how to choose]

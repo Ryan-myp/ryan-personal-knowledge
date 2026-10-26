@@ -7,11 +7,11 @@ knowledge_type: general
 category: programmatic_advertising
 subcategory: overview
 platform: all
-source: Personal advertising knowledge base synthesis; IAB Tech Lab
+source: 个人广告知识库归纳；IAB Tech Lab
 source_ref: "knowledge/advertising/programmatic-ads-personalized-targeting-deep.md; knowledge/advertising/day-by-day/dv360-03-auction-mechanism-deep.md; https://iabtechlab.com/programmatic-auction-definitions/; https://iabtechlab.com/standards/openrtb/"
-version: "1.0.0"
+version: "1.0.1"
 confidence: 0.88
-updated_at: "2026-10-19"
+updated_at: "2026-10-26"
 tags: [programmatic, computational-advertising, dsp, ssp, ad-exchange, adx, rtb, pmp, auctioneer, final-auctioneer, selling-platform, buying-platform, ad-request-initiator, ad-inventory-controller]
 status: published
 wiki_type: entity

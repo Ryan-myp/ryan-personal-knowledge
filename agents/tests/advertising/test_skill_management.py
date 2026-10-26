@@ -26,6 +26,10 @@ def test_builtin_skill_catalog_lists_standard_packages_as_read_only():
     catalog = BuiltinSkillCatalog(skills_root)
 
     items = catalog.list_versions(limit=200)
+    assert all(
+        any("\u3400" <= char <= "\u9fff" for char in item["description"])
+        for item in items
+    )
 
     assert {item["skill_name"] for item in items} >= {
         "google-ads-api-expert", "meta-marketing-api-expert", "tiktok-ads-expert",
@@ -40,43 +44,43 @@ def test_builtin_skill_catalog_lists_standard_packages_as_read_only():
     detail = catalog.get_version("google-ads-api-expert", "2.0.3")
     assert detail["files"]["SKILL.md"]["encoding"] == "base64"
     assert detail["location"] == "channels/google-ads"
-    creative = catalog.get_version("creative-strategy", "1.0.0")
+    creative = catalog.get_version("creative-strategy", "1.0.1")
     assert creative["location"] == "practices/creative-strategy"
     assert "references/creative-roadmap.md" in creative["files"]
-    diagnostics = catalog.get_version("account-diagnostics", "1.3.0")
+    diagnostics = catalog.get_version("account-diagnostics", "1.3.1")
     assert diagnostics["location"] == "practices/account-diagnostics"
     assert "references/google-report-interpretation.md" in diagnostics["files"]
     assert "references/meta-insights-interpretation.md" in diagnostics["files"]
     assert "references/operating-check.md" in diagnostics["files"]
     assert "references/report-context-contract.md" in diagnostics["files"]
-    experimentation = catalog.get_version("experimentation-design", "1.0.0")
+    experimentation = catalog.get_version("experimentation-design", "1.0.1")
     assert experimentation["location"] == "practices/experimentation-design"
     assert "references/test-design.md" in experimentation["files"]
-    attribution = catalog.get_version("measurement-attribution", "1.0.1")
+    attribution = catalog.get_version("measurement-attribution", "1.0.2")
     assert attribution["location"] == "practices/measurement-attribution"
     assert "references/attribution-and-incrementality.md" in attribution["files"]
     instrumentation = catalog.get_version("measurement-instrumentation", "1.1.0")
     assert instrumentation["location"] == "practices/measurement-instrumentation"
     assert "references/event-measurement-contract.md" in instrumentation["files"]
     assert "references/conversion-qa-runbook.md" in instrumentation["files"]
-    copywriting = catalog.get_version("ad-copywriting", "1.0.0")
+    copywriting = catalog.get_version("ad-copywriting", "1.0.1")
     assert copywriting["location"] == "practices/ad-copywriting"
     assert "references/ad-copy-brief.md" in copywriting["files"]
-    landing_page = catalog.get_version("paid-landing-page-review", "1.0.0")
+    landing_page = catalog.get_version("paid-landing-page-review", "1.0.1")
     assert landing_page["location"] == "practices/paid-landing-page-review"
     assert "references/post-click-audit.md" in landing_page["files"]
-    knowledge_explainer = catalog.get_version("knowledge-explainer", "1.0.5")
+    knowledge_explainer = catalog.get_version("knowledge-explainer", "1.0.6")
     assert knowledge_explainer["location"] == "practices/knowledge-explainer"
     assert "references/answer-structure.md" in knowledge_explainer["files"]
     web_research = catalog.get_version("web-research", "1.0.4")
     assert web_research["location"] == "web-research"
-    visualization = catalog.get_version("data-visualization", "1.0.0")
+    visualization = catalog.get_version("data-visualization", "1.0.1")
     assert visualization["location"] == "practices/data-visualization"
-    app_growth = catalog.get_version("app-growth", "1.1.0")
+    app_growth = catalog.get_version("app-growth", "1.1.1")
     assert app_growth["location"] == "practices/app-growth"
     assert "references/store-listing-review.md" in app_growth["files"]
     assert "references/store-market-research.md" in app_growth["files"]
-    growth_operations = catalog.get_version("ad-growth-operations", "1.0.0")
+    growth_operations = catalog.get_version("ad-growth-operations", "1.0.1")
     assert growth_operations["location"] == "practices/ad-growth-operations"
     assert "references/loop-contract.md" in growth_operations["files"]
     growth_strategy = catalog.get_version("growth-strategy", "1.0.0")
@@ -215,7 +219,7 @@ def test_builtin_creative_strategy_is_context_only_and_uses_relevant_references(
 
         assert "[skill guidance: creative-strategy]" in context
         assert "references/creative-roadmap.md" in context
-        assert "production capacity" in context.lower()
+        assert "制作产能" in context
         assert "不会新增 Tool、权限或账户范围" in context
 
         hook_context = runtime.tool_selector._triggered_skill_context(
@@ -471,7 +475,7 @@ def test_data_visualization_skill_is_loaded_for_chart_requests():
     try:
         skill = runtime.skill_loader.get("data-visualization")
         assert skill is not None
-        assert skill.version == "1.0.0"
+        assert skill.version == "1.0.1"
 
         context = runtime.tool_selector._triggered_skill_context(
             "帮我画深圳未来10天温度折线图",

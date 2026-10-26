@@ -7,11 +7,11 @@ knowledge_type: error_pattern
 category: programmatic_advertising
 subcategory: measurement-diagnostics
 platform: all
-source: Personal advertising knowledge base synthesis; IAB Tech Lab OpenRTB; Prebid
+source: 个人广告知识库归纳；IAB Tech Lab OpenRTB；Prebid
 source_ref: "knowledge/advertising/rtb-system-design-deep.md; knowledge/advertising/dsp-bidding-engine-deep.md; knowledge/advertising/ssp-system-design-deep.md; https://iabtechlab.com/standards/openrtb/; https://docs.prebid.org/"
-version: "1.0.0"
+version: "1.0.1"
 confidence: 0.85
-updated_at: "2026-10-19"
+updated_at: "2026-10-26"
 tags: [programmatic, bid-rate, win-rate, fill-rate, ecpm, viewability, ivt, diagnostics]
 status: published
 wiki_type: concept

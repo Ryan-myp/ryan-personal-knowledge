@@ -7,11 +7,11 @@ knowledge_type: best_practice
 category: programmatic_advertising
 subcategory: ssp-exchange-yield
 platform: all
-source: Personal advertising knowledge base synthesis; IAB Tech Lab; Prebid
+source: 个人广告知识库归纳；IAB Tech Lab；Prebid
 source_ref: "knowledge/advertising/ssp-deep.md; knowledge/advertising/ssp-system-deep.md; knowledge/advertising/ssp-system-design-deep.md; knowledge/advertising/ad-hb-header-bidding-optimization.md; https://iabtechlab.com/programmatic-auction-definitions/; https://docs.prebid.org/overview/intro-to-header-bidding.html"
-version: "1.0.0"
+version: "1.0.1"
 confidence: 0.86
-updated_at: "2026-10-19"
+updated_at: "2026-10-26"
 tags: [ssp, ad-exchange, adx, header-bidding, prebid, waterfall, floor-price, yield]
 status: published
 wiki_type: concept

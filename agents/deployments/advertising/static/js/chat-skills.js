@@ -122,7 +122,7 @@
                     version.textContent = `v${item.version}`;
                     const digest = document.createElement('span');
                     digest.className = 'skill-tree-version-digest';
-                    digest.textContent = item.sha256 ? `${item.sha256.slice(0, 12)}…` : '无 digest';
+                    digest.textContent = item.sha256 ? `${item.sha256.slice(0, 12)}…` : '无摘要';
                     meta.append(version, digest);
                     const status = document.createElement('span');
                     status.className = `skill-tree-status ${item.status || ''}`;
@@ -148,7 +148,7 @@
             skillState.readOnly = false;
             skillState.files = [{
                 path: 'SKILL.md', encoding: 'utf-8',
-                content: '---\nname: new-skill\ndescription: Describe what this Skill does\nplatform: multi_platform\n---\n\n# Instructions\n\nDescribe the business workflow in natural language.\n',
+                content: '---\nname: new-skill\ndescription: 描述这个 Skill 的用途和适用场景\nplatform: multi_platform\n---\n\n# 技能说明\n\n描述业务流程、适用条件和输出要求。\n',
             }];
             skillState.activeFilePath = 'SKILL.md';
             skillState.previewMode = false;
@@ -247,7 +247,7 @@
             treePanel.className = 'skill-file-tree-panel';
             const treeTitle = document.createElement('div');
             treeTitle.className = 'skill-file-tree-title';
-            treeTitle.innerHTML = '<span>文件结构</span><small>Skill package</small>';
+            treeTitle.innerHTML = '<span>文件结构</span><small>Skill 文件包</small>';
             const tree = document.createElement('div');
             tree.className = 'skill-file-tree';
             const root = { directories: new Map(), files: [] };
@@ -419,7 +419,7 @@
             }
             flushList();
             if (inCode) rendered.push(`<pre><code>${codeLines.join('\n')}</code></pre>`);
-            return `${metadataItems ? `<section class="skill-markdown-frontmatter"><strong>Skill metadata</strong><dl>${metadataItems}</dl></section>` : ''}${rendered.join('')}`;
+            return `${metadataItems ? `<section class="skill-markdown-frontmatter"><strong>Skill 元数据</strong><dl>${metadataItems}</dl></section>` : ''}${rendered.join('')}`;
         }
 
         function addSkillFile() {

@@ -1,7 +1,7 @@
 ---
 name: measurement-attribution
-description: "解释广告平台、分析系统与业务结果之间的转化差异，并选择合适的归因或增量测量方法 (advertising attribution and incrementality)"
-version: "1.0.1"
+description: "解释广告平台、分析系统与业务结果之间的转化差异，并选择合适的归因或增量测量方法"
+version: "1.0.2"
 namespace: advertising
 triggers:
   - [attribution, 归因模型, 广告归因, 平台转化对不上, conversions disagree, conversion discrepancy, 渠道贡献]

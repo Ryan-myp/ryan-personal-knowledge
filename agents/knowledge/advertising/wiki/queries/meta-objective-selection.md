@@ -5,11 +5,11 @@ title: Meta 投放目标选择：从业务结果到 Campaign Objective
 layer: experience
 knowledge_type: decision_framework
 platform: meta
-source: Meta for Business campaign objectives and Meta Marketing API Python SDK
+source: Meta for Business 投放目标文档与 Meta Marketing API Python SDK
 source_ref: "https://raw.githubusercontent.com/facebook/facebook-python-business-sdk/main/facebook_business/adobjects/campaign.py"
-version: "1.0.0"
+version: "1.0.1"
 confidence: 0.9
-updated_at: "2026-10-18"
+updated_at: "2026-10-26"
 tags: [meta, odax, campaign-objective, sales, leads, traffic, engagement, app-promotion, catalog]
 status: published
 wiki_type: query

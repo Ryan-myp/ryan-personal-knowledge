@@ -6,15 +6,15 @@ layer: experience
 wiki_type: concept
 knowledge_type: test_account_e2e
 platform: all
-source: Repository live /chat and Provider test evidence
+source: 仓库内 Live /chat 与 Provider 测试证据
 source_ref: agents/tools/advertising/contracts/provider_live_e2e_memory.json
 source_kind: code
 authority: repository
 evidence_level: reviewed
 last_verified_at: "2026-10-16"
-version: "1.0.0"
+version: "1.0.1"
 confidence: 1.0
-updated_at: "2026-10-16"
+updated_at: "2026-10-26"
 tags: [e2e, test-account, templates, regression, live]
 status: published
 ---

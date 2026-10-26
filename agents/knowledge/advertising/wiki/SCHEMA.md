@@ -43,11 +43,11 @@ knowledge_base/
 ```yaml
 schema_version: "1"
 id: unique-stable-id
-title: Human readable title
+title: 中文可读标题（保留平台原生术语）
 layer: platform | business | experience | dynamic
 knowledge_type: hierarchy | constraint | parameter | workflow | best_practice | error_pattern | case_study | tip | general | bidding_strategy | targeting_strategy | creative_guide | business_strategy
 platform: google | meta | tiktok | dv360 | all
-source: source owner or authority
+source: 中文可读的来源说明（机构或产品正式名称保持原样）
 source_ref: path, URL, ticket or document reference
 version: semantic document version
 confidence: 0.0-1.0
@@ -65,6 +65,13 @@ wikilinks: ["[[Related page title]]"]
 ```
 
 `id`、`title`、`layer`、`knowledge_type`、`platform`、`source_ref`、`version`、`confidence`、`updated_at`、`status` 和新页面的 `wiki_type` 是发布前必须具备的事实元数据。`source` 用于展示来源，不能替代 `source_ref`。
+
+## 中文内容与平台术语
+
+- 面向用户的标题、描述、章节、解释、来源说明和操作建议使用中文；机构、产品和标准的正式名称保留原样，例如 Google Ads、Meta Marketing API、OpenRTB。
+- 平台资源层级保持原生名称：Google Ads 的 `Customer → Campaign → Ad Group → Ad`、Meta 的 `Ad Account → Campaign → Ad Set → Ad`、TikTok 的 `Advertiser → Campaign → Ad Group → Ad`、DV360 的 `Partner → Advertiser → Campaign → Insertion Order (IO) → Line Item`。中文可以解释各层职责，但不能把 `Ad Set` 写成 `Ad Group` 或把层级名称翻译成新的资源类型。
+- `id`、`category`、`knowledge_type`、`platform`、tags、URL、文件路径、API 字段/枚举、请求和响应示例必须保留契约原值。代码块中的 JSON/YAML/GAQL 和示例 ID 不做中文替换；只翻译说明文字和非契约的示例业务文案。
+- 修改已发布正文或可读元数据时更新该文档版本与 `log.md`；不因中文化而修改 `source_ref`、来源证据等级或 API 支持结论。
 
 `source_ref` 指向原始 URL、仓库文件、工单或测试证据；实体/概念/对比/问答页
 必须能回溯到一个或多个来源。`raw/` 的来源文件不直接注入 Runtime，必须先经过
@@ -109,9 +116,13 @@ subcategory: conversion-and-diagnostics
 | category | 用途 |
 |---|---|
 | `platform_foundation` | 平台定位、账户、资源层级和基础对象 |
+| `cross_platform_foundation` | 跨平台基础对象、口径和资源关系 |
+| `campaign_planning` | 投放目标、渠道组合和创建前规划 |
 | `campaign_operations` | 目标、参数依赖、预算、创建与变更工作流 |
 | `optimization` | 出价、交付、素材、放量与平台优化 |
 | `measurement` | 转化、事件、报表、归因与数据质量 |
+| `reporting` | 报表查询、粒度、指标解释与诊断 |
+| `compliance` | 审核、政策、拒登与恢复 |
 | `industry_playbooks` | 电商、App/游戏、B2B、Lead Gen 等行业打法 |
 | `budget_bidding` | 跨平台预算、成本、价值和边际收益 |
 | `audience_targeting` | 受众、定向、排除、重叠与增量 |

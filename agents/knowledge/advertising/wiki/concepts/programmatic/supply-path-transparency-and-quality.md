@@ -7,11 +7,11 @@ knowledge_type: best_practice
 category: programmatic_advertising
 subcategory: supply-quality
 platform: all
-source: Personal advertising knowledge base synthesis; IAB Tech Lab
+source: 个人广告知识库归纳；IAB Tech Lab
 source_ref: "knowledge/advertising/ad-protocol-openrtb-tcf-deep.md; knowledge/advertising/programmatic-ads-personalized-targeting-deep.md; https://iabtechlab.com/ads-txt/; https://iabtechlab.com/sellers-json/; https://iabtechlab.com/supply-chain-object/"
-version: "1.0.0"
+version: "1.0.1"
 confidence: 0.87
-updated_at: "2026-10-19"
+updated_at: "2026-10-26"
 tags: [ads-txt, app-ads-txt, sellers-json, schain, supply-chain, ivt, brand-safety, privacy]
 status: published
 wiki_type: concept

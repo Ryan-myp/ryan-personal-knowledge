@@ -7,11 +7,11 @@ knowledge_type: bidding_strategy
 category: programmatic_advertising
 subcategory: dsp-decisioning
 platform: all
-source: Personal advertising knowledge base synthesis; IAB Tech Lab OpenRTB
+source: 个人广告知识库归纳；IAB Tech Lab OpenRTB
 source_ref: "knowledge/advertising/ad-dsp-architecture-deep.md; knowledge/advertising/dsp-core-architecture-deep.md; knowledge/advertising/dsp-bidding-engine-deep.md; knowledge/advertising/dsp-bidding-strategy-deep.md; https://iabtechlab.com/standards/openrtb/"
-version: "1.0.0"
+version: "1.0.1"
 confidence: 0.86
-updated_at: "2026-10-19"
+updated_at: "2026-10-26"
 tags: [dsp, pctr, pcvr, value-bidding, bid-shading, budget-pacing, frequency-cap]
 status: published
 wiki_type: concept

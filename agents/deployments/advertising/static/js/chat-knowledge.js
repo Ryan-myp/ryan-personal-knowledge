@@ -205,7 +205,7 @@
                 const title = document.createElement('strong');
                 title.textContent = item.title || '未命名知识';
                 const meta = document.createElement('span');
-                meta.textContent = [item.status === 'published' ? '已发布' : item.status === 'deprecated' ? '已归档' : '草稿', item.platform || 'all', `v${item.version || '1.0.0'}`].join(' · ');
+                meta.textContent = [item.status === 'published' ? '已发布' : item.status === 'deprecated' ? '已归档' : '草稿', knowledgePlatformLabel(item.platform), `v${item.version || '1.0.0'}`].join(' · ');
                 main.append(title, meta);
                 const actions = document.createElement('div');
                 actions.className = 'knowledge-managed-actions';
@@ -500,14 +500,18 @@
         const knowledgeCategoryLabels = {
             system: '系统规范',
             platform_foundation: '平台基础',
+            campaign_planning: '投放规划',
             campaign_operations: '投放配置',
+            compliance: '合规与审核',
             optimization: '优化方法',
             measurement: '测量与报表',
+            reporting: '报表分析',
             industry_playbooks: '行业打法',
             budget_bidding: '预算与出价',
             audience_targeting: '受众与定向',
             creative: '创意与素材',
             cross_platform_foundation: '跨平台基础',
+            programmatic_advertising: '程序化广告',
             diagnostics: '诊断与排障',
             experimentation: '实验与学习',
             general: '通用知识',
@@ -515,7 +519,20 @@
 
         function knowledgeCategoryLabel(value) {
             const key = String(value || 'general');
-            return knowledgeCategoryLabels[key] || key.replace(/[-_]/g, ' ');
+            return knowledgeCategoryLabels[key] || `自定义分类（${key}）`;
+        }
+
+        function knowledgePlatformLabel(value) {
+            const key = String(value || 'all');
+            return { all: '通用', meta: 'Meta', tiktok: 'TikTok',
+                'google-ads': 'Google Ads', dv360: 'DV360' }[key] || `自定义平台（${key}）`;
+        }
+
+        function knowledgeTypeLabel(value) {
+            const key = String(value || 'general');
+            const options = document.getElementById('knowledgeWriteType')?.options || [];
+            const option = Array.from(options).find(item => item.value === key);
+            return option?.textContent || `自定义类型（${key}）`;
         }
 
         function selectKnowledgeResult(key) {
@@ -543,7 +560,8 @@
             header.className = 'knowledge-reader-header';
             const kicker = document.createElement('div');
             kicker.className = 'knowledge-reader-kicker';
-            kicker.textContent = [item.platform || '通用', knowledgeCategoryLabel(item.category), item.knowledge_type || item.layer || 'general'].filter(Boolean).join(' / ');
+            kicker.textContent = [knowledgePlatformLabel(item.platform),
+                knowledgeCategoryLabel(item.category), knowledgeTypeLabel(item.knowledge_type || item.layer)].filter(Boolean).join(' / ');
             const title = document.createElement('h1');
             title.textContent = item.title || item.topic || item.document_id || '未命名知识';
             const badge = document.createElement('span');
@@ -551,7 +569,8 @@
             badge.textContent = item.confidence != null ? `可信度 ${Math.round(Number(item.confidence) * 100)}%` : '已发布';
             const meta = document.createElement('div');
             meta.className = 'knowledge-reader-meta';
-            meta.textContent = [item.source_ref || item.source, item.version ? `v${item.version}` : '', item.updated_at ? `更新于 ${String(item.updated_at).slice(0, 10)}` : ''].filter(Boolean).join('  ·  ');
+            meta.textContent = [item.source || item.source_ref, item.version ? `v${item.version}` : '', item.updated_at ? `更新于 ${String(item.updated_at).slice(0, 10)}` : ''].filter(Boolean).join('  ·  ');
+            if (item.source_ref && item.source) meta.title = `来源引用：${item.source_ref}`;
             header.append(kicker, title, badge, meta);
             const context = document.createElement('div');
             context.className = 'knowledge-reader-context';
@@ -645,7 +664,7 @@
                 const groupHeader = document.createElement('div');
                 groupHeader.className = 'knowledge-list-group';
                 const groupTitle = document.createElement('strong');
-                groupTitle.textContent = `${platform === 'all' ? '通用' : platform} · ${knowledgeCategoryLabel(category)}`;
+                groupTitle.textContent = `${knowledgePlatformLabel(platform)} · ${knowledgeCategoryLabel(category)}`;
                 const groupCount = document.createElement('span');
                 groupCount.textContent = `${groupItems.length}`;
                 groupHeader.append(groupTitle, groupCount);
@@ -660,7 +679,8 @@
                 const title = document.createElement('strong');
                 title.textContent = item.title || item.topic || item.document_id || '未命名知识';
                 const meta = document.createElement('span');
-                meta.textContent = [item.subcategory || item.knowledge_type || item.layer || 'general', item.version ? `v${item.version}` : ''].filter(Boolean).join(' · ');
+                meta.textContent = [knowledgeTypeLabel(item.knowledge_type || item.layer),
+                    item.version ? `v${item.version}` : ''].filter(Boolean).join(' · ');
                 const section = document.createElement('small');
                 section.textContent = Array.isArray(item.heading_path) && item.heading_path.length ? item.heading_path.join(' / ') : '文档正文';
                 button.append(title, meta, section);

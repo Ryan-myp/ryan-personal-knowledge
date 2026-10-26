@@ -1,7 +1,7 @@
 ---
 name: data-visualization
-description: "根据有来源的数据选择合适图表，检查数据粒度、单位、缺失值和误导风险 (evidence-grounded data visualization)"
-version: 1.0.0
+description: "根据有来源的数据选择合适图表，检查数据粒度、单位、缺失值和误导风险"
+version: 1.0.1
 namespace: advertising
 triggers:
   - [画图, 画图表, 做图表, 图表, 可视化, 趋势图, 折线图, 柱状图, 饼图, 数据图, visualization, visualize, chart, plot, graph]

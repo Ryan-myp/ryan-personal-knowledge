@@ -1,7 +1,7 @@
 ---
 name: ad-copywriting
-description: "为 Google Ads、Meta 和 TikTok 广告撰写或改进有证据支持的广告文案、标题、主文案、CTA 和创意变体 (evidence-based paid ad copywriting)"
-version: "1.0.0"
+description: "为 Google Ads、Meta 和 TikTok 广告撰写或改进有证据支持的广告文案、标题、主文案、CTA 和创意变体"
+version: "1.0.1"
 namespace: advertising
 triggers:
   - [广告文案, 广告标题, 主文案, 广告 CTA, 广告卖点, 改写广告, 写几条广告, ad copy, ad headline, primary text, paid ad copy, RSA headlines]

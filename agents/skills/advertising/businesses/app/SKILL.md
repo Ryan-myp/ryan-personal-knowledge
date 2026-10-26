@@ -1,8 +1,8 @@
 ---
 business:
   name: app
-  version: "1.1.0"
-  description: "App acquisition and post-install growth guidance"
+  version: "1.1.1"
+  description: "App 获客、商店页转化与安装后激活、留存和价值增长指导"
   business_rules:
     focus_metrics:
       - CPI
