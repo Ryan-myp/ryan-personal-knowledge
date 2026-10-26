@@ -36,7 +36,61 @@ def test_runner_reports_errors_without_echoing_private_exception_message():
         execute, mode="fixture_contract",
     )
     assert report["error"] == 1
+    assert report["latency_samples"] == 0
+    assert report["latency_p95_ms"] is None
     assert "private credential value" not in str(report)
+
+
+def test_runner_reports_bounded_tool_names_for_flaky_model_cases():
+    report = run_suite(
+        [RegressionCase(
+            id="ambiguous", input="create something",
+            assertions={"max_tool_calls": 1},
+        )],
+        lambda _case: {
+            "reply": "Please clarify",
+            "results": [
+                {"tool": "agent_request_input", "success": True},
+                {"tool": "agent_request_input", "success": True},
+            ],
+        },
+        mode="fixture_contract",
+    )
+    case = report["cases"][0]
+    assert case["status"] == "failed"
+    assert case["tool_call_count"] == 2
+    assert case["tool_names"] == [
+        "agent_request_input", "agent_request_input",
+    ]
+
+
+def test_model_mode_loads_local_configuration_once(monkeypatch, tmp_path):
+    from scripts.advertising import run_conversation_regressions as runner
+
+    cases = tmp_path / "cases.json"
+    cases.write_text(json.dumps([
+        {"id": "one", "input": "hello", "assertions": {"reply_nonempty": True}},
+    ]))
+    calls = []
+    monkeypatch.setattr(
+        runner, "load_default_local_env",
+        lambda: calls.append("loaded"),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        runner, "configured_model_adapter",
+        lambda: calls.append("configured") or object(),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        runner, "_model_response",
+        lambda _case, *, model_adapter: {"reply": "hello", "results": []},
+    )
+    monkeypatch.setattr(
+        runner.sys, "argv", ["runner", "--cases", str(cases), "--model-backed"],
+    )
+    assert runner.main() == 0
+    assert calls == ["loaded", "configured"]
 
 
 def test_dataset_rejects_duplicate_ids_and_executable_fields(tmp_path):

@@ -27,7 +27,14 @@ class AdvertisingRunService:
 
     def _initial_tool_choice(
         self, blueprint_id: Any, version: Any, confirmed: bool, payload: Any,
+        tool_allowlist: Optional[list[str]] = None,
     ) -> Any:
+        if confirmed and isinstance(payload, Mapping) and payload.get("type") == "confirm_write":
+            tool = payload.get("tool")
+            if isinstance(tool, str) and tool and (
+                tool_allowlist is None or tool in tool_allowlist
+            ):
+                return {"type": "function", "function": {"name": tool}}
         if not blueprint_id:
             return None
         blueprint = self.runtime.creation_blueprints.get(blueprint_id, version or None)
@@ -87,7 +94,7 @@ class AdvertisingRunService:
             ),
             initial_tool_choice=self._initial_tool_choice(
                 creation_blueprint_id, creation_blueprint_version,
-                confirmed, confirmation_payload,
+                confirmed, confirmation_payload, tool_allowlist,
             ),
             task_id=task_id,
             streaming=bool(streaming),

@@ -34,6 +34,7 @@ def tools():
     "画一个创建广告的通用流程图，只解释流程，不执行创建，也不用查询账户。",
     "Explain a workflow, do not query account data.",
     "说明处理流程，不用获取真实数据。",
+    "画个从选模板到创建 Campaign、Ad Set、Ad 的流程示意图，不必获取账户数据。",
 ])
 def test_negative_read_clause_does_not_turn_process_explanation_into_an_operation(prompt):
     assert ToolSelector().select_relevant(prompt, tools()) == []
@@ -57,6 +58,7 @@ def test_negative_action_scope_does_not_leak_across_separate_clauses():
     assert selector.is_read_only_request("Do not create records, then query accounts", tools())
     assert not selector.is_read_only_request("不执行查询", tools())
     assert not selector.is_read_only_request("不查询账户", tools())
+    assert not selector.is_read_only_request("不必获取账户数据", tools())
 
 
 @pytest.mark.parametrize("prompt", [

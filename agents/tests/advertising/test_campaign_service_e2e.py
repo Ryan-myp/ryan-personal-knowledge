@@ -391,10 +391,63 @@ def test_chat_can_submit_a_creation_card_without_widening_tool_scope(
     )
 
     body = calls[0][1]["json"]
-    assert "提交 Google Campaign 创建计划" in body["user_input"]
+    assert body["user_input"] == "提交 Google Campaign 创建计划"
     assert body["tool_allowlist"] == ["google_create_campaign"]
     assert body["creation_template_id"] == "builtin-template"
     assert body["session_id"] == "google-template-session"
+
+
+def test_chat_does_not_expose_redacted_selection_token_as_missing_parameter(
+    monkeypatch, tmp_path
+):
+    from scripts.advertising import campaign_service_e2e as driver
+
+    monkeypatch.setattr(driver, "_load_state", lambda _: (
+        tmp_path, {"base_url": "http://localhost", "accounts": driver.CONFIRMED_ACCOUNTS}, {},
+    ))
+    response = requests.Response()
+    response.status_code = 200
+    response._content = json.dumps({"status": "succeeded", "results": []}).encode()
+    calls = []
+    monkeypatch.setattr(
+        driver.requests, "post",
+        lambda *_args, **kwargs: (calls.append(kwargs["json"]) or response),
+    )
+    driver.chat(
+        tmp_path, "tiktok", "tiktok_smart_plus_create_adgroup",
+        {"campaign_id": "ps1.private.signature", "location_ids": ["ps1.other.signature"]},
+        "selection-token-prompt",
+    )
+    body = calls[0]
+    assert "<redacted>" not in body["user_input"]
+    assert "ps1.private.signature" not in body["user_input"]
+    assert body["platform_params"]["tiktok"]["campaign_id"] == "ps1.private.signature"
+
+
+def test_chat_keeps_explicit_user_intent_separate_from_e2e_safety_context(
+    monkeypatch, tmp_path
+):
+    from scripts.advertising import campaign_service_e2e as driver
+
+    monkeypatch.setattr(driver, "_load_state", lambda _: (
+        tmp_path, {"base_url": "http://localhost", "accounts": driver.CONFIRMED_ACCOUNTS}, {},
+    ))
+    response = requests.Response()
+    response.status_code = 200
+    response._content = json.dumps({"status": "succeeded", "results": []}).encode()
+    calls = []
+    monkeypatch.setattr(
+        driver.requests, "post",
+        lambda *_args, **kwargs: (calls.append(kwargs["json"]) or response),
+    )
+    prompt = "在已创建的 Campaign 下创建暂停的 TikTok Ad Group。"
+    driver.chat(
+        tmp_path, "tiktok", "tiktok_smart_plus_create_adgroup",
+        {"campaign_id": "ps1.private.signature", "operation_status": "DISABLE"},
+        "focused-intent", user_input=prompt,
+    )
+    assert calls[0]["user_input"] == prompt
+    assert calls[0]["tool_allowlist"] == ["tiktok_smart_plus_create_adgroup"]
 
 
 def test_chat_can_run_a_single_live_read_tool(monkeypatch, tmp_path):
@@ -770,6 +823,141 @@ def test_template_workflow_uses_normal_agent_planning_and_signed_confirmations(
     assert "readback_and_resume_existing_hierarchy" in output
 
 
+def test_template_workflow_submits_ready_creation_card_like_the_page(
+    monkeypatch, tmp_path
+):
+    from scripts.advertising import campaign_service_e2e as driver
+
+    monkeypatch.setattr(driver, "_load_state", lambda _: (
+        tmp_path, {"base_url": "http://localhost", "accounts": driver.CONFIRMED_ACCOUNTS}, {},
+    ))
+    template = {
+        "template_id": "google.test.shopping", "provider": "google-ads",
+        "blueprint_id": "google-ads.shopping", "blueprint_version": "1.1.0",
+        "account_id": "9055507554", "status": "active",
+    }
+
+    def response(value):
+        result = requests.Response()
+        result.status_code = 200
+        result._content = json.dumps(value).encode()
+        return result
+
+    monkeypatch.setattr(driver.requests, "get", lambda *_args, **_kwargs: response(template))
+    phases = iter([
+        {
+            "status": "awaiting_input", "needs_input": True, "ui": {"cards": [{
+                "type": "ad_creation_form", "title": "Shopping 广告", "ready": True,
+                "provider": "google-ads", "account_id": "9055507554",
+                "template_id": "google.test.shopping",
+                "blueprint_id": "google-ads.shopping",
+                "actions": [{"id": "submit_create"}],
+                "fields": [
+                    {"path": "campaign.name", "provider_field": "name",
+                     "tool": "google_create_campaign", "value": "QA Shopping", "visible": True},
+                    {"path": "campaign.status", "provider_field": "status",
+                     "tool": "google_create_campaign", "value": "PAUSED", "visible": True},
+                    {"path": "ad_group.targeting", "provider_field": "targeting.geo",
+                     "tool": "google_create_ad_group", "value": "SG", "visible": True},
+                    {"path": "ad_group.hidden", "provider_field": "hidden",
+                     "tool": "google_create_ad_group", "value": "secret", "visible": False},
+                ],
+                "selection_tokens": {"campaign_id": "selection-proof"},
+                "selection_token_tools": {"campaign_id": "google_create_ad_group"},
+            }]},
+        },
+        {"status": "succeeded", "results": [{
+            "tool": "google_create_campaign", "success": True,
+        }]},
+    ])
+    calls = []
+
+    def post(*_args, **kwargs):
+        calls.append(json.loads(json.dumps(kwargs["json"])))
+        return response(next(phases))
+
+    monkeypatch.setattr(driver.requests, "post", post)
+    driver.template_chat(
+        tmp_path, "google-ads", "google.test.shopping",
+        {"campaign.name": "QA Shopping"}, "submit-ready-card",
+    )
+    assert len(calls) == 2
+    assert calls[1]["user_input"] == "提交“Shopping 广告”创建计划"
+    assert calls[1]["platform_params"]["google-ads"] == {
+        "name": "QA Shopping", "status": "PAUSED",
+        "targeting": {"geo": "SG"},
+        "google_create_campaign": {"name": "QA Shopping", "status": "PAUSED"},
+        "google_create_ad_group": {
+            "targeting": {"geo": "SG"},
+            "selection_tokens": {"campaign_id": "selection-proof"},
+        },
+    }
+    evidence = json.loads((tmp_path / "cases/submit-ready-card.json").read_text())
+    assert "selection-proof" not in json.dumps(evidence)
+
+
+def test_template_workflow_never_resubmits_card_after_partial_live_creation(
+    monkeypatch, tmp_path,
+):
+    from scripts.advertising import campaign_service_e2e as driver
+
+    monkeypatch.setattr(driver, "_load_state", lambda _: (
+        tmp_path, {"base_url": "http://localhost", "accounts": driver.CONFIRMED_ACCOUNTS}, {},
+    ))
+
+    def response(value):
+        result = requests.Response()
+        result.status_code = 200
+        result._content = json.dumps(value).encode()
+        return result
+
+    monkeypatch.setattr(driver.requests, "get", lambda *_args, **_kwargs: response({
+        "template_id": "meta.test.app-promotion",
+        "catalog_key": "meta.test.app-promotion",
+        "provider": "meta",
+        "blueprint_id": "meta.app_promotion",
+        "blueprint_version": "1.0.0",
+        "account_id": "2806375919473667",
+        "status": "active",
+    }))
+    monkeypatch.setattr(driver, "append_live_e2e_observation", lambda *_a, **_k: None)
+    calls = []
+    phases = iter([
+        {"status": "awaiting_input", "needs_confirmation": True,
+         "confirmation_payload": {"type": "confirm_write_plan"}},
+        {"status": "awaiting_input", "needs_input": True, "results": [{
+            "tool": "meta_create_campaign", "success": True,
+            "data": {
+                "campaign_id": "120252062235750251",
+                "data_status": "live",
+                "execution_mode": "live",
+            },
+        }], "ui": {"cards": [{
+            "type": "ad_creation_form", "title": "App Promotion",
+            "ready": True, "provider": "meta",
+            "account_id": "2806375919473667",
+            "template_id": "meta.test.app-promotion",
+            "blueprint_id": "meta.app_promotion",
+            "actions": [{"id": "submit_create"}], "fields": [],
+        }]}},
+    ])
+
+    def post(*_args, **kwargs):
+        calls.append(kwargs["json"])
+        return response(next(phases))
+
+    monkeypatch.setattr(driver.requests, "post", post)
+    driver.template_chat(
+        tmp_path, "meta", "meta.test.app-promotion", {}, "partial-meta-app",
+        write=True, allow_new_hierarchy=True, existing_resources_reconciled=True,
+    )
+    assert len(calls) == 2
+    evidence = json.loads((tmp_path / "cases/partial-meta-app.json").read_text())
+    assert evidence["partial_hierarchy_stop"] == [
+        {"resource_type": "campaign", "id": "120252062235750251"}
+    ]
+
+
 def test_template_workflow_rejects_a_different_account_before_chat(monkeypatch, tmp_path):
     from scripts.advertising import campaign_service_e2e as driver
 
@@ -784,6 +972,46 @@ def test_template_workflow_rejects_a_different_account_before_chat(monkeypatch, 
     monkeypatch.setattr(driver.requests, "get", lambda *_args, **_kwargs: response)
     with pytest.raises(ValueError, match="account"):
         driver.template_chat(tmp_path, "google-ads", "wrong-account", {}, "blocked", write=True)
+
+
+def test_template_workflow_uses_catalog_key_for_memory_and_builtin_id_for_chat(
+    monkeypatch, tmp_path
+):
+    from scripts.advertising import campaign_service_e2e as driver
+
+    monkeypatch.setattr(driver, "_load_state", lambda _: (
+        tmp_path, {"base_url": "http://localhost", "accounts": driver.CONFIRMED_ACCOUNTS}, {},
+    ))
+    template = {
+        "template_id": "builtin_traffic",
+        "catalog_key": "tiktok.test.traffic",
+        "provider": "tiktok",
+        "account_id": "7397068114548195329",
+        "blueprint_id": "tiktok.traffic_video",
+        "blueprint_version": "3.3.0",
+        "status": "active",
+    }
+    get_response = requests.Response()
+    get_response.status_code = 200
+    get_response._content = json.dumps(template).encode()
+    monkeypatch.setattr(driver.requests, "get", lambda *_args, **_kwargs: get_response)
+    calls = []
+    post_response = requests.Response()
+    post_response.status_code = 200
+    post_response._content = json.dumps({"status": "succeeded", "results": []}).encode()
+    monkeypatch.setattr(
+        driver.requests, "post",
+        lambda *_args, **kwargs: (calls.append(kwargs["json"]) or post_response),
+    )
+
+    driver.template_chat(
+        tmp_path, "tiktok", "builtin_traffic", {},
+        "builtin-traffic-dry", write=False,
+    )
+
+    assert calls[0]["creation_template_id"] == "builtin_traffic"
+    evidence = json.loads((tmp_path / "cases/builtin-traffic-dry.json").read_text())
+    assert evidence["e2e_memory"]["template_key"] == "tiktok.test.traffic"
 
 
 def test_template_workflow_does_not_duplicate_a_recorded_live_hierarchy(
@@ -967,6 +1195,25 @@ def test_chat_keeps_selection_tokens_structured_and_redacts_prompt(
         (tmp_path / "cases/selection-token-prompt.json").read_text()
     )
     assert token not in json.dumps(evidence)
+
+
+def test_chat_rejects_selection_token_as_resource_value(monkeypatch, tmp_path):
+    from scripts.advertising import campaign_service_e2e as driver
+
+    monkeypatch.setattr(
+        driver, "_load_state",
+        lambda _: (
+            tmp_path,
+            {"base_url": "http://localhost", "accounts": driver.CONFIRMED_ACCOUNTS},
+            {},
+        ),
+    )
+    with pytest.raises(ValueError, match="selection token used as a resource value"):
+        driver.chat(
+            tmp_path, "tiktok", "tiktok_smart_plus_create_adgroup",
+            {"campaign_id": "ps1.private.signature", "operation_status": "DISABLE"},
+            "invalid-selection-input", write=True,
+        )
 
 
 def test_chat_keeps_blueprint_metadata_out_of_tool_arguments(
@@ -1227,6 +1474,8 @@ def test_live_update_guard_rejects_reenabling_test_resources(
         "account": "123",
     }
     recorder.created.add(resource_id)
+    if provider in {"meta", "tiktok"}:
+        recorder.created_typed.add((provider, "123", "campaign", resource_id))
     request = requests.Request("POST", url, json=payload).prepare()
 
     with pytest.raises(PermissionError, match="paused"):
@@ -1274,6 +1523,8 @@ def test_live_update_guard_accepts_paused_test_resources(
         "account": "123",
     }
     recorder.created.add(resource_id)
+    if provider in {"meta", "tiktok"}:
+        recorder.created_typed.add((provider, "123", "campaign", resource_id))
     request = requests.Request("POST", url, json=payload).prepare()
 
     recorder._guard(request, provider, json.loads(request.body))
@@ -1285,6 +1536,224 @@ def test_google_product_group_is_approved_for_template_e2e():
 
 def test_google_pmax_listing_filter_is_approved_for_template_e2e():
     assert "google_create_asset_group_listing_group_filter" in _approved_tools()
+
+
+def test_live_e2e_write_scope_excludes_non_hierarchy_resources():
+    from scripts.advertising import campaign_service_e2e as driver
+
+    approved = set(_approved_tools())
+    assert "google_delete_campaign" not in approved
+    assert "meta_delete_ad" not in approved
+    assert "tiktok_delete_campaign" not in approved
+    assert "google_delete_campaign_budget" not in approved
+    assert "google_delete_campaign_asset" not in approved
+    assert not any("creative" in name for name in approved)
+    assert all(
+        binding.definition.resource_type in {
+            "campaign", "ad_group", "ad_set", "ad", "asset_group",
+            "listing_group_filter", "product_group",
+        }
+        for provider in ("google-ads", "meta", "tiktok")
+        for binding in driver.create_tool_source(provider).list_bindings()
+        if binding.definition.name in approved
+    )
+
+
+@pytest.mark.parametrize(
+    "provider,url,payload",
+    [
+        ("meta", "https://graph.facebook.com/v19.0/77", {}),
+        (
+            "tiktok",
+            "https://business-api.tiktok.com/open_api/v1.3/campaign/delete/",
+            {"advertiser_id": "123", "campaign_ids": [77]},
+        ),
+        (
+            "google-ads",
+            "https://googleads.googleapis.com/v24/customers/123/campaigns:mutate",
+            {"operations": [{"remove": "customers/123/campaigns/77"}]},
+        ),
+    ],
+)
+def test_delete_requires_resource_created_by_same_e2e_run(
+    tmp_path, provider, url, payload
+):
+    recorder = ProviderRecorder(tmp_path)
+    recorder.case = {"case_id": "delete", "provider": provider, "account": "123"}
+    method = "DELETE" if provider == "meta" else "POST"
+    request = requests.Request(method, url, json=payload).prepare()
+    with pytest.raises(PermissionError, match="(created by this test|typed ownership)"):
+        recorder._guard(request, provider, payload)
+    recorder.created.add("77")
+    if provider == "google-ads":
+        recorder.created.add("customers/123/campaigns/77")
+    else:
+        recorder.created_typed.add((provider, "123", "campaign", "77"))
+    recorder._guard(request, provider, payload)
+
+
+def test_provider_recorder_rejects_unrelated_mutations(tmp_path):
+    recorder = ProviderRecorder(tmp_path)
+    recorder.case = {"case_id": "scope", "provider": "meta", "account": "123"}
+    request = requests.Request(
+        "POST", "https://graph.facebook.com/v19.0/act_123/adcreatives",
+        json={"name": "unrelated"},
+    ).prepare()
+    with pytest.raises(PermissionError, match="outside campaign hierarchy"):
+        recorder._guard(request, "meta", {"name": "unrelated"})
+
+
+@pytest.mark.parametrize(
+    "url,payload",
+    [
+        (
+            "https://business-api.tiktok.com/open_api/v1.3/pixel/track/",
+            {"advertiser_id": "123", "pixel_code": "77"},
+        ),
+        (
+            "https://business-api.tiktok.com/open_api/v1.3/creative/ads_preview/create/",
+            {"advertiser_id": "123", "card_id": "77"},
+        ),
+        (
+            "https://business-api.tiktok.com/open_api/v1.3/file/video/ad/upload/",
+            {"advertiser_id": "123"},
+        ),
+    ],
+)
+def test_tiktok_rejects_every_non_hierarchy_post(tmp_path, url, payload):
+    recorder = ProviderRecorder(tmp_path)
+    recorder.case = {"case_id": "scope", "provider": "tiktok", "account": "123"}
+    request = requests.Request("POST", url, json=payload).prepare()
+    with pytest.raises(PermissionError, match="outside campaign hierarchy"):
+        recorder._guard(request, "tiktok", payload)
+
+
+def test_meta_owned_identifier_is_not_enough_to_authorize_untyped_update(tmp_path):
+    recorder = ProviderRecorder(tmp_path)
+    recorder.case = {"case_id": "scope", "provider": "meta", "account": "123"}
+    recorder.created.add("77")
+    request = requests.Request(
+        "POST", "https://graph.facebook.com/v19.0/77",
+        json={"name": "changed"},
+    ).prepare()
+    with pytest.raises(PermissionError, match="typed ownership"):
+        recorder._guard(request, "meta", {"name": "changed"})
+
+
+def test_meta_update_requires_same_account_hierarchy_creation(tmp_path):
+    recorder = ProviderRecorder(tmp_path)
+    recorder.case = {"case_id": "create", "provider": "meta", "account": "123"}
+    recorder._capture_ids(
+        {"id": "77"}, provider="meta", account="123", resource="campaign"
+    )
+    restored = ProviderRecorder(tmp_path)
+    restored.case = {"case_id": "update", "provider": "meta", "account": "123"}
+    request = requests.Request(
+        "POST", "https://graph.facebook.com/v19.0/77",
+        json={"name": "changed"},
+    ).prepare()
+    restored._guard(request, "meta", {"name": "changed"})
+    restored.case = {"case_id": "update", "provider": "meta", "account": "456"}
+    with pytest.raises(PermissionError, match="typed ownership"):
+        restored._guard(request, "meta", {"name": "changed"})
+
+
+def test_tiktok_update_requires_matching_resource_type(tmp_path):
+    recorder = ProviderRecorder(tmp_path)
+    recorder.case = {"case_id": "update", "provider": "tiktok", "account": "123"}
+    recorder._capture_ids(
+        {"data": {"campaign_id": "77"}},
+        provider="tiktok", account="123", resource="campaign",
+    )
+    payload = {"advertiser_id": "123", "adgroup_id": "77"}
+    request = requests.Request(
+        "POST", "https://business-api.tiktok.com/open_api/v1.3/adgroup/update/",
+        json=payload,
+    ).prepare()
+    with pytest.raises(PermissionError, match="typed ownership"):
+        recorder._guard(request, "tiktok", payload)
+    payload = {"advertiser_id": "123", "campaign_id": "77"}
+    request = requests.Request(
+        "POST", "https://business-api.tiktok.com/open_api/v1.3/campaign/update/",
+        json=payload,
+    ).prepare()
+    recorder._guard(request, "tiktok", payload)
+
+
+def test_google_gaql_post_is_read_only_for_test_account(tmp_path):
+    recorder = ProviderRecorder(tmp_path)
+    recorder.case = {"case_id": "query", "provider": "google-ads", "account": "123"}
+    request = requests.Request(
+        "POST",
+        "https://googleads.googleapis.com/v24/customers/123/googleAds:search",
+        json={"query": "SELECT campaign.id FROM campaign LIMIT 1"},
+    ).prepare()
+    recorder._guard(
+        request, "google-ads",
+        {"query": "SELECT campaign.id FROM campaign LIMIT 1"},
+    )
+
+
+def test_google_gaql_rejects_non_query_payload(tmp_path):
+    recorder = ProviderRecorder(tmp_path)
+    recorder.case = {"case_id": "query", "provider": "google-ads", "account": "123"}
+    payload = {"query": "SELECT campaign.id FROM campaign", "operations": [{"remove": "x"}]}
+    request = requests.Request(
+        "POST", "https://googleads.googleapis.com/v24/customers/123/googleAds:search",
+        json=payload,
+    ).prepare()
+    with pytest.raises(PermissionError, match="outside campaign hierarchy"):
+        recorder._guard(request, "google-ads", payload)
+
+
+@pytest.mark.parametrize(
+    "resource_name",
+    [
+        "",
+        "customers/999/campaigns/77",
+        "customers/123/campaignBudgets/77",
+    ],
+)
+def test_google_update_rejects_missing_cross_account_or_wrong_resource(
+    tmp_path, resource_name
+):
+    recorder = ProviderRecorder(tmp_path)
+    recorder.case = {"case_id": "update", "provider": "google-ads", "account": "123"}
+    payload = {
+        "operations": [{
+            "update": {"resourceName": resource_name, "status": "PAUSED"},
+            "updateMask": "status",
+        }]
+    }
+    request = requests.Request(
+        "POST", "https://googleads.googleapis.com/v24/customers/123/campaigns:mutate",
+        json=payload,
+    ).prepare()
+    recorder.created.add(resource_name)
+    with pytest.raises(PermissionError, match="test account or hierarchy"):
+        recorder._guard(request, "google-ads", payload)
+
+
+def test_google_ad_content_update_requires_owned_ad_under_test_customer(tmp_path):
+    recorder = ProviderRecorder(tmp_path)
+    recorder.case = {"case_id": "update", "provider": "google-ads", "account": "123"}
+    payload = {
+        "operations": [{
+            "update": {
+                "resourceName": "customers/123/ads/99",
+                "responsiveSearchAd": {"headlines": []},
+            },
+            "updateMask": "responsive_search_ad.headlines",
+        }]
+    }
+    request = requests.Request(
+        "POST", "https://googleads.googleapis.com/v24/customers/123/ads:mutate",
+        json=payload,
+    ).prepare()
+    with pytest.raises(PermissionError, match="created by this test"):
+        recorder._guard(request, "google-ads", payload)
+    recorder.created.add("customers/123/adGroupAds/77~99")
+    recorder._guard(request, "google-ads", payload)
 
 
 def test_google_pmax_listing_filter_requires_verified_paused_asset_group(tmp_path):

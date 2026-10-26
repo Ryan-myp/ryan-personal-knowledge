@@ -215,6 +215,30 @@ def test_llm_client_honors_required_initial_tool_choice():
     assert completions.requests[0]["tool_choice"] == "required"
 
 
+def test_llm_tool_schema_omits_system_managed_hidden_fields():
+    tool = {
+        "name": "create_ad",
+        "description": "Create an ad.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string"},
+                "request_id": {
+                    "type": "string",
+                    "ui_hidden": True,
+                    "description": "System-generated idempotency key",
+                },
+            },
+            "required": ["name"],
+            "additionalProperties": False,
+        },
+    }
+
+    parameters = LLMClient._provider_tools([tool])[0]["function"]["parameters"]
+    assert parameters["properties"] == {"name": {"type": "string"}}
+    assert parameters["required"] == ["name"]
+
+
 def test_llm_client_retries_once_when_final_response_is_empty():
     def response(content):
         return SimpleNamespace(

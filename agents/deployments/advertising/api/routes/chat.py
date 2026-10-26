@@ -56,6 +56,28 @@ def _confirmation_payload_for_response(context: ApiContext, value: Any) -> Any:
     return safe_payload
 
 
+def _confirmed_execution_result(result: Any, confirmed: bool) -> Any:
+    if not confirmed or not isinstance(result, dict):
+        return result
+    if result.get("needs_confirmation") or result.get("needs_input"):
+        return result
+    if str(result.get("status") or "").lower() != "succeeded":
+        return result
+    rows = result.get("results")
+    if isinstance(rows, list) and any(
+        isinstance(row, Mapping) and row.get("success") is True for row in rows
+    ):
+        return result
+    message = "已确认，但本回合未执行任何工具；广告未被修改。请重新提交并核对执行记录。"
+    return {
+        **result,
+        "success": False,
+        "status": "failed",
+        "reply": message,
+        "error": message,
+    }
+
+
 def _chat_result_for_response(context: ApiContext, result: Any) -> Any:
     """Redact a Run result while preserving its top-level confirmation token."""
     safe_result = context.redact(result)
@@ -349,6 +371,7 @@ def create_chat_router(context: ApiContext) -> APIRouter:
                 tool_allowlist=request.tool_allowlist,
                 principal=principal,
             )
+            result = _confirmed_execution_result(result, request.confirmed)
             return JSONResponse(
                 content=_chat_result_for_response(context, result)
             )
@@ -500,7 +523,9 @@ def create_chat_router(context: ApiContext) -> APIRouter:
                             reply_marker = payload
                         else:
                             yield event(payload)
-                    result = await task
+                    result = _confirmed_execution_result(
+                        await task, request.confirmed
+                    )
                 except Exception as error:
                     yield event({
                         "type": "error",

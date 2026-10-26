@@ -1794,7 +1794,7 @@ class TikTokToolSource(BaseProviderToolSource):
                 "Sales 和 Product Sales，live 仅允许创建暂停状态。"
             ),
             method_name="create_smart_plus_campaign", result_key="campaign",
-            contract_version="1.5.0",
+            contract_version="1.6.0",
             properties={"account_id": {"type": "string"}, **smart_plus_campaign["properties"]},
             required=["account_id"] + smart_plus_campaign["required"],
             requires=smart_plus_campaign["requires"],
@@ -1819,7 +1819,7 @@ class TikTokToolSource(BaseProviderToolSource):
                 "出价和排期由渠道级联规则校验，live 仅允许创建暂停状态。"
             ),
             method_name="create_smart_plus_adgroup", result_key="adgroup",
-            contract_version="1.5.0",
+            contract_version="1.6.0",
             properties={"account_id": {"type": "string"}, **smart_plus_adgroup["properties"]},
             required=["account_id"] + smart_plus_adgroup["required"],
             requires=smart_plus_adgroup["requires"],
@@ -1846,7 +1846,7 @@ class TikTokToolSource(BaseProviderToolSource):
                 "图片等渠道素材引用，live 仅允许创建暂停状态。"
             ),
             method_name="create_smart_plus_ad", result_key="ad",
-            contract_version="1.6.0",
+            contract_version="1.7.0",
             properties={"account_id": {"type": "string"}, **smart_plus_ad["properties"]},
             required=["account_id"] + smart_plus_ad["required"],
             requires=smart_plus_ad["requires"],

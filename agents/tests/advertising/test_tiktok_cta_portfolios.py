@@ -83,16 +83,17 @@ def test_recommended_cta_content_passes_the_closed_schema_and_live_transport():
     }})]
 
 
-def test_test_transport_allows_only_non_serving_cta_portfolio_assets(tmp_path):
+def test_test_transport_rejects_cta_portfolio_writes_outside_campaign_scope(tmp_path):
     recorder = ProviderRecorder(tmp_path)
     recorder.case = {"provider": "tiktok", "account": "7397068114548195329"}
     request = SimpleNamespace(
         method="POST", url="https://business-api.tiktok.com/open_api/v1.3/creative/portfolio/create/",
     )
-    recorder._guard(request, "tiktok", {
-        "advertiser_id": "7397068114548195329", "creative_portfolio_type": "CTA",
-    })
-    with pytest.raises(PermissionError, match="CTA"):
+    with pytest.raises(PermissionError, match="outside campaign hierarchy"):
+        recorder._guard(request, "tiktok", {
+            "advertiser_id": "7397068114548195329", "creative_portfolio_type": "CTA",
+        })
+    with pytest.raises(PermissionError, match="outside campaign hierarchy"):
         recorder._guard(request, "tiktok", {
             "advertiser_id": "7397068114548195329", "creative_portfolio_type": "CARD",
         })

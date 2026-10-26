@@ -1,5 +1,5 @@
 {
-  "digest": "d051afc0fda553083231d691f0e40be65701b3038fa39d46470f961e7d77ec68",
+  "digest": "9c47e37c9f09e03755178ad2d3a662a5aedf2d0e34ea2358c9d044c028851f77",
   "format_version": 1,
   "platforms": {
     "advertising": {
@@ -20202,7 +20202,7 @@
       ]
     },
     "meta": {
-      "digest": "0e2cd9dc4fe2f65cc6d6b8eb695b93c350dd0a06d0246bc7ce19b92899c63754",
+      "digest": "56e2c61d51e89a3cea38d03daafa35926211a8425ade915cb6579142bfcf5339",
       "tool_count": 82,
       "tools": [
         {
@@ -21211,6 +21211,7 @@
                 "lookup_defaults": {
                   "limit": 1000
                 },
+                "lookup_query_field": "campaign_id",
                 "lookup_result_key": "campaigns",
                 "lookup_tool": "meta_list_campaigns",
                 "selection_label_fields": [
@@ -25840,6 +25841,7 @@
                 "lookup_defaults": {
                   "limit": 1000
                 },
+                "lookup_query_field": "campaign_id",
                 "lookup_result_key": "campaigns",
                 "lookup_tool": "meta_list_campaigns",
                 "selection_label_fields": [
@@ -26328,8 +26330,8 @@
           "action": "get",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
-          "contract_hash": "23f32aae1b3533c1fcf60d77cea77a71ba61de32dee9fbe5b369cff675304362",
-          "contract_version": "1.6.0",
+          "contract_hash": "7a7526b03be405b5dd7048d4bb31f37a783a09f97594f4e1e2d66f768b8dca1d",
+          "contract_version": "1.7.0",
           "description": "获取 Meta Ad 详情。",
           "effect_class": "read",
           "idempotency_key_field": null,
@@ -26391,8 +26393,20 @@
               "fields": {
                 "description": "可选的 Meta Ad 字段集合",
                 "items": {
-                  "maxLength": 100,
-                  "minLength": 1,
+                  "enum": [
+                    "id",
+                    "account_id",
+                    "name",
+                    "status",
+                    "effective_status",
+                    "adset_id",
+                    "campaign_id",
+                    "creative",
+                    "tracking_specs",
+                    "conversion_domain",
+                    "created_time",
+                    "updated_time"
+                  ],
                   "type": "string"
                 },
                 "maxItems": 30,
@@ -26526,8 +26540,8 @@
           "action": "get",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
-          "contract_hash": "8ad0b7041eca1042e0cd3d43ae2226d7b52b19f32653aef679b68a2d6c9572df",
-          "contract_version": "1.5.1",
+          "contract_hash": "1476503b212e451a1c155688457235fb0f4f028fffe03f7d2dc89d0dc941ecf1",
+          "contract_version": "1.1.0",
           "description": "获取 Meta Ad Set 详情。",
           "effect_class": "read",
           "idempotency_key_field": null,
@@ -26565,6 +26579,7 @@
                 "lookup_defaults": {
                   "limit": 1000
                 },
+                "lookup_query_field": "campaign_id",
                 "lookup_result_key": "campaigns",
                 "lookup_tool": "meta_list_campaigns",
                 "selection_label_fields": [
@@ -26581,7 +26596,26 @@
               "fields": {
                 "description": "可选的 Meta Ad Set 字段集合",
                 "items": {
-                  "minLength": 1,
+                  "enum": [
+                    "id",
+                    "account_id",
+                    "name",
+                    "campaign_id",
+                    "status",
+                    "effective_status",
+                    "daily_budget",
+                    "lifetime_budget",
+                    "bid_amount",
+                    "bid_strategy",
+                    "billing_event",
+                    "optimization_goal",
+                    "promoted_object",
+                    "targeting",
+                    "start_time",
+                    "end_time",
+                    "created_time",
+                    "updated_time"
+                  ],
                   "type": "string"
                 },
                 "type": "array"
@@ -26883,8 +26917,8 @@
           "action": "get",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
-          "contract_hash": "91f04c50def19ae6ebb3f5f7926ffc146aaf14be35985b437927ce3a1c9a4154",
-          "contract_version": "1.5.1",
+          "contract_hash": "8c43627209d47ce0fc44fc4d041d8038ccf0627d1074a5b9d144510204758bd6",
+          "contract_version": "1.1.0",
           "description": "获取 Meta Campaign 详情。",
           "effect_class": "read",
           "idempotency_key_field": null,
@@ -26897,6 +26931,7 @@
                 "lookup_defaults": {
                   "limit": 1000
                 },
+                "lookup_query_field": "campaign_id",
                 "lookup_result_key": "campaigns",
                 "lookup_tool": "meta_list_campaigns",
                 "selection_label_fields": [
@@ -26917,7 +26952,26 @@
               "fields": {
                 "description": "可选的 Meta Campaign 字段集合",
                 "items": {
-                  "minLength": 1,
+                  "enum": [
+                    "id",
+                    "account_id",
+                    "name",
+                    "status",
+                    "effective_status",
+                    "objective",
+                    "daily_budget",
+                    "lifetime_budget",
+                    "budget_remaining",
+                    "buying_type",
+                    "bid_strategy",
+                    "start_time",
+                    "stop_time",
+                    "created_time",
+                    "updated_time",
+                    "special_ad_categories",
+                    "adsets",
+                    "ads"
+                  ],
                   "type": "string"
                 },
                 "type": "array"
@@ -26985,6 +27039,7 @@
                 "lookup_defaults": {
                   "limit": 1000
                 },
+                "lookup_query_field": "campaign_id",
                 "lookup_result_key": "campaigns",
                 "lookup_tool": "meta_list_campaigns",
                 "selection_label_fields": [
@@ -27979,6 +28034,7 @@
                 "lookup_defaults": {
                   "limit": 1000
                 },
+                "lookup_query_field": "campaign_id",
                 "lookup_result_key": "campaigns",
                 "lookup_tool": "meta_list_campaigns",
                 "selection_label_fields": [
@@ -28351,7 +28407,7 @@
           "action": "list",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
-          "contract_hash": "7f60b8ad392410f4857c2760aa4d4079ccf15afd234eeff2f9887bee821c1e6b",
+          "contract_hash": "b17d0cce71e246d03bc9d6cb0cbbde06c12c5bd287eeafa6e9d1c7556c212514",
           "contract_version": "1.5.1",
           "description": "列出 Meta Campaign 列表。",
           "effect_class": "read",
@@ -28362,6 +28418,25 @@
             "conditional_rules": [],
             "properties": {
               "account_id": {
+                "type": "string"
+              },
+              "campaign_id": {
+                "lookup_defaults": {
+                  "limit": 1000
+                },
+                "lookup_query_field": "campaign_id",
+                "lookup_result_key": "campaigns",
+                "lookup_tool": "meta_list_campaigns",
+                "minLength": 1,
+                "selection_label_fields": [
+                  "name",
+                  "campaign_name",
+                  "id"
+                ],
+                "selection_value_fields": [
+                  "id",
+                  "campaign_id"
+                ],
                 "type": "string"
               },
               "limit": {
@@ -29659,6 +29734,7 @@
                 "lookup_defaults": {
                   "limit": 1000
                 },
+                "lookup_query_field": "campaign_id",
                 "lookup_result_key": "campaigns",
                 "lookup_tool": "meta_list_campaigns",
                 "selection_label_fields": [
@@ -29733,6 +29809,7 @@
                 "lookup_defaults": {
                   "limit": 1000
                 },
+                "lookup_query_field": "campaign_id",
                 "lookup_result_key": "campaigns",
                 "lookup_tool": "meta_list_campaigns",
                 "selection_label_fields": [
@@ -30499,6 +30576,7 @@
                 "lookup_defaults": {
                   "limit": 1000
                 },
+                "lookup_query_field": "campaign_id",
                 "lookup_result_key": "campaigns",
                 "lookup_tool": "meta_list_campaigns",
                 "selection_label_fields": [
@@ -30772,6 +30850,7 @@
                 "lookup_defaults": {
                   "limit": 1000
                 },
+                "lookup_query_field": "campaign_id",
                 "lookup_result_key": "campaigns",
                 "lookup_tool": "meta_list_campaigns",
                 "selection_label_fields": [
@@ -32072,7 +32151,7 @@
       ]
     },
     "tiktok": {
-      "digest": "b8cc97326b9c38b507b722562cb743a85f643cfcba7975e57168370bc55e5c12",
+      "digest": "c2e2dae01050110105e246d5e9c42a19d40dabfe22b92af0dad19bf842c02732",
       "tool_count": 89,
       "tools": [
         {
@@ -46013,8 +46092,8 @@
             }
           ],
           "cancellation_mode": "cooperative",
-          "contract_hash": "ae0dd8396f2f0bf7de3e3c6fa386a76410851033e9f5d9d1bc721cfad3dcf956",
-          "contract_version": "1.6.0",
+          "contract_hash": "c2e5044ee5016369552e51e62493723811eabaf6788195a9dc74b3f9076a50a4",
+          "contract_version": "1.7.0",
           "description": "使用 TikTok Upgraded Smart+ Ad API 创建广告和素材；支持 Spark 帖子、视频、图片等渠道素材引用，live 仅允许创建暂停状态。",
           "effect_class": "write",
           "idempotency_key_field": null,
@@ -46826,8 +46905,8 @@
                 "type": "string"
               },
               "request_id": {
-                "description": "System-generated idempotency key",
-                "minLength": 1,
+                "description": "System-generated decimal int64 idempotency key",
+                "pattern": "^[0-9]{1,19}$",
                 "type": "string",
                 "ui_hidden": true
               },
@@ -46965,8 +47044,8 @@
             }
           ],
           "cancellation_mode": "cooperative",
-          "contract_hash": "ceaa1f33545e37bd305f3bf3817cd2a4c758c7e5e29cb49a418d6ff50f92fbce",
-          "contract_version": "1.5.0",
+          "contract_hash": "68ff5ace92fd631ce6aa5a4d4f1efe411d615f52ef18763793be4ffebade99cc",
+          "contract_version": "1.6.0",
           "description": "使用 TikTok Upgraded Smart+ Ad Group API 创建广告组；定向、优化目标、出价和排期由渠道级联规则校验，live 仅允许创建暂停状态。",
           "effect_class": "write",
           "idempotency_key_field": null,
@@ -47408,8 +47487,8 @@
                 "type": "string"
               },
               "request_id": {
-                "description": "System-generated idempotency key",
-                "minLength": 1,
+                "description": "System-generated decimal int64 idempotency key",
+                "pattern": "^[0-9]{1,19}$",
                 "type": "string",
                 "ui_hidden": true
               },
@@ -47709,8 +47788,8 @@
             }
           ],
           "cancellation_mode": "cooperative",
-          "contract_hash": "e85e3033cfc9cfc4b23ab5e1cd615a56eb54a18c500d19362c3039bec2f3a63c",
-          "contract_version": "1.5.0",
+          "contract_hash": "2af34a88e64778aae66e832f4388510299a1e885f1828b341630b251b5eafd92",
+          "contract_version": "1.6.0",
           "description": "使用 TikTok Upgraded Smart+ Campaign API 创建广告系列；支持 App、Web/Traffic、Sales 和 Product Sales，live 仅允许创建暂停状态。",
           "effect_class": "write",
           "idempotency_key_field": null,
@@ -47934,8 +48013,8 @@
                 "type": "string"
               },
               "request_id": {
-                "description": "System-generated idempotency key",
-                "minLength": 1,
+                "description": "System-generated decimal int64 idempotency key",
+                "pattern": "^[0-9]{1,19}$",
                 "type": "string",
                 "ui_hidden": true
               },

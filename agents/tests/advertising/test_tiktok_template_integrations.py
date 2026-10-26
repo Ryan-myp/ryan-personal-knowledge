@@ -61,6 +61,78 @@ def test_smart_plus_placements_belong_at_the_provider_top_level():
     assert "placement_type" not in payload["targeting_spec"]
 
 
+def test_smart_plus_adgroup_rejects_non_numeric_request_id_before_provider_call():
+    client = TikTokAPIClient({"access_token": "test"})
+    client.request = lambda *_args, **_kwargs: pytest.fail("invalid ID reached Provider")
+    with pytest.raises(ValueError, match="request_id must be a decimal int64"):
+        client.create_smart_plus_adgroup(ACCOUNT, "123", {
+            "request_id": "76308595-d7c8-454f-978d-c2df82778f0f",
+            "adgroup_name": "Paused group", "promotion_type": "WEBSITE",
+            "objective_type": "TRAFFIC", "optimization_goal": "CLICK",
+            "bid_type": "BID_TYPE_NO_BID", "billing_event": "CPC",
+            "schedule_type": "SCHEDULE_START_END",
+            "schedule_start_time": "2026-10-27 00:00:00",
+            "schedule_end_time": "2026-11-05 00:00:00",
+            "location_ids": ["1880251"], "operation_status": "DISABLE",
+        }, live=True)
+
+
+def test_smart_plus_explicit_single_video_uses_flat_cover_when_missing():
+    client = TikTokAPIClient({"access_token": "test"})
+    plan = client.create_smart_plus_ad(ACCOUNT, "123", "456", {
+        "ad_name": "Paused video",
+        "operation_status": "DISABLE",
+        "ad_format": "SINGLE_VIDEO",
+        "video_id": "video-one",
+        "image_web_uris": ["cover-one"],
+        "creative_list": [{
+            "creative_info": {
+                "ad_format": "SINGLE_VIDEO",
+                "video_info": {"video_id": "video-one"},
+            },
+        }],
+    })
+    creative = plan["operation"]["smart_plus/ad/create/"]["create"][
+        "creative_list"
+    ][0]["creative_info"]
+    assert creative["image_info"] == [{"web_uri": "cover-one"}]
+
+
+def test_smart_plus_explicit_cover_takes_precedence_over_flat_alias():
+    client = TikTokAPIClient({"access_token": "test"})
+    plan = client.create_smart_plus_ad(ACCOUNT, "123", "456", {
+        "ad_name": "Paused video",
+        "operation_status": "DISABLE",
+        "image_web_uris": ["other-cover"],
+        "creative_list": [{
+            "creative_info": {
+                "ad_format": "SINGLE_VIDEO",
+                "video_info": {"video_id": "video-one"},
+                "image_info": [{"web_uri": "selected-cover"}],
+            },
+        }],
+    })
+    creative = plan["operation"]["smart_plus/ad/create/"]["create"][
+        "creative_list"
+    ][0]["creative_info"]
+    assert creative["image_info"] == [{"web_uri": "selected-cover"}]
+
+
+def test_smart_plus_request_id_contract_requires_decimal_int64():
+    from agents.tools.advertising.providers.tiktok.parameters import (
+        tiktok_smart_plus_ad_schema,
+        tiktok_smart_plus_adgroup_schema,
+        tiktok_smart_plus_campaign_schema,
+    )
+
+    for schema in (
+        tiktok_smart_plus_campaign_schema,
+        tiktok_smart_plus_adgroup_schema,
+        tiktok_smart_plus_ad_schema,
+    ):
+        assert schema()["properties"]["request_id"]["pattern"] == "^[0-9]{1,19}$"
+
+
 def test_ad_queries_read_smart_plus_ads_when_the_regular_endpoint_is_empty():
     client = TikTokAPIClient({"access_token": "test"})
     calls = []

@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import argparse
+from functools import partial
 import json
 import math
 from pathlib import Path
+import re
 import sys
 import tempfile
 import time
@@ -17,6 +19,9 @@ if str(ROOT) not in sys.path:
 
 from pydantic import BaseModel, ConfigDict, Field
 from agents.agent_platform.evals.regression import RegressionAssertions, evaluate_regression
+from agents.agent_platform.evals.execution_evidence import regression_calls
+from agents.deployments.advertising.local_config import load_default_local_env
+from agents.evals.advertising.skill_up_engine import configured_model_adapter
 
 
 class RegressionCase(BaseModel):
@@ -28,6 +33,9 @@ class RegressionCase(BaseModel):
     previous_output: str = Field(default="", max_length=4000)
     assertions: RegressionAssertions = Field(default_factory=RegressionAssertions)
     runnable: bool | None = None
+
+
+_SAFE_TOOL_NAME = re.compile(r"[A-Za-z][A-Za-z0-9_.:-]{0,119}\Z")
 
 
 def load_cases(path: Path) -> list[RegressionCase]:
@@ -52,15 +60,28 @@ def run_suite(
     results = []
     for case in cases:
         started = time.perf_counter()
+        tool_names: list[str] = []
+        tool_call_count = 0
         if not case.assertions.executable:
             result = {"status": "ungraded", "checks": 0, "failures": []}
         else:
             try:
-                result = evaluate_regression(execute(case), case.assertions)
+                response = execute(case)
+                calls = regression_calls(response)
+                tool_call_count = len(calls)
+                tool_names = [
+                    name if _SAFE_TOOL_NAME.fullmatch(name) else "<invalid>"
+                    for call in calls[:64]
+                    if isinstance(call, Mapping)
+                    for name in [str(call.get("tool") or "")]
+                ]
+                result = evaluate_regression(response, case.assertions)
             except (OSError, RuntimeError, ValueError, KeyError, TypeError) as error:
                 result = {"status": "error", "checks": 0, "failures": [type(error).__name__]}
         results.append({
             "id": case.id, **result,
+            "tool_call_count": tool_call_count,
+            "tool_names": tool_names,
             "duration_ms": round((time.perf_counter() - started) * 1000, 3),
         })
     totals = {
@@ -68,7 +89,8 @@ def run_suite(
         for status in ("passed", "failed", "ungraded", "error")
     }
     durations = sorted(
-        result["duration_ms"] for result in results if result["status"] != "ungraded"
+        result["duration_ms"] for result in results
+        if result["status"] in {"passed", "failed"}
     )
     return {
         "schema_version": "agent-regression-report/v1", "mode": mode,
@@ -80,11 +102,16 @@ def run_suite(
     }
 
 
-def _model_response(case: RegressionCase) -> Mapping[str, Any]:
+def _model_response(
+    case: RegressionCase, *, model_adapter: Any,
+) -> Mapping[str, Any]:
     from agents.evals.advertising.skill_up_engine import run
 
     with tempfile.TemporaryDirectory(prefix="agent-regression-") as directory:
-        result = run({"case_id": case.id, "prompt": case.input, "workspace": directory})
+        result = run(
+            {"case_id": case.id, "prompt": case.input, "workspace": directory},
+            model_adapter=model_adapter,
+        )
     return result["metadata"]["runtime_result"]
 
 
@@ -98,7 +125,15 @@ def main() -> int:
     args = parser.parse_args()
     cases = load_cases(args.cases)
     if args.model_backed:
-        report = run_suite(cases, _model_response, mode="model_backed_offline_providers")
+        load_default_local_env()
+        adapter = configured_model_adapter()
+        if adapter is None:
+            raise RuntimeError("model evaluation is not configured")
+        report = run_suite(
+            cases,
+            partial(_model_response, model_adapter=adapter),
+            mode="model_backed_offline_providers",
+        )
     else:
         if args.responses.stat().st_size > 4_194_304:
             raise ValueError("response evidence exceeds 4 MiB")

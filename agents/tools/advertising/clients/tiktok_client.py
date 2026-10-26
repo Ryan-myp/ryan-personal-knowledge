@@ -34,6 +34,16 @@ TIKTOK_SMART_PLUS_CTA_VALUES = (
 )
 
 
+def _smart_plus_request_id(value: Any) -> str:
+    request_id = str(value or time.time_ns())
+    if (
+        re.fullmatch(r"[0-9]{1,19}", request_id) is None
+        or int(request_id) > 2**63 - 1
+    ):
+        raise ValueError("TikTok Smart+ request_id must be a decimal int64")
+    return request_id
+
+
 class TikTokAPIClient(BasePlatformClient):
     """
     TikTok Marketing API 客户端 (open_api/v1.3)
@@ -1619,7 +1629,7 @@ class TikTokAPIClient(BasePlatformClient):
         public_objective, objective = self._smart_plus_objective(
             campaign.get("objective_type") or campaign.get("objective")
         )
-        campaign = {**campaign, "request_id": str(campaign.get("request_id") or time.time_ns())}
+        campaign = {**campaign, "request_id": _smart_plus_request_id(campaign.get("request_id"))}
         if live and self._smart_plus_status(campaign) != "DISABLE":
             raise ValueError("TikTok Smart+ live creation only allows a paused campaign")
         for field in ("request_id", "campaign_name"):
@@ -1704,7 +1714,7 @@ class TikTokAPIClient(BasePlatformClient):
             raise ValueError(
                 "Provider authorization context is resolved privately by the client"
             )
-        adgroup = {**adgroup, "request_id": str(adgroup.get("request_id") or time.time_ns())}
+        adgroup = {**adgroup, "request_id": _smart_plus_request_id(adgroup.get("request_id"))}
         if live and self._smart_plus_status(adgroup) != "DISABLE":
             raise ValueError("TikTok Smart+ live creation only allows a paused ad group")
         for field in (
@@ -1882,7 +1892,7 @@ class TikTokAPIClient(BasePlatformClient):
         )
         if has_portfolio and (ad.get("call_to_action") or ad.get("call_to_action_list")):
             raise ValueError("Choose a CTA portfolio ID or plain CTA values, not both")
-        ad = {**ad, "request_id": str(ad.get("request_id") or time.time_ns())}
+        ad = {**ad, "request_id": _smart_plus_request_id(ad.get("request_id"))}
         if live and self._smart_plus_status(ad) != "DISABLE":
             raise ValueError("TikTok Smart+ live creation only allows a paused ad")
         for field in ("request_id", "ad_name"):
@@ -1947,6 +1957,13 @@ class TikTokAPIClient(BasePlatformClient):
             image_web_uris = creative_info.pop("image_web_uris", None)
             if image_web_uris in (None, "", []) and image_ids not in (None, "", []):
                 image_web_uris = image_ids
+            if (
+                image_web_uris in (None, "", [])
+                and not creative_info.get("image_info")
+                and creative_info.get("video_info")
+                and len(creative_list) == 1
+            ):
+                image_web_uris = ad.get("image_web_uris") or ad.get("image_ids")
             if image_web_uris not in (None, "", []):
                 if not isinstance(image_web_uris, list):
                     raise ValueError("TikTok Smart+ image selections must be an array")

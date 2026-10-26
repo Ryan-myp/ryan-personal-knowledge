@@ -56,6 +56,30 @@ RESOURCES = {
     "product_group",
     "creative_portfolio",
 }
+WRITABLE_HIERARCHY_RESOURCES = {
+    "campaign", "ad_group", "ad_set", "ad", "asset_group",
+    "listing_group_filter", "product_group",
+}
+GOOGLE_MUTATION_RESOURCES = {
+    "campaigns", "adGroups", "adGroupAds", "adGroupCriteria",
+    "assetGroups", "assetGroupListingGroupFilters", "ads",
+}
+GOOGLE_BATCH_OPERATIONS = {
+    "campaignOperation": "campaigns",
+    "adGroupOperation": "adGroups",
+    "adGroupAdOperation": "adGroupAds",
+    "adGroupCriterionOperation": "adGroupCriteria",
+    "assetGroupOperation": "assetGroups",
+    "assetGroupListingGroupFilterOperation": "assetGroupListingGroupFilters",
+}
+META_CREATE_RESOURCES = {
+    "campaigns": "campaign", "adsets": "ad_set", "ads": "ad",
+}
+TIKTOK_CREATE_IDS = {
+    "campaign": ("campaign_id",),
+    "ad_group": ("adgroup_id",),
+    "ad": ("ad_id", "ad_ids", "smart_plus_ad_id"),
+}
 SENSITIVE = re.compile(
     r"token|secret|api[_-]?key|private_key|password|bc_id|partner_id|perter_id|mcc",
     re.I,
@@ -727,17 +751,15 @@ def _approved_tools():
         for binding in create_tool_source(provider).list_bindings():
             tool = binding.definition
             if (
-                tool.action not in {"create", "update"}
-                or tool.resource_type not in RESOURCES
+                tool.action not in {"create", "update", "delete"}
+                or tool.resource_type not in WRITABLE_HIERARCHY_RESOURCES
                 or not tool.live_support
             ):
                 continue
             fields = tool.input_schema.properties
             if (
                 tool.action == "create"
-                and tool.resource_type != "creative"
                 and tool.resource_type != "listing_group_filter"
-                and tool.resource_type != "creative_portfolio"
                 and not ({"status", "operation_status"} & set(fields))
             ):
                 continue
@@ -935,6 +957,16 @@ class ProviderRecorder:
             for value in persisted_ids
             for identifier in self._resource_identifiers(value)
         }
+        typed_path = self.root / "created-resource-types.json"
+        typed = json.loads(typed_path.read_text()) if typed_path.is_file() else []
+        self.created_typed = {
+            (row["provider"], row["account"], row["resource"], row["id"])
+            for row in typed
+            if isinstance(row, dict)
+            and all(isinstance(row.get(key), str) for key in (
+                "provider", "account", "resource", "id",
+            ))
+        }
         self.paused_ad_groups = set()
         self.paused_asset_groups = set()
         self.paused_campaigns = set()
@@ -972,8 +1004,87 @@ class ProviderRecorder:
         target = data.get("advertiser_id") or data.get("account_id")
         if target and str(target).removeprefix("act_") != account:
             raise PermissionError("Provider request outside the test account")
-        if request.method != "POST":
+        if request.method not in {"POST", "PUT", "PATCH", "DELETE"}:
             return
+        if provider == "meta":
+            if request.method == "DELETE":
+                match = re.fullmatch(r"/v[\d.]+/(\d+)/?", path)
+                if match is None:
+                    raise PermissionError("write outside campaign hierarchy")
+                self._require_typed(provider, account, match.group(1))
+                return
+            if request.method != "POST":
+                raise PermissionError("write outside campaign hierarchy")
+            if not (
+                re.fullmatch(
+                    rf"/v[\d.]+/act_{account}/(?:campaigns|adsets|ads)/?", path
+                )
+                or re.fullmatch(r"/v[\d.]+/\d+/?", path)
+            ):
+                raise PermissionError("write outside campaign hierarchy")
+        elif provider == "tiktok":
+            if request.method != "POST":
+                raise PermissionError("write outside campaign hierarchy")
+            action = re.fullmatch(
+                r"/open_api/v[\d.]+/(?:smart_plus/)?"
+                r"(campaign|adgroup|ad)/(create|update|delete|status/update)/?",
+                path,
+            )
+            if action is None:
+                raise PermissionError("write outside campaign hierarchy")
+            if action.group(2) == "delete":
+                field = {
+                    "campaign": "campaign_ids", "ad": "ad_ids",
+                    "adgroup": "adgroup_ids",
+                }[action.group(1)]
+                ids = data.get(field)
+                if not isinstance(ids, list) or not ids:
+                    raise PermissionError("delete requires owned resource IDs")
+                resource = "ad_group" if action.group(1) == "adgroup" else action.group(1)
+                self._require_typed(provider, account, ids, resource)
+        elif provider == "google-ads":
+            if (
+                request.method == "POST"
+                and path.rsplit("/", 1)[-1] in {
+                    "googleAds:search", "googleAds:searchStream",
+                }
+                and isinstance(data.get("query"), str)
+                and data["query"].strip()
+                and set(data) <= {"query", "pageSize", "pageToken", "validateOnly"}
+            ):
+                return
+            if request.method != "POST" or not path.endswith(":mutate"):
+                raise PermissionError("write outside campaign hierarchy")
+            resource = path.rsplit("/", 1)[-1].split(":", 1)[0]
+            mutations = [
+                (node, parents) for node, parents in _walk_with_keys(data)
+                if any(key in node for key in ("create", "update", "remove"))
+            ]
+            if not mutations:
+                raise PermissionError("write outside campaign hierarchy")
+            for node, parents in mutations:
+                target = resource
+                if resource == "googleAds":
+                    target = next(
+                        (
+                            GOOGLE_BATCH_OPERATIONS[key]
+                            for key in reversed(parents)
+                            if key in GOOGLE_BATCH_OPERATIONS
+                        ),
+                        "",
+                    )
+                if target not in GOOGLE_MUTATION_RESOURCES or (
+                    target == "ads" and ("create" in node or "remove" in node)
+                ):
+                    raise PermissionError("write outside campaign hierarchy")
+                if "remove" in node:
+                    name = node["remove"]
+                    match = re.fullmatch(
+                        rf"customers/{account}/{target}/([^/]+)", str(name)
+                    )
+                    if match is None:
+                        raise PermissionError("delete outside test account or hierarchy")
+                    self._require_created((name, match.group(1)))
         if provider == "meta" and path.rstrip("/").endswith(
             ("/campaigns", "/adsets", "/ads")
         ):
@@ -984,21 +1095,33 @@ class ProviderRecorder:
         if provider == "tiktok" and "/create/" in path:
             self._guard_tiktok_creation(data, path)
         if provider == "meta" and re.fullmatch(r"/v[\d.]+/\d+/?", path):
-            if path.rstrip("/").rsplit("/", 1)[-1] not in self.created:
-                raise PermissionError("update is not a resource created by this test")
+            self._require_typed(
+                provider, account, path.rstrip("/").rsplit("/", 1)[-1]
+            )
             self._guard_update_status(provider, data)
         if provider == "tiktok" and "/update/" in path:
-            self._guard_tiktok_update(data)
+            resource = "ad_group" if action.group(1) == "adgroup" else action.group(1)
+            self._guard_tiktok_update(data, account, resource)
 
+    def _require_created(self, identifiers):
+        if any(str(identifier) not in self.created for identifier in identifiers):
+            raise PermissionError("delete is not a resource created by this test")
+
+    def _require_typed(self, provider, account, identifiers, resource=None):
+        ids = identifiers if isinstance(identifiers, list) else [identifiers]
+        allowed_resources = (
+            (resource,) if resource else ("campaign", "ad_set", "ad_group", "ad")
+        )
+        if not ids or any(
+            not any(
+                (provider, account, kind, str(identifier)) in self.created_typed
+                for kind in allowed_resources
+            )
+            for identifier in ids
+        ):
+            raise PermissionError("write requires typed ownership from this test")
     @staticmethod
     def _guard_tiktok_creation(data, path):
-        if path.endswith("/creative/portfolio/create/"):
-            if data.get("creative_portfolio_type") != "CTA":
-                raise PermissionError(
-                    "Only non-serving CTA portfolio creation is authorized"
-                )
-            return
-
         if path.rstrip("/").endswith("/smart_plus/ad/create"):
             if str(data.get("operation_status") or "").upper() != "DISABLE":
                 raise PermissionError(
@@ -1034,13 +1157,8 @@ class ProviderRecorder:
             "adGroupAds": "Ad",
             "assetGroups": "Asset Group",
         }
-        operation_resources = {
-            "campaignOperation": "campaigns",
-            "adGroupOperation": "adGroups",
-            "adGroupAdOperation": "adGroupAds",
-            "assetGroupOperation": "assetGroups",
-        }
         path_resource = path.rsplit("/", 1)[-1].split(":", 1)[0]
+        customer = re.search(r"/customers/(\d+)/", path)
         for node, parents in _walk_with_keys(data):
             create = node.get("create")
             if isinstance(create, dict):
@@ -1048,9 +1166,9 @@ class ProviderRecorder:
                 if resource == "googleAds":
                     resource = next(
                         (
-                            operation_resources[item]
+                            GOOGLE_BATCH_OPERATIONS[item]
                             for item in reversed(parents)
-                            if item in operation_resources
+                            if item in GOOGLE_BATCH_OPERATIONS
                         ),
                         "",
                     )
@@ -1098,13 +1216,30 @@ class ProviderRecorder:
             update = node.get("update")
             if isinstance(update, dict):
                 self._guard_update_status("google-ads", update)
-                resource = update.get("resourceName", "")
-                numeric_ad = resource.rsplit("/", 1)[-1] if "/ads/" in resource else ""
+                target = path_resource
+                if target == "googleAds":
+                    target = next(
+                        (
+                            GOOGLE_BATCH_OPERATIONS[item]
+                            for item in reversed(parents)
+                            if item in GOOGLE_BATCH_OPERATIONS
+                        ),
+                        "",
+                    )
+                resource = update.get("resourceName")
+                match = re.fullmatch(
+                    rf"customers/{customer.group(1)}/{target}/([^/]+)",
+                    resource if isinstance(resource, str) else "",
+                ) if customer and target else None
+                if match is None:
+                    raise PermissionError("update outside test account or hierarchy")
+                numeric_ad = match.group(1) if target == "ads" else ""
                 owned_ad = bool(numeric_ad) and any(
-                    "/adGroupAds/" in owned and owned.endswith("~" + numeric_ad)
+                    owned.startswith(f"customers/{customer.group(1)}/adGroupAds/")
+                    and owned.endswith("~" + numeric_ad)
                     for owned in self.created
                 )
-                if resource and resource not in self.created and not owned_ad:
+                if resource not in self.created and not owned_ad:
                     raise PermissionError(
                         "update is not a resource created by this test"
                     )
@@ -1133,7 +1268,7 @@ class ProviderRecorder:
                 "Google App Ad requires verified PAUSED Ad Group and Campaign"
             )
 
-    def _guard_tiktok_update(self, data):
+    def _guard_tiktok_update(self, data, account, resource):
         self._guard_update_status("tiktok", data)
         fields = (
             "campaign_id",
@@ -1148,8 +1283,7 @@ class ProviderRecorder:
         for field in fields:
             value = data.get(field)
             ids.extend(value if isinstance(value, list) else [value] if value else [])
-        if not ids or any(str(item) not in self.created for item in ids):
-            raise PermissionError("update is not a resource created by this test")
+        self._require_typed("tiktok", account, ids, resource)
 
     @staticmethod
     def _guard_update_status(provider, data):
@@ -1208,7 +1342,23 @@ class ProviderRecorder:
             and not document.get("error")
             and document.get("code") in (None, 0)
         ):
-            self._capture_ids(document)
+            resource = None
+            if provider == "meta":
+                match = re.fullmatch(
+                    r"/v[\d.]+/act_\d+/(campaigns|adsets|ads)/?", path
+                )
+                resource = META_CREATE_RESOURCES.get(match.group(1)) if match else None
+            elif provider == "tiktok":
+                match = re.fullmatch(
+                    r"/open_api/v[\d.]+/(?:smart_plus/)?"
+                    r"(campaign|adgroup|ad)/create/?", path
+                )
+                resource = (
+                    "ad_group" if match.group(1) == "adgroup" else match.group(1)
+                ) if match else None
+            self._capture_ids(
+                document, provider=provider, account=case["account"], resource=resource
+            )
         payload = document.get("data") if isinstance(document, dict) else None
         payload = payload if isinstance(payload, dict) else {}
         self._record_transport(
@@ -1241,7 +1391,7 @@ class ProviderRecorder:
         ):
             handle.write(json.dumps(row) + "\n")
 
-    def _capture_ids(self, document):
+    def _capture_ids(self, document, *, provider=None, account=None, resource=None):
         fields = {
             "id",
             "campaign_id",
@@ -1264,6 +1414,24 @@ class ProviderRecorder:
                     for item in value:
                         self.created.update(self._resource_identifiers(item))
         _json_write(self.root / "created-resource-ids.json", sorted(self.created))
+        if resource and provider in {"meta", "tiktok"} and account:
+            fields = ("id",) if provider == "meta" else TIKTOK_CREATE_IDS[resource]
+            for node in _walk(document):
+                for field in fields:
+                    value = node.get(field)
+                    values = value if isinstance(value, list) else [value]
+                    for identifier in values:
+                        if isinstance(identifier, (str, int)) and str(identifier).isdigit():
+                            self.created_typed.add(
+                                (provider, str(account), resource, str(identifier))
+                            )
+            _json_write(
+                self.root / "created-resource-types.json",
+                [
+                    dict(zip(("provider", "account", "resource", "id"), row))
+                    for row in sorted(self.created_typed)
+                ],
+            )
 
     @staticmethod
     def _resource_identifiers(value):
@@ -1337,21 +1505,43 @@ def chat(
     session_id=None, user_input=None, *, live=False,
 ):
     root, state, headers = _load_state(directory)
+    if provider not in PROVIDERS:
+        raise ValueError("unknown E2E provider")
     account = str(state["accounts"][provider][0])
+    definitions = {
+        binding.definition.name: binding.definition
+        for binding in create_tool_source(provider).list_bindings()
+    }
+    definition = definitions.get(tool)
+    if definition is None:
+        raise ValueError("Tool is not registered for the selected test provider")
+    if write and tool not in _approved_tools():
+        raise ValueError("write requires an approved hierarchy Tool")
+    if live and definition.is_write_tool and not write:
+        raise ValueError("write Tools require the explicit --write option")
     effective_session_id = str(
         session_id or f"qa-{provider}-{case_id}"
     )
-    if live and not write:
-        definitions = {
-            binding.definition.name: binding.definition
-            for binding in create_tool_source(provider).list_bindings()
-        }
-        if definitions.get(tool) and definitions[tool].is_write_tool:
-            raise ValueError("write Tools require the explicit --write option")
     tool_params = dict(params)
     blueprint_id = tool_params.pop("_e2e_blueprint_id", None)
     blueprint_version = tool_params.pop("_e2e_blueprint_version", None)
-    prompt_params = safe_evidence(tool_params)
+    if write:
+        for node, parents in _walk_with_keys(tool_params):
+            if "selection_tokens" in parents:
+                continue
+            for field, value in node.items():
+                if field == "selection_tokens":
+                    continue
+                values = value if isinstance(value, list) else [value]
+                if any(
+                    isinstance(item, str)
+                    and re.fullmatch(r"ps1\.[A-Za-z0-9_.-]+", item)
+                    for item in values
+                ):
+                    raise ValueError(
+                        "selection token used as a resource value; "
+                        "keep the raw value and put proof in selection_tokens"
+                    )
     headers = {
         **headers,
         "X-E2E-Case": case_id,
@@ -1361,33 +1551,8 @@ def chat(
     request_text = str(user_input or "").strip() or (
         f"请调用工具 {tool} 一次，使用本请求中的结构化参数。"
     )
-    selected_params = tool_params.get(tool)
-    if not isinstance(selected_params, dict):
-        selected_params = tool_params
-    google_app_enabled_ad = (
-        provider == "google-ads"
-        and tool == "google_create_app_ad"
-        and str(selected_params.get("status") or "").upper() == "ENABLED"
-    )
-    status_guard = (
-        "Google Ads v24 要求本次 App Ad 状态为 ENABLED；只创建这个子级。"
-        "所属 Campaign 与 Ad Group 必须保持 PAUSED，不得创建、启用或更新父级。"
-        "不要把 App Ad 描述为暂停。"
-        if google_app_enabled_ad
-        else "不得启用广告。"
-    )
     body = {
-        "user_input": (
-            f"{request_text}\n\n这是受控测试。仅使用 {provider} 测试账户 {account}。"
-            f"请只调用工具 {tool} 一次，不得调用任何其他 Tool。{status_guard}"
-            "工具参数以本请求的结构化 platform_params 为准，"
-            "不能额外添加字段（尤其 customer_id、account_id）；账户范围已由请求上下文提供。"
-            "selection token 等敏感值只通过结构化参数传递，不得猜测、复述或替换。"
-            "账号所有者已授权本轮暂停资源功能测试。需要确认时先调用工具，让平台返回结构化确认凭证，"
-            "不要只用文字询问确认；平台门禁仍必须完整执行。"
-            "缺少必需参数时明确指出，不得猜测。脱敏参数概览："
-            + json.dumps(prompt_params, ensure_ascii=False)
-        ),
+        "user_input": request_text,
         "session_id": effective_session_id,
         "account_id": account,
         "platform_params": {provider: tool_params},
@@ -1514,6 +1679,63 @@ def conversation_chat(
     return payload
 
 
+def _creation_card_params(card):
+    values = {}
+
+    def assign(target, name, value):
+        parts = str(name).split(".")
+        if not parts or any(not part for part in parts):
+            raise ValueError("creation card has an invalid provider field")
+        for part in parts[:-1]:
+            target = target.setdefault(part, {})
+            if not isinstance(target, dict):
+                raise ValueError("creation card has conflicting provider fields")
+        target[parts[-1]] = value
+
+    for field in card.get("fields") or ():
+        if not isinstance(field, dict) or field.get("visible") is False:
+            continue
+        value = field.get("value")
+        if value is None or value == "":
+            continue
+        name = field.get("provider_field") or field.get("path")
+        if not isinstance(name, str) or not name:
+            raise ValueError("creation card field has no provider name")
+        assign(values, name, value)
+        tool = field.get("tool")
+        if isinstance(tool, str) and tool:
+            assign(values.setdefault(tool, {}), name, value)
+    token_tools = card.get("selection_token_tools") or {}
+    if not isinstance(token_tools, dict):
+        raise ValueError("creation card selection token map is invalid")
+    for field, token in (card.get("selection_tokens") or {}).items():
+        tool = token_tools.get(field)
+        if isinstance(tool, str) and tool and token:
+            values.setdefault(tool, {}).setdefault("selection_tokens", {})[field] = token
+    return values
+
+
+def _ready_creation_card(payload, *, provider, account, template_id, blueprint_id):
+    cards = (payload.get("ui") or {}).get("cards") or ()
+    for card in cards:
+        if not isinstance(card, dict) or card.get("type") != "ad_creation_form":
+            continue
+        if (
+            card.get("provider") != provider
+            or str(card.get("account_id") or "") != str(account)
+            or card.get("template_id") != template_id
+            or card.get("blueprint_id") != blueprint_id
+        ):
+            continue
+        actions = card.get("actions") or ()
+        if card.get("ready") is True and any(
+            isinstance(action, dict) and action.get("id") == "submit_create"
+            for action in actions
+        ):
+            return card
+    return None
+
+
 def template_chat(
     directory, provider, template_id, params, case_id, *,
     write=False, session_id=None, user_input=None, allow_new_hierarchy=False,
@@ -1537,11 +1759,16 @@ def template_chat(
         or template.get("status") != "active"
     ):
         raise ValueError("template provider/account is outside the confirmed test scope")
+    if template.get("template_id") not in (None, template_id):
+        raise ValueError("template response does not match selected template ID")
+    memory_key = template.get("catalog_key") or template_id
+    if not isinstance(memory_key, str):
+        raise ValueError("template catalog key must be a string")
     memory = resolve_template_memory(
         ROOT,
         provider=provider,
         account_id=account,
-        template_id=template_id,
+        template_id=memory_key,
         api_template=template,
     )
     reuse_state = memory["hierarchy_reuse"]
@@ -1551,6 +1778,7 @@ def template_chat(
                 "case_id": case_id,
                 "e2e_memory_preflight": {
                     "template_id": template_id,
+                    "template_key": memory_key,
                     "verification_state": memory["verification_state"],
                     "template_values_sha256": memory["template_values_sha256"],
                     "known_resource_ids": reuse_state["resource_ids"],
@@ -1593,7 +1821,7 @@ def template_chat(
         **headers, "X-E2E-Case": case_id,
         "X-E2E-Provider": provider, "X-E2E-Account": account,
     }
-    if provider == "google-ads" and template_id == "google.test.app":
+    if provider == "google-ads" and memory_key == "google.test.app":
         default_user_input = (
             "使用 google.test.app 内置模板和表单参数创建完整 App Campaign。"
             "Campaign 与 Ad Group 必须为 PAUSED；App Ad 按 Google Ads v24 要求设为 ENABLED。"
@@ -1642,6 +1870,7 @@ def template_chat(
         },
     }
     payload = {}
+    submitted_creation_card = False
     attempt_id = secrets.token_hex(16)
     for index in range(5):
         phase_id = f"{attempt_id}:{index}"
@@ -1655,7 +1884,7 @@ def template_chat(
                 phase=index,
                 provider=provider,
                 account_id=account,
-                template_id=template_id,
+                template_id=memory_key,
                 blueprint_version=template["blueprint_version"],
                 template_values_sha256=memory["template_values_sha256"],
                 case_id=case_id,
@@ -1678,7 +1907,7 @@ def template_chat(
                     phase=index,
                     provider=provider,
                     account_id=account,
-                    template_id=template_id,
+                    template_id=memory_key,
                     blueprint_version=template["blueprint_version"],
                     template_values_sha256=memory["template_values_sha256"],
                     case_id=case_id,
@@ -1710,7 +1939,7 @@ def template_chat(
                 phase=index,
                 provider=provider,
                 account_id=account,
-                template_id=template_id,
+                template_id=memory_key,
                 blueprint_version=template["blueprint_version"],
                 template_values_sha256=memory["template_values_sha256"],
                 case_id=case_id,
@@ -1720,6 +1949,26 @@ def template_chat(
         evidence["phases"].append({"phase": index, "response": payload})
         evidence["response"] = payload
         _json_write(root / "cases" / f"{case_id}.json", evidence)
+        if write and created_resources:
+            # A confirmed parent write changes the hierarchy. Continuing with
+            # the original full card would replay that write, not resume it.
+            evidence["partial_hierarchy_stop"] = created_resources
+            _json_write(root / "cases" / f"{case_id}.json", evidence)
+            break
+        card = _ready_creation_card(
+            payload, provider=provider, account=account,
+            template_id=template_id, blueprint_id=template["blueprint_id"],
+        )
+        if (
+            not submitted_creation_card
+            and payload.get("needs_input")
+            and not payload.get("needs_confirmation")
+            and card is not None
+        ):
+            body["user_input"] = f"提交“{card.get('title') or provider + '广告'}”创建计划"
+            body["platform_params"] = {provider: _creation_card_params(card)}
+            submitted_creation_card = True
+            continue
         approval = payload.get("confirmation_payload")
         if not (write and payload.get("needs_confirmation") and isinstance(approval, dict)):
             break

@@ -2475,6 +2475,83 @@ def test_confirmed_chat_requires_confirmation_payload(fake_server):
     assert fake_server.calls == []
 
 
+def test_confirmed_chat_without_tool_execution_cannot_claim_success(fake_server):
+    fake_server.run = lambda **_kwargs: {
+        "success": True,
+        "status": "succeeded",
+        "reply": "已完成更新，updated_count: 1",
+        "results": [],
+        "tool_call_count": 0,
+    }
+    with TestClient(api_server.app) as client:
+        response = client.post(
+            "/chat",
+            headers={"X-API-Key": "test-key"},
+            json={
+                "user_input": "更新测试 Campaign 名称",
+                "confirmed": True,
+                "confirmation_payload": {
+                    "type": "confirm_write",
+                    "confirmation_token": "test-confirmation-token",
+                },
+            },
+        )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["success"] is False
+    assert payload["status"] == "failed"
+    assert "未执行" in payload["reply"]
+    assert "updated_count" not in payload["reply"]
+
+
+def test_confirmed_stream_without_tool_execution_cannot_claim_success(fake_server):
+    fake_server.run = lambda **_kwargs: {
+        "success": True,
+        "status": "succeeded",
+        "reply": "已完成更新",
+        "results": [],
+        "tool_call_count": 0,
+    }
+    with TestClient(api_server.app) as client:
+        response = client.post(
+            "/chat/stream",
+            headers={"X-API-Key": "test-key"},
+            json={
+                "user_input": "更新测试 Campaign 名称",
+                "confirmed": True,
+                "confirmation_payload": {
+                    "type": "confirm_write",
+                    "confirmation_token": "test-confirmation-token",
+                },
+            },
+        )
+    events = [
+        json.loads(line.removeprefix("data: "))
+        for line in response.text.splitlines()
+        if line.startswith("data: ")
+    ]
+    reply = next(event for event in events if event["type"] == "reply")
+    assert reply["status"] == "failed"
+    assert "未执行" in reply["content"]
+    assert events[-1]["status"] == "failed"
+
+
+def test_confirmed_single_tool_resumes_the_signed_tool_choice():
+    from agents.applications.advertising.run.ad_run_service import AdvertisingRunService
+
+    service = AdvertisingRunService.__new__(AdvertisingRunService)
+    payload = {"type": "confirm_write", "tool": "tiktok_update_ad"}
+    assert service._initial_tool_choice(
+        None, None, True, payload, ["tiktok_update_ad"]
+    ) == {"type": "function", "function": {"name": "tiktok_update_ad"}}
+    assert service._initial_tool_choice(
+        None, None, True, payload, ["meta_update_ad"]
+    ) is None
+    assert service._initial_tool_choice(
+        None, None, False, payload, ["tiktok_update_ad"]
+    ) is None
+
+
 def test_chat_returns_only_the_top_level_confirmation_token_unredacted(fake_server):
     confirmation_payload = {
         "type": "confirm_write",

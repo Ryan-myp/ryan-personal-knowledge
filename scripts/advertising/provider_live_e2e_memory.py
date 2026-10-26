@@ -33,7 +33,7 @@ RESOURCE_TYPES = {
     "listing_group_filter",
     "creative_portfolio",
 }
-OBSERVATION_EVENTS = {"attempt_started", "attempt_completed"}
+OBSERVATION_EVENTS = {"attempt_started", "attempt_completed", "attempt_reconciled"}
 OBSERVATION_OUTCOMES = {
     "pending",
     "awaiting_input",
@@ -42,6 +42,7 @@ OBSERVATION_OUTCOMES = {
     "provider_rejected",
     "failed",
     "ambiguous",
+    "no_write",
 }
 _URL_RE = re.compile(r"https?://[^\s\"'<>]+", re.IGNORECASE)
 _TOKEN_VALUE_RE = re.compile(
@@ -164,8 +165,9 @@ def append_live_e2e_observation(
     template_values_sha256: str,
     case_id: str,
     outcome: str,
-    created_resources: Any = (),
+    created_resources: Any = None,
     error_messages: Any = (),
+    reconciliation_case_id: str | None = None,
 ) -> dict[str, Any]:
     """Append a minimal redacted live-test event; never persist raw Tool payloads."""
     root = Path(repository_root)
@@ -198,6 +200,35 @@ def append_live_e2e_observation(
         raise ValueError("live E2E observation does not match the locked template")
     if event_type == "attempt_started" and outcome != "pending":
         raise ValueError("started live E2E attempts must be pending")
+    if event_type == "attempt_reconciled":
+        if outcome != "no_write":
+            raise ValueError("no-write reconciliation requires a no_write outcome")
+        if (
+            not isinstance(reconciliation_case_id, str)
+            or not reconciliation_case_id.strip()
+            or len(reconciliation_case_id) > 160
+            or reconciliation_case_id == case_id
+        ):
+            raise ValueError("no-write reconciliation requires a distinct readback case")
+        prior = [
+            item for item in _read_observations(root)
+            if item.get("attempt_id") == attempt_id
+            and item.get("phase_id") == phase_id
+        ]
+        if (
+            not any(
+                item.get("event_type") == "attempt_completed"
+                and item.get("outcome") == "ambiguous"
+                and item.get("provider") == provider
+                and item.get("account_id") == account_id
+                and item.get("template_id") == template_id
+                for item in prior
+            )
+            or any(item.get("event_type") == "attempt_reconciled" for item in prior)
+        ):
+            raise ValueError("reconciliation requires an unreconciled ambiguous attempt")
+    elif reconciliation_case_id is not None:
+        raise ValueError("readback evidence is only valid for reconciliation")
 
     errors = error_messages if isinstance(error_messages, list) else []
     row = {
@@ -215,7 +246,9 @@ def append_live_e2e_observation(
         "case_id": str(case_id)[:160],
         "outcome": outcome,
         "created_resources": (
-            _normalize_resources(created_resources)
+            _normalize_resources(
+                [] if created_resources is None else created_resources
+            )
             if event_type == "attempt_completed"
             else []
         ),
@@ -225,6 +258,8 @@ def append_live_e2e_observation(
             else []
         ),
     }
+    if event_type == "attempt_reconciled":
+        row["reconciliation_case_id"] = reconciliation_case_id
     _append_jsonl(root / OBSERVATIONS_RELATIVE_PATH, row)
     return row
 
@@ -303,17 +338,27 @@ def hierarchy_reuse_state(
     completed_outcomes = set()
     for events in events_by_phase.values():
         started = any(item.get("event_type") == "attempt_started" for item in events)
+        reconciled = any(
+            item.get("event_type") == "attempt_reconciled"
+            and item.get("outcome") == "no_write"
+            and item.get("reconciliation_case_id")
+            for item in events
+        )
         completion_rows = [
             item for item in events if item.get("event_type") == "attempt_completed"
         ]
-        if started and not completion_rows:
+        if started and not completion_rows and not reconciled:
             unresolved_attempt_ids.update(
                 str(item.get("attempt_id"))
                 for item in events
                 if item.get("attempt_id")
             )
         for item in completion_rows:
-            if item.get("outcome") == "ambiguous" and item.get("attempt_id"):
+            if (
+                item.get("outcome") == "ambiguous"
+                and item.get("attempt_id")
+                and not reconciled
+            ):
                 unresolved_attempt_ids.add(str(item["attempt_id"]))
             if item.get("outcome"):
                 completed_outcomes.add(str(item["outcome"]))

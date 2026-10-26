@@ -1964,7 +1964,7 @@ def tiktok_smart_plus_campaign_schema() -> dict[str, Any]:
             {"if": {"objective_type": "APP_PROMOTION"}, "required": ["app_id"], "message": "APP_PROMOTION requires app_id"},
         ],
         "properties": {
-            "request_id": _field("string", "System-generated idempotency key", minLength=1, ui_hidden=True),
+            "request_id": _field("string", "System-generated decimal int64 idempotency key", pattern="^[0-9]{1,19}$", ui_hidden=True),
             "campaign_name": _field("string", "Campaign name", minLength=1, maxLength=512),
             "objective_type": _field(
                 "string", "Business objective or Smart+ API objective",
@@ -2074,7 +2074,7 @@ def tiktok_smart_plus_adgroup_schema() -> dict[str, Any]:
             },
         ],
         "properties": {
-            "request_id": _field("string", "System-generated idempotency key", minLength=1, ui_hidden=True),
+            "request_id": _field("string", "System-generated decimal int64 idempotency key", pattern="^[0-9]{1,19}$", ui_hidden=True),
             "campaign_id": _field("string", "Parent Smart+ campaign ID", minLength=1),
             "objective_type": _field(
                 "string", "Parent campaign objective used for Smart+ cascade validation",
@@ -2186,7 +2186,7 @@ def tiktok_smart_plus_ad_schema() -> dict[str, Any]:
             },
         ],
         "properties": {
-            "request_id": _field("string", "System-generated idempotency key", minLength=1, ui_hidden=True),
+            "request_id": _field("string", "System-generated decimal int64 idempotency key", pattern="^[0-9]{1,19}$", ui_hidden=True),
             "campaign_id": _field("string", "Parent Smart+ campaign ID", minLength=1),
             "adgroup_id": _field("string", "Parent Smart+ ad group ID", minLength=1),
             "objective_type": _field(

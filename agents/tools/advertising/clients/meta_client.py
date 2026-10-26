@@ -42,6 +42,26 @@ class MetaAPIClient(BasePlatformClient):
     - App 级: 2000 次/小时
     - 广告账户级: 50 次/10秒
     """
+
+    CAMPAIGN_DETAIL_FIELDS = (
+        "id", "account_id", "name", "status", "effective_status",
+        "objective", "daily_budget", "lifetime_budget", "budget_remaining",
+        "buying_type", "bid_strategy", "start_time", "stop_time",
+        "created_time", "updated_time", "special_ad_categories",
+        "adsets", "ads",
+    )
+    AD_DETAIL_FIELDS = (
+        "id", "account_id", "name", "status", "effective_status",
+        "adset_id", "campaign_id", "creative", "tracking_specs",
+        "conversion_domain", "created_time", "updated_time",
+    )
+    ADSET_DETAIL_FIELDS = (
+        "id", "account_id", "name", "campaign_id", "status",
+        "effective_status", "daily_budget", "lifetime_budget", "bid_amount",
+        "bid_strategy", "billing_event", "optimization_goal",
+        "promoted_object", "targeting", "start_time", "end_time",
+        "created_time", "updated_time",
+    )
     
     API_VERSION = "v25.0"
     SUPPORTED_API_VERSIONS = (API_VERSION,)
@@ -1387,6 +1407,9 @@ class MetaAPIClient(BasePlatformClient):
             "stop_time" if field == "end_time" else field
             for field in selected_fields
         ))
+        unsupported = set(selected_fields) - set(self.CAMPAIGN_DETAIL_FIELDS)
+        if unsupported:
+            raise ValueError(f"Unsupported Meta Campaign fields: {sorted(unsupported)}")
         params = {'fields': ','.join(selected_fields)}
         return self.require_resource_object(
             self.request('GET', f"/{campaign_id}", extra_params=params),
@@ -1441,9 +1464,13 @@ class MetaAPIClient(BasePlatformClient):
                 owner_id = str(node.get("account_id") or "").replace("act_", "")
                 if owner_id:
                     return owner_id == str(account_id).replace("act_", "")
+            except (TemporaryError, RateLimitError, AuthError):
+                raise
             except APIError:
                 # Keep the existing bounded list fallback for older API
                 # versions/tokens that cannot read account_id on the node.
+                # Transient, rate-limit and auth errors must not fan out into
+                # an expensive account-edge scan.
                 pass
         if resource_type == "campaign":
             items = self.list_campaigns(account_id, limit=1000)
@@ -1636,7 +1663,14 @@ class MetaAPIClient(BasePlatformClient):
     
     def get_adset(self, adset_id: str, fields: list = None) -> dict:
         """获取 Ad Set 详情"""
-        params = {'fields': ','.join(fields) if fields else 'id,name,campaign_id,status,daily_budget,bid_amount,targeting'}
+        selected_fields = fields or [
+            "id", "name", "campaign_id", "status",
+            "daily_budget", "bid_amount", "targeting",
+        ]
+        unsupported = set(selected_fields) - set(self.ADSET_DETAIL_FIELDS)
+        if unsupported:
+            raise ValueError(f"Unsupported Meta Ad Set fields: {sorted(unsupported)}")
+        params = {'fields': ','.join(selected_fields)}
         return self.require_resource_object(
             self.request('GET', f"/{adset_id}", extra_params=params),
             "Meta ad set get",
@@ -1799,8 +1833,14 @@ class MetaAPIClient(BasePlatformClient):
     
     def get_ad(self, ad_id: str, fields: list = None) -> dict:
         """获取 Ad 详情"""
+        selected_fields = fields or [
+            "id", "name", "status", "adset_id", "campaign_id", "creative",
+        ]
+        unsupported = set(selected_fields) - set(self.AD_DETAIL_FIELDS)
+        if unsupported:
+            raise ValueError(f"Unsupported Meta Ad fields: {sorted(unsupported)}")
         params = {
-            'fields': ','.join(fields) if fields else 'id,name,status,adset_id,campaign_id,creative'
+            'fields': ','.join(selected_fields)
         }
         return self.require_resource_object(
             self.request('GET', f"/{ad_id}", extra_params=params),

@@ -36,6 +36,9 @@ PAYLOAD_TEST_PATH = (
     ROOT / "agents/tests/advertising/test_provider_payload_contracts.py"
 )
 TEMPLATE_TEST_PATH = ROOT / "agents/tests/advertising/test_creation_templates.py"
+META_TEMPLATE_TEST_PATH = (
+    ROOT / "agents/tests/advertising/test_meta_creation_templates.py"
+)
 
 EXPECTED_TEMPLATES = {
     ("google-ads", "PERFORMANCE_MAX"): "google.test.performance-max",
@@ -151,9 +154,9 @@ def test_live_e2e_memory_encodes_paused_creation_and_non_overclaimed_evidence():
     assert tiktok_app["coverage"]["real_mmp_attribution"] == "not_verified"
     latest_hierarchy = tiktok_app["known_live_hierarchies"][-1]
     assert latest_hierarchy["resource_ids"] == {
-        "campaign": "1879169312562338",
-        "ad_group": "1879169302541826",
-        "ad": "1879196654038418",
+        "campaign": "1880085399156082",
+        "ad_group": "1880085378463186",
+        "ad": "1880085435261650",
     }
     assert latest_hierarchy["delivery_statuses"] == {
         "campaign": "DISABLE",
@@ -166,15 +169,16 @@ def test_live_e2e_memory_encodes_paused_creation_and_non_overclaimed_evidence():
     assert "1879196654038418" in tiktok_template["verified_scope"]
     assert "真实 MMP 归因未验证" in tiktok_template["verified_scope"]
 
-    assert latest_hierarchy["selected_identity_id"] == (
+    template_hierarchy = tiktok_app["known_live_hierarchies"][-2]
+    assert template_hierarchy["selected_identity_id"] == (
         tiktok_template["values"]["ad.identity_id"]
     )
-    assert latest_hierarchy["template_values_sha256"] == next(
+    assert template_hierarchy["template_values_sha256"] == next(
         row["template_values_sha256"]
         for row in memory["campaign_types"]
         if row["template_key"] == "tiktok.test.app-promotion"
     )
-    assert len(latest_hierarchy["readback_refs"]) == 3
+    assert len(template_hierarchy["readback_refs"]) == 3
 
 
 def test_google_app_template_requires_enabled_ad_under_paused_parents():
@@ -297,6 +301,8 @@ def test_known_failure_memory_links_fixes_to_existing_regression_tests():
             GOOGLE_APP_GUARD_TEST_PATH,
             PAYLOAD_TEST_PATH,
             TEMPLATE_TEST_PATH,
+            META_TEMPLATE_TEST_PATH,
+            Path(__file__),
         )
     )
     test_names = set(
@@ -363,10 +369,10 @@ def test_live_e2e_preflight_resolves_template_and_known_recovery_guidance():
     assert resolved["expected_status_values"]["ad.operation_status"] == "DISABLE"
     assert resolved["latest_live_test_resources"] == {
         "account_id": "7397068114548195329",
-        "campaign_id": "1879182108006450",
-        "ad_group_id": "1879182124055009",
-        "ad_id": "1879183742331441",
-        "smart_plus_creative_id": "1879183744241697",
+        "campaign_id": "1880079487888913",
+        "ad_group_id": "1880080345882434",
+        "ad_id": "1880080658604161",
+        "smart_plus_creative_id": "1880080658606593",
         "delivery_status": "DISABLE",
         "resume_policy": (
             "Use these existing resources for update and query regression. Do not "
@@ -397,8 +403,8 @@ def test_program_memory_report_exposes_locked_parameters_resources_and_next_acti
     assert entry["template_values"]["ad.video_id"] == (
         "v10033g50000d8nltv7og65nd6868v7g"
     )
-    assert entry["known_live_hierarchies"][0]["resource_ids"]["campaign"] == (
-        "1879182108006450"
+    assert entry["known_live_hierarchies"][-1]["resource_ids"]["campaign"] == (
+        "1880079487888913"
     )
     assert entry["recovery_plan"]["action"] == "readback_and_resume_existing_hierarchy"
     assert any(
@@ -440,20 +446,48 @@ def test_program_memory_report_resumes_google_app_with_enabled_ad_and_paused_par
     )
 
 
-def test_program_memory_report_resumes_meta_app_without_recreating_parents():
+def test_program_memory_report_resumes_meta_app_without_recreating_parents(tmp_path):
+    shutil.copytree(ROOT / "agents", tmp_path / "agents")
+    (
+        tmp_path
+        / "agents/tools/advertising/contracts/provider_live_e2e_observations.jsonl"
+    ).write_text("", encoding="utf-8")
     report = build_live_e2e_memory_report(
-        ROOT,
+        tmp_path,
         provider="meta",
         template_id="meta.test.app-promotion",
     )
 
     entry = report["entries"][0]
     assert entry["recovery_plan"]["action"] == (
-        "resume_existing_and_capture_diagnostics"
+        "readback_and_resume_existing_hierarchy"
     )
-    assert "existing App workflow" in entry["recovery_plan"]["instruction"]
+    assert "Do not replay the full template or recreate existing parents" in (
+        entry["recovery_plan"]["instruction"]
+    )
     assert any(
         finding["id"] == "meta_app_template_argument_resolution"
+        for finding in entry["known_findings"]
+    )
+
+
+def test_product_sales_memory_requires_real_product_selection_before_ad_retry():
+    report = build_live_e2e_memory_report(
+        ROOT, provider="tiktok", template_id="tiktok.test.sales",
+    )
+    entry = report["entries"][0]
+    assert entry["verification_state"] == "blocked_by_provider"
+    record = next(
+        item for item in _load_json(MEMORY_PATH)["campaign_types"]
+        if item["template_key"] == "tiktok.test.sales"
+    )
+    assert record["coverage"]["campaign_create"] == "live_pass"
+    assert record["coverage"]["ad_group_create"] == "live_pass"
+    assert record["coverage"]["ad_create"] == "provider_rejected"
+    assert entry["recovery_plan"]["action"] == "respect_provider_block"
+    assert "Product Set" in entry["recovery_plan"]["instruction"]
+    assert any(
+        finding["id"] == "tiktok_product_sales_product_selection"
         for finding in entry["known_findings"]
     )
 
@@ -656,6 +690,11 @@ def test_live_e2e_memory_preserves_reusable_existing_resources():
 def test_live_e2e_observations_persist_resources_and_recovery_state(tmp_path):
     shutil.copytree(ROOT / "agents", tmp_path / "agents")
     template_root = tmp_path
+    observation_path = (
+        template_root
+        / "agents/tools/advertising/contracts/provider_live_e2e_observations.jsonl"
+    )
+    observation_path.write_text("", encoding="utf-8")
     common = {
         "attempt_id": "attempt-traffic-1",
         "phase_id": "attempt-traffic-1:1",
@@ -696,10 +735,6 @@ def test_live_e2e_observations_persist_resources_and_recovery_state(tmp_path):
         **common,
     )
 
-    observation_path = (
-        template_root
-        / "agents/tools/advertising/contracts/provider_live_e2e_observations.jsonl"
-    )
     persisted = observation_path.read_text(encoding="utf-8")
     assert "must-not-persist" not in persisted
     assert "1879182108006450" in persisted
@@ -719,12 +754,98 @@ def test_live_e2e_observations_persist_resources_and_recovery_state(tmp_path):
     )
     assert resolved["hierarchy_reuse"]["requires_reconciliation"] is True
     assert resolved["hierarchy_reuse"]["resource_ids"]["campaign"] == (
-        "1879182108006450"
+        "1880079487888913"
     )
     assert resolved["hierarchy_reuse"]["resource_ids"]["ad_group"] == (
-        "1879182124055009"
+        "1880080345882434"
     )
     assert resolved["observations"][-1]["outcome"] == "partial"
+
+
+def test_live_e2e_timeout_records_ambiguous_outcome_without_resources(tmp_path):
+    shutil.copytree(ROOT / "agents", tmp_path / "agents")
+    (
+        tmp_path
+        / "agents/tools/advertising/contracts/provider_live_e2e_observations.jsonl"
+    ).write_text("", encoding="utf-8")
+    row = next(
+        item for item in _load_json(MEMORY_PATH)["campaign_types"]
+        if item["template_key"] == "meta.test.app-promotion"
+    )
+    common = {
+        "attempt_id": "meta-app-timeout",
+        "phase_id": "meta-app-timeout:0",
+        "phase": 0,
+        "provider": "meta",
+        "account_id": "2806375919473667",
+        "template_id": "meta.test.app-promotion",
+        "blueprint_version": row["blueprint_version"],
+        "template_values_sha256": row["template_values_sha256"],
+        "case_id": "meta-app-timeout",
+    }
+    append_live_e2e_observation(
+        tmp_path, event_type="attempt_started", outcome="pending", **common,
+    )
+    completed = append_live_e2e_observation(
+        tmp_path,
+        event_type="attempt_completed",
+        outcome="ambiguous",
+        error_messages=["ReadTimeout"],
+        **common,
+    )
+    assert completed["created_resources"] == []
+    assert completed["error_messages"] == ["ReadTimeout"]
+    report = build_live_e2e_memory_report(
+        tmp_path, provider="meta", template_id="meta.test.app-promotion",
+    )
+    assert report["entries"][0]["recovery_plan"]["action"] == "reconcile_ambiguous_write"
+
+    with pytest.raises(ValueError, match="readback"):
+        append_live_e2e_observation(
+            tmp_path, event_type="attempt_reconciled", outcome="no_write", **common,
+        )
+    reconciled = append_live_e2e_observation(
+        tmp_path,
+        event_type="attempt_reconciled",
+        outcome="no_write",
+        reconciliation_case_id="meta-app-timeout-reconcile-read",
+        **common,
+    )
+    assert reconciled["reconciliation_case_id"] == "meta-app-timeout-reconcile-read"
+    report = build_live_e2e_memory_report(
+        tmp_path, provider="meta", template_id="meta.test.app-promotion",
+    )
+    assert report["entries"][0]["recovery_plan"]["action"] == (
+        "readback_and_resume_existing_hierarchy"
+    )
+
+
+def test_live_e2e_reconciliation_cannot_clear_another_attempt(tmp_path):
+    shutil.copytree(ROOT / "agents", tmp_path / "agents")
+    (
+        tmp_path
+        / "agents/tools/advertising/contracts/provider_live_e2e_observations.jsonl"
+    ).write_text("", encoding="utf-8")
+    row = next(
+        item for item in _load_json(MEMORY_PATH)["campaign_types"]
+        if item["template_key"] == "meta.test.app-promotion"
+    )
+    with pytest.raises(ValueError, match="ambiguous"):
+        append_live_e2e_observation(
+            tmp_path,
+            event_type="attempt_reconciled",
+            outcome="no_write",
+            attempt_id="unrelated",
+            phase_id="unrelated:0",
+            phase=0,
+            provider="meta",
+            account_id="2806375919473667",
+            template_id="meta.test.app-promotion",
+            blueprint_version=row["blueprint_version"],
+            template_values_sha256=row["template_values_sha256"],
+            case_id="unrelated",
+            reconciliation_case_id="meta-app-timeout-reconcile-read",
+        )
 
 
 def test_unresolved_live_attempt_cannot_be_overridden_as_a_new_hierarchy(tmp_path):

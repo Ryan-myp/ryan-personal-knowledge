@@ -282,7 +282,7 @@
       "template_values_sha256": "990ce4e8f6063521939c7176fb37decd3fa3fab8e28d3ecbf017264b3b0de0fa",
       "test_account": "2806375919473667",
       "verification_state": "live_verified",
-      "last_verified_at": "2026-10-16",
+      "last_verified_at": "2026-10-26",
       "creation_status": "PAUSED",
       "prior_live_write_observed": true,
       "known_live_hierarchies": [
@@ -292,6 +292,19 @@
             "campaign": "120251918011200251",
             "ad_set": "120251918013540251",
             "ad": "120251918014470251"
+          },
+          "delivery_statuses": {
+            "campaign": "PAUSED",
+            "ad_set": "PAUSED",
+            "ad": "PAUSED"
+          }
+        },
+        {
+          "evidence_ref": "outputs/campaign-acceptance-20261026-b/cases/meta-traffic-ad-update-01-readback.json",
+          "resource_ids": {
+            "campaign": "120252061614330251",
+            "ad_set": "120252061617130251",
+            "ad": "120252061618390251"
           },
           "delivery_statuses": {
             "campaign": "PAUSED",
@@ -355,7 +368,7 @@
       "template_values_sha256": "f246a2794f5047d319258562564c82d6ea456c6e256d51b0237e0b618b9a557e",
       "test_account": "2806375919473667",
       "verification_state": "live_verified",
-      "last_verified_at": "2026-10-16",
+      "last_verified_at": "2026-10-26",
       "creation_status": "PAUSED",
       "prior_live_write_observed": true,
       "known_live_hierarchies": [
@@ -365,6 +378,19 @@
             "campaign": "120251918078880251",
             "ad_set": "120251918080730251",
             "ad": "120251918084610251"
+          },
+          "delivery_statuses": {
+            "campaign": "PAUSED",
+            "ad_set": "PAUSED",
+            "ad": "PAUSED"
+          }
+        },
+        {
+          "evidence_ref": "outputs/campaign-acceptance-20261026-b/cases/meta-catalog-ad-update-20261026-readback.json",
+          "resource_ids": {
+            "campaign": "120252061670350251",
+            "ad_set": "120252061674610251",
+            "ad": "120252061702870251"
           },
           "delivery_statuses": {
             "campaign": "PAUSED",
@@ -426,7 +452,7 @@
       "template_values_sha256": "f9c6b3f569e13204525dbfdcd55f9564aa0ad6146e283fcea62731c61d03141c",
       "test_account": "2806375919473667",
       "verification_state": "live_verified",
-      "last_verified_at": "2026-10-16",
+      "last_verified_at": "2026-10-26",
       "creation_status": "PAUSED",
       "prior_live_write_observed": true,
       "known_live_hierarchies": [
@@ -436,6 +462,19 @@
             "campaign": "120251918088900251",
             "ad_set": "120251918090380251",
             "ad": "120251918092130251"
+          },
+          "delivery_statuses": {
+            "campaign": "PAUSED",
+            "ad_set": "PAUSED",
+            "ad": "PAUSED"
+          }
+        },
+        {
+          "evidence_ref": "outputs/campaign-acceptance-20261026-b/cases/meta-conversion-ad-update-20261026-readback.json",
+          "resource_ids": {
+            "campaign": "120252062074900251",
+            "ad_set": "120252062075220251",
+            "ad": "120252062075890251"
           },
           "delivery_statuses": {
             "campaign": "PAUSED",
@@ -499,7 +538,7 @@
       "template_values_sha256": "4fa19d96cb50717f1655ebe4c0a9c38ab57e912bf69f51faee67ed1000118e8f",
       "test_account": "2806375919473667",
       "verification_state": "partial_live",
-      "last_verified_at": "2026-10-16",
+      "last_verified_at": "2026-10-26",
       "creation_status": "PAUSED",
       "prior_live_write_observed": true,
       "known_live_hierarchies": [
@@ -518,6 +557,24 @@
             "campaign": "PAUSED",
             "ad_set": "PAUSED",
             "ad": "not_verified"
+          }
+        },
+        {
+          "evidence_ref": [
+            "outputs/campaign-acceptance-20261026-b/cases/meta-app-acceptance-02-live.json",
+            "outputs/campaign-acceptance-20261026-b/cases/meta-app-acceptance-02-adset-live-r2.json",
+            "outputs/campaign-acceptance-20261026-b/cases/meta-app-acceptance-02-ad-live.json",
+            "outputs/campaign-acceptance-20261026-b/cases/meta-app-acceptance-02-ad-update-readback.json"
+          ],
+          "resource_ids": {
+            "campaign": "120252062235750251",
+            "ad_set": "120252062284440251",
+            "ad": "120252062288410251"
+          },
+          "delivery_statuses": {
+            "campaign": "PAUSED",
+            "ad_set": "PAUSED",
+            "ad": "PAUSED"
           }
         }
       ],
@@ -542,7 +599,8 @@
         "template_campaign_create": "live_pass",
         "ad_set_create_update_read": "live_pass",
         "ad_create_update_read": "live_pass",
-        "complete_template_chain": "partial"
+        "complete_template_chain": "partial",
+        "current_template_child_resume_create_update_read": "live_pass"
       },
       "evidence_refs": [
         {
@@ -560,9 +618,13 @@
         {
           "evidence_level": "live_chat_and_provider",
           "case_ref": "outputs/full-agent-e2e-20261016-live-run2/cases/meta-live-app-ad-readback-20261016.json"
+        },
+        {
+          "evidence_level": "live_chat_and_provider",
+          "case_ref": "outputs/campaign-acceptance-20261026-b/cases/meta-app-acceptance-02-ad-update-readback.json"
         }
       ],
-      "remaining_gap": "Resources were created and exercised through real Tools, but the native App template chain stopped at local argument resolution after Campaign creation. Determine and regression-test the actual ValueError path before calling the template flow complete."
+      "remaining_gap": "Current template arguments passed three-level dry-run and the paused hierarchy was created, renamed and independently read through child-only resume. The native one-shot live template stopped after Campaign creation, then a full-card resubmission hit duplicate-write protection. The driver now stops on a partial write; a fresh native one-shot live pass is still unverified. Ad effective_status was IN_PROCESS despite configured PAUSED."
     },
     {
       "provider": "tiktok",
@@ -573,7 +635,7 @@
       "template_values_sha256": "1a226772ad23bc219815f08754d3948b457ad0178c73a7d2d296289766b1bff2",
       "test_account": "7397068114548195329",
       "verification_state": "live_verified",
-      "last_verified_at": "2026-10-16",
+      "last_verified_at": "2026-10-26",
       "creation_status": "DISABLE",
       "prior_live_write_observed": true,
       "known_live_hierarchies": [
@@ -591,14 +653,29 @@
             "ad": "DISABLE",
             "creative": "ENABLE"
           }
+        },
+        {
+          "evidence_ref": "outputs/campaign-acceptance-20261026-b/cases/tiktok-traffic-ad-update-01-readback.json",
+          "resource_ids": {
+            "campaign": "1880079487888913",
+            "ad_group": "1880080345882434",
+            "ad": "1880080658604161",
+            "creative": "1880080658606593"
+          },
+          "delivery_statuses": {
+            "campaign": "DISABLE",
+            "ad_group": "DISABLE",
+            "ad": "DISABLE",
+            "creative": "ENABLE"
+          }
         }
       ],
       "latest_live_test_resources": {
         "account_id": "7397068114548195329",
-        "campaign_id": "1879182108006450",
-        "ad_group_id": "1879182124055009",
-        "ad_id": "1879183742331441",
-        "smart_plus_creative_id": "1879183744241697",
+        "campaign_id": "1880079487888913",
+        "ad_group_id": "1880080345882434",
+        "ad_id": "1880080658604161",
+        "smart_plus_creative_id": "1880080658606593",
         "delivery_status": "DISABLE",
         "resume_policy": "Use these existing resources for update and query regression. Do not recreate the hierarchy unless the caller explicitly authorizes --allow-new-hierarchy."
       },
@@ -671,8 +748,8 @@
       "blueprint_version": "2.3.0",
       "template_values_sha256": "484852b1218b9a890c18384786511d627f8590b667779ec416115ebb1be92e72",
       "test_account": "7397068114548195329",
-      "verification_state": "partial_live",
-      "last_verified_at": "2026-09-09",
+      "verification_state": "blocked_by_provider",
+      "last_verified_at": "2026-10-26",
       "creation_status": "DISABLE",
       "prior_live_write_observed": true,
       "known_live_hierarchies": [
@@ -683,6 +760,21 @@
           },
           "delivery_statuses": {
             "campaign": "DISABLE"
+          }
+        },
+        {
+          "evidence_ref": [
+            "outputs/campaign-acceptance-20261026-b/cases/tiktok-sales-acceptance-01-live.json",
+            "outputs/campaign-acceptance-20261026-b/cases/tiktok-sales-acceptance-01-group-readback.json",
+            "outputs/campaign-acceptance-20261026-b/cases/tiktok-sales-current-product-sets-read.json"
+          ],
+          "resource_ids": {
+            "campaign": "1880083317565154",
+            "ad_group": "1880083336090337"
+          },
+          "delivery_statuses": {
+            "campaign": "DISABLE",
+            "ad_group": "DISABLE"
           }
         }
       ],
@@ -708,16 +800,20 @@
       },
       "coverage": {
         "campaign_create": "live_pass",
-        "ad_group_create": "provider_rejected",
-        "ad_create": "not_run"
+        "ad_group_create": "live_pass",
+        "ad_create": "provider_rejected"
       },
       "evidence_refs": [
         {
           "evidence_level": "tracked_live_evidence_record",
           "case_ref": "agents/tools/advertising/contracts/provider_e2e_evidence.json#tiktok/PRODUCT_SALES"
+        },
+        {
+          "evidence_level": "live_chat_and_provider",
+          "case_ref": "outputs/campaign-acceptance-20261026-b/cases/tiktok-sales-custom-identity-tracked-ad-live-r4.json"
         }
       ],
-      "remaining_gap": "Prior live evidence created the Campaign but the Ad Group was rejected because the test advertiser lacked a required Pixel for website Product Sales optimization. Current-template end-to-end coverage is still required."
+      "remaining_gap": "Current paused Product Sales Campaign and Ad Group were created, renamed and read back. Ad creation with BC_AUTH_TT was rejected because the selected post did not match its identity. A tested CUSTOMIZED_USER, verified tracking App and placeholder URLs advanced to Provider Invalid product selection. The referenced catalog currently returns zero Product Sets. No Ad exists; obtain a valid product selection in the test account before child-only retry. Do not create or modify Catalog/Product Sets in this verification scope."
     },
     {
       "provider": "tiktok",
@@ -737,7 +833,7 @@
       ],
       "test_account": "7397068114548195329",
       "verification_state": "live_verified",
-      "last_verified_at": "2026-10-16",
+      "last_verified_at": "2026-10-26",
       "creation_status": 0,
       "prior_live_write_observed": true,
       "known_live_hierarchies": [
@@ -789,6 +885,20 @@
             "ad": "DISABLE"
           },
           "resume_safe": false
+        },
+        {
+          "evidence_ref": "outputs/campaign-acceptance-20261026-b/cases/tiktok-app-ad-update-20261026-readback.json",
+          "resource_ids": {
+            "campaign": "1880085399156082",
+            "ad_group": "1880085378463186",
+            "ad": "1880085435261650"
+          },
+          "delivery_statuses": {
+            "campaign": "DISABLE",
+            "ad_group": "DISABLE",
+            "ad": "DISABLE"
+          },
+          "resume_safe": true
         }
       ],
       "critical_fields": [
@@ -1025,11 +1135,29 @@
     {
       "id": "meta_app_template_argument_resolution",
       "applies_to": [{"provider": "meta", "campaign_type": "APP_PROMOTION"}],
-      "status": "unresolved",
+      "status": "resolved",
       "root_cause": "The 2026-10-16 saved template evidence records only tool_argument_resolution_error_type=ValueError; it does not retain the exception message or failing field path. The exact cause is therefore not proven.",
-      "fix": "No code fix is claimed. Campaign creation succeeded; later Ad Set and Ad resources were separately created and read back through real Tools.",
-      "next_action": "Resume the existing App workflow without recreating its Campaign, capture a credential-redacted error message and missing/invalid field path, then add a focused regression test before changing argument resolution.",
-      "regression_tests": []
+      "fix": "The historical cause remains unknown. Current template arguments resolve for all three levels in a regression and full dry-run; the three paused levels were independently created and read through child-only live recovery on 2026-10-26. The native one-shot live template is still not verified.",
+      "next_action": "Keep the existing paused App hierarchy for updates and reads. Verify a fresh native one-shot template separately only after checking the partial-write guard; never recreate a successful parent in recovery.",
+      "regression_tests": ["test_meta_app_template_resolves_current_three_level_arguments"]
+    },
+    {
+      "id": "meta_app_partial_card_replay",
+      "applies_to": [{"provider": "meta", "campaign_type": "APP_PROMOTION"}],
+      "status": "resolved",
+      "root_cause": "The live template created a paused Campaign and returned a ready card. The test driver submitted the full card again, replaying Campaign creation and hitting duplicate-write protection instead of resuming missing children.",
+      "fix": "The E2E template driver stops after any successful live resource creation, records the partial hierarchy, and requires child-only resume with independent readback.",
+      "next_action": "Do not submit the full creation card after a partial live write; resume only missing children under the existing paused parent.",
+      "regression_tests": ["test_template_workflow_never_resubmits_card_after_partial_live_creation"]
+    },
+    {
+      "id": "tiktok_product_sales_product_selection",
+      "applies_to": [{"provider": "tiktok", "campaign_type": "PRODUCT_SALES"}],
+      "status": "provider_limited",
+      "root_cause": "The paused Product Sales Campaign and Ad Group were created and read back. BC_AUTH_TT video/identity was rejected as mismatched; a verified CUSTOMIZED_USER identity and complete test tracking values advanced to Provider Invalid product selection. The referenced Catalog returned zero Product Sets on 2026-10-26.",
+      "fix": "No Product Set or Catalog write is authorized in this test. The Ad is not created. The two paused parents remain available for child-only recovery after the test advertiser provides a valid Product Set or other Provider-approved product selection.",
+      "next_action": "Obtain a real Product Set for the test account from its owner, validate the Catalog/Product Set read-only, then attempt only the missing DISABLE Ad once. Replace synthetic tracking URLs before ever enabling delivery.",
+      "regression_tests": ["test_product_sales_memory_requires_real_product_selection_before_ad_retry"]
     }
   ]
 }

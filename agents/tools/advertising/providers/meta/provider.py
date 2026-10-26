@@ -144,7 +144,7 @@ META_LOOKUP_CONTRACTS = {
         "campaign_id": _meta_lookup(
             "meta_list_campaigns", "campaigns", ["id", "campaign_id"],
             ["name", "campaign_name", "id"],
-        ),
+        ) | {"lookup_query_field": "campaign_id"},
         "adset_id": _meta_lookup(
             "meta_list_ad_sets", "ad_sets", ["id", "adset_id"],
             ["name", "adset_name", "id"], depends_on=[{
@@ -1434,7 +1434,11 @@ class MetaToolSource(BaseProviderToolSource):
             description="列出 Meta Campaign 列表。",
             input_schema=ToolSchema(
                 required=["account_id"],
-                properties={"account_id": {"type": "string"}, "limit": {"type": "integer"}},
+                properties={
+                    "account_id": {"type": "string"},
+                    "limit": {"type": "integer"},
+                    "campaign_id": {"type": "string", "minLength": 1},
+                },
             ),
             action="list", resource_type="campaign",
             intent_types=[
@@ -1465,12 +1469,13 @@ class MetaToolSource(BaseProviderToolSource):
                     "campaign_name": {"type": "string", "description": "Campaign 名称（可通过名称查找 ID）"},
                     "fields": {
                         "type": "array",
-                        "items": {"type": "string", "minLength": 1},
+                        "items": {"type": "string", "enum": list(MetaAPIClient.CAMPAIGN_DETAIL_FIELDS)},
                         "description": "可选的 Meta Campaign 字段集合",
                     },
                 },
             ),
             action="get", resource_type="campaign", resource_id_field="campaign_id",
+            contract_version="1.1.0",
             intent_types=["get_campaign"],
             intent_aliases=["查询 Meta campaign 详情", "查看 Meta campaign 详情", "查询 Meta 广告系列详情"],
             risk_level=RiskLevel.LOW,
@@ -1553,12 +1558,13 @@ class MetaToolSource(BaseProviderToolSource):
                     "campaign_id": {"type": "string"},
                     "fields": {
                         "type": "array",
-                        "items": {"type": "string", "minLength": 1},
+                        "items": {"type": "string", "enum": list(MetaAPIClient.ADSET_DETAIL_FIELDS)},
                         "description": "可选的 Meta Ad Set 字段集合",
                     },
                 },
             ),
             action="get", resource_type="ad_set", parent_resource_type="campaign",
+            contract_version="1.1.0",
             resource_id_field="adset_id",
             parent_resource_id_field="campaign_id",
             intent_types=["get_adset"],
@@ -1644,8 +1650,7 @@ class MetaToolSource(BaseProviderToolSource):
                         "type": "array",
                         "items": {
                             "type": "string",
-                            "minLength": 1,
-                            "maxLength": 100,
+                            "enum": list(MetaAPIClient.AD_DETAIL_FIELDS),
                         },
                         "maxItems": 30,
                         "description": "可选的 Meta Ad 字段集合",
@@ -1658,7 +1663,7 @@ class MetaToolSource(BaseProviderToolSource):
             traits=["read", "ad"],
             action="get", resource_type="ad", resource_id_field="ad_id",
             intent_types=["get_ad"],
-            contract_version="1.6.0",
+            contract_version="1.7.0",
             parent_resource_type="ad_set",
             parent_resource_id_field="adset_id",
         ), MetaGetAdHandler(api_client)))

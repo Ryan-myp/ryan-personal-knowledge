@@ -447,7 +447,7 @@
       "ad_format": "SINGLE_VIDEO",
       "account_id": "7397068114548195329",
       "verification_status": "provider_limited",
-      "verified_scope": "2026-10-15 Campaign 与 Ad Group 已暂停创建并回读；CTA Portfolio 已创建回读并通过 Traffic Ad 验证。此 Product Sales Ad 的创建仍报帖子与身份不匹配，完整模板未通过，不能视为销售广告已验证",
+      "verified_scope": "2026-10-26 测试账号已新建、改名并回读 DISABLE Campaign 与 Ad Group。原 BC_AUTH_TT 身份和视频组合报帖子不匹配；测试账号可用 CUSTOMIZED_USER 加已验证 tracking_app_id 与暂停测试追踪 URL 后，Ad 仍被 Provider 拒绝 Invalid product selection。同一 Catalog 的 Product Set 只读列表为 0；不得视为 Ad 或完整模板已通过，且本轮不允许创建 Catalog/Product Set。占位追踪 URL 仅供暂停测试，正式投放前须替换。",
       "required_inputs": ["Campaign 名称", "开始时间（UTC）", "结束时间（UTC）", "总预算（USD）"],
       "required_input_fields": ["campaign.campaign_name", "ad_group.schedule_start_time", "ad_group.schedule_end_time", "ad_group.budget"],
       "tags": ["内置", "测试账号", "TikTok", "销售", "渠道限制"],

@@ -1,0 +1,185 @@
+{
+  "schema_version": "campaign-e2e-diagnostic/v1",
+  "scope": "confirmed_test_accounts_campaign_hierarchy_only",
+  "read_verified": 8,
+  "write_verified": 0,
+  "cases": [
+    {
+      "case_id": "google-campaign-read-retry",
+      "provider": "google-ads",
+      "tool": "google_list_campaigns",
+      "action": "list",
+      "resource": "campaign",
+      "run_id": "bfe3eda6-2811-40c8-8251-0a32f2f5efe7",
+      "verdict": "not_verified"
+    },
+    {
+      "case_id": "google-campaign-read",
+      "provider": "google-ads",
+      "tool": "google_list_campaigns",
+      "action": "list",
+      "resource": "campaign",
+      "run_id": "8da61da5-941d-4268-8473-40df3df65f12",
+      "verdict": "not_verified"
+    },
+    {
+      "case_id": "meta-campaign-read",
+      "provider": "meta",
+      "tool": "meta_list_campaigns",
+      "action": "list",
+      "resource": "campaign",
+      "run_id": "13890346-5c78-4102-b82e-abe98b96c909",
+      "verdict": "read_verified"
+    },
+    {
+      "case_id": "meta-get-owned-campaign",
+      "provider": "meta",
+      "tool": "meta_get_campaign",
+      "action": "get",
+      "resource": "campaign",
+      "run_id": "43c02a5f-7452-4cba-8f71-5783aae43da2",
+      "verdict": "read_verified"
+    },
+    {
+      "case_id": "meta-list-owned-ads",
+      "provider": "meta",
+      "tool": "meta_list_ads",
+      "action": "list",
+      "resource": "ad",
+      "run_id": "71999fb6-080c-474c-8a7f-a51c79b91b05",
+      "verdict": "read_verified"
+    },
+    {
+      "case_id": "meta-list-owned-adsets",
+      "provider": "meta",
+      "tool": "meta_list_ad_sets",
+      "action": "list",
+      "resource": "ad_set",
+      "run_id": "95344031-a1da-4bae-b0a1-9fae1382a51d",
+      "verdict": "read_verified"
+    },
+    {
+      "case_id": "tiktok-campaign-read",
+      "provider": "tiktok",
+      "tool": "tiktok_list_campaigns",
+      "action": "list",
+      "resource": "campaign",
+      "run_id": "6e759888-9a7c-4dd0-a560-46f812e33f8f",
+      "verdict": "read_verified"
+    },
+    {
+      "case_id": "tiktok-get-owned-campaign",
+      "provider": "tiktok",
+      "tool": "tiktok_get_campaign",
+      "action": "get",
+      "resource": "campaign",
+      "run_id": "8682a84a-8846-4348-b1ca-41032eced6a8",
+      "verdict": "read_verified"
+    },
+    {
+      "case_id": "tiktok-list-owned-adgroups",
+      "provider": "tiktok",
+      "tool": "tiktok_list_adgroups",
+      "action": "list",
+      "resource": "ad_group",
+      "run_id": "bb9170ce-6a64-4c91-939c-aa140a3d048d",
+      "verdict": "read_verified"
+    },
+    {
+      "case_id": "tiktok-list-owned-ads",
+      "provider": "tiktok",
+      "tool": "tiktok_list_ads",
+      "action": "list",
+      "resource": "ad",
+      "run_id": "922e2a8c-51d8-4946-870a-3b85732d1999",
+      "verdict": "read_verified"
+    }
+  ],
+  "campaign_types": [
+    {
+      "provider": "google-ads",
+      "campaign_type": "PERFORMANCE_MAX",
+      "template_key": "google.test.performance-max",
+      "historical_state": "live_verified",
+      "current_write_verified": false,
+      "gap_recorded": true
+    },
+    {
+      "provider": "google-ads",
+      "campaign_type": "SHOPPING",
+      "template_key": "google.test.shopping",
+      "historical_state": "partial_live",
+      "current_write_verified": false,
+      "gap_recorded": true
+    },
+    {
+      "provider": "google-ads",
+      "campaign_type": "APP",
+      "template_key": "google.test.app",
+      "historical_state": "partial_live",
+      "current_write_verified": false,
+      "gap_recorded": true
+    },
+    {
+      "provider": "meta",
+      "campaign_type": "TRAFFIC",
+      "template_key": "meta.test.traffic",
+      "historical_state": "live_verified",
+      "current_write_verified": false,
+      "gap_recorded": false
+    },
+    {
+      "provider": "meta",
+      "campaign_type": "CATALOG_SALES",
+      "template_key": "meta.test.catalog-sales",
+      "historical_state": "live_verified",
+      "current_write_verified": false,
+      "gap_recorded": false
+    },
+    {
+      "provider": "meta",
+      "campaign_type": "CONVERSION",
+      "template_key": "meta.test.conversion",
+      "historical_state": "live_verified",
+      "current_write_verified": false,
+      "gap_recorded": false
+    },
+    {
+      "provider": "meta",
+      "campaign_type": "APP_PROMOTION",
+      "template_key": "meta.test.app-promotion",
+      "historical_state": "partial_live",
+      "current_write_verified": false,
+      "gap_recorded": true
+    },
+    {
+      "provider": "tiktok",
+      "campaign_type": "TRAFFIC",
+      "template_key": "tiktok.test.traffic",
+      "historical_state": "live_verified",
+      "current_write_verified": false,
+      "gap_recorded": false
+    },
+    {
+      "provider": "tiktok",
+      "campaign_type": "PRODUCT_SALES",
+      "template_key": "tiktok.test.sales",
+      "historical_state": "partial_live",
+      "current_write_verified": false,
+      "gap_recorded": true
+    },
+    {
+      "provider": "tiktok",
+      "campaign_type": "APP_PROMOTION",
+      "template_key": "tiktok.test.app-promotion",
+      "historical_state": "live_verified",
+      "current_write_verified": false,
+      "gap_recorded": false
+    }
+  ],
+  "limitations": [
+    "Historical template memory is not current-run CRUD evidence.",
+    "Writes need exact resource readback and human review; no automatic promotion.",
+    "Deletes are not live-enabled by the current Provider Tool contracts."
+  ]
+}

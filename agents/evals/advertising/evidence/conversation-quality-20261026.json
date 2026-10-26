@@ -1,0 +1,37 @@
+{
+  "schema_version": "agent-quality-evidence/v1",
+  "recorded_date": "2026-10-26",
+  "model_requests_were_real": true,
+  "provider_calls": 0,
+  "web_search": "offline_fixture",
+  "suite_cases": 15,
+  "runs": [
+    {
+      "passed": 14,
+      "failed": 1,
+      "failed_case": "diagram-creation-paraphrase",
+      "failed_assertion": "max_tool_calls",
+      "latency_p50_ms": 11053.4,
+      "latency_p95_ms": 46166.57
+    },
+    {
+      "passed": 14,
+      "failed": 1,
+      "failed_case": "ambiguous-create-paraphrase",
+      "failed_assertion": "max_tool_calls",
+      "latency_p50_ms": 15933.58,
+      "latency_p95_ms": 26966.174
+    }
+  ],
+  "focused_rechecks": {
+    "diagram_without_account_tool": true,
+    "ambiguous_create_with_one_clarification_tool": true
+  },
+  "gate_passed": false,
+  "limitations": [
+    "The suite was used during implementation and is not an unseen holdout.",
+    "The 15 cases do not measure broad correctness or production latency.",
+    "A different Tool-count failure occurred on each full run.",
+    "Offline Provider fixtures do not verify real campaign mutations."
+  ]
+}

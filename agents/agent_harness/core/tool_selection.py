@@ -53,7 +53,7 @@ _WRITE_CUES = (
 )
 _WRITE_NEGATIONS = (
     "do not", "don't", "dont", "never", "without", "avoid", "no need to",
-    "不要", "别", "禁止", "不需要", "无需", "不用",
+    "不要", "别", "禁止", "不需要", "不必", "无需", "不用",
 )
 _AMBIGUOUS_OPERATION_CUES = frozenset({"set", "设置"})
 _KNOWLEDGE_EXPLANATION_CUES = (

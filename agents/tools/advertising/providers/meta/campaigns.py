@@ -21,6 +21,25 @@ class MetaListCampaignsHandler(ToolHandler):
         account_id = ctx.account_id
         if self.client and account_id:
             try:
+                campaign_id = input_data.get("campaign_id")
+                if campaign_id:
+                    if (
+                        isinstance(self.client, MetaAPIClient)
+                        and not self.client.resource_belongs_to_account(
+                            account_id, "campaign", str(campaign_id)
+                        )
+                    ):
+                        return ToolResult.error(
+                            f"Campaign {campaign_id} does not belong to account {account_id}"
+                        )
+                    campaign = self.client.get_campaign(
+                        str(campaign_id), fields=["id", "name", "status", "account_id"],
+                    )
+                    return ToolResult.ok({
+                        "campaigns": [campaign],
+                        "account_id": account_id,
+                        "data_status": "live",
+                    })
                 campaigns = call_with_optional_page_size(
                     self.client.list_campaigns,
                     account_id,

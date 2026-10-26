@@ -2195,6 +2195,14 @@ class CreationCardBuilder:
         for path in blocking:
             if path not in missing_fields:
                 missing_fields.append(path)
+        for item in fields:
+            if (
+                item.get("user_required")
+                and item.get("visible", True)
+                and item.get("value") in (None, "", [], {})
+                and item["path"] not in missing_fields
+            ):
+                missing_fields.append(item["path"])
         defaulted_fields = [
             {
                 "path": item["path"], "label": item["label"],
@@ -2223,7 +2231,7 @@ class CreationCardBuilder:
             "defaulted_fields": defaulted_fields[:_MAX_FIELDS],
             "missing_fields": missing_fields,
             "invalid_fields": list(evaluation.get("invalid_fields", [])),
-            "ready": bool(evaluation.get("ready")) and not blocking,
+            "ready": bool(evaluation.get("ready")) and not missing_fields,
             "constraints": constraints,
             "account_id": None,
             "account_required": True,

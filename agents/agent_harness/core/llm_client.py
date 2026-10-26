@@ -1507,12 +1507,17 @@ class LLMClient:
                 raw_schema = raw_schema.to_dict()
             schema = dict(raw_schema) if isinstance(raw_schema, dict) else {}
             properties = schema.get("properties")
+            visible_properties = {
+                key: value
+                for key, value in (properties or {}).items()
+                if not (isinstance(value, dict) and value.get("ui_hidden") is True)
+            } if isinstance(properties, dict) else {}
             parameters = {
                 "type": "object",
-                "properties": dict(properties) if isinstance(properties, dict) else {},
+                "properties": visible_properties,
                 "required": [
                     str(item) for item in (schema.get("required") or ())
-                    if str(item)
+                    if str(item) in visible_properties
                 ],
                 "additionalProperties": bool(
                     schema.get("additionalProperties", False)

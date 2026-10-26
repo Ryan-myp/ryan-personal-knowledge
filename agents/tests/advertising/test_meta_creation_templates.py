@@ -65,6 +65,11 @@ def test_meta_template_only_requires_name_schedule_and_budget(runtime, key):
     fields = {field["path"]: field for field in card["fields"]}
     for path in USER_FIELDS:
         assert fields[path]["user_required"] is True, (key, path)
+    missing_user_inputs = {
+        path for path in USER_FIELDS if fields[path]["value"] in (None, "", [], {})
+    }
+    assert set(card["missing_fields"]) >= missing_user_inputs
+    assert card["ready"] is False
     for path, value in values.items():
         assert fields[path]["value"] == value, (key, path)
         assert fields[path]["user_required"] is False, (key, path)
@@ -95,6 +100,48 @@ def test_meta_template_preserves_explicit_form_values_and_paused_children(runtim
     assert params["meta_create_adset"]["end_time"] == overrides["ad_set.end_time"]
     for name in runtime.creation_blueprints.get(template["blueprint_id"]).tools:
         assert params[name]["status"] == "PAUSED"
+
+
+def test_meta_app_template_resolves_current_three_level_arguments(runtime):
+    template = next(
+        row for row in load_builtin_template_definitions()
+        if row["key"] == "meta.test.app-promotion"
+    )
+    scope = {"meta": {ACCOUNT}}
+    template_id = runtime._creation_template_manager_for_request(scope)._builtin_id(template)
+    overrides = {
+        "campaign.name": "QA_META_APP_ARGUMENTS",
+        "campaign.daily_budget": 30,
+        "ad_set.start_time": "2026-10-28T00:00:00+0800",
+        "ad_set.end_time": "2026-11-06T23:59:59+0800",
+        "ad_set.name": "QA_META_APP_ARGUMENTS_SET",
+        "ad.name": "QA_META_APP_ARGUMENTS_AD",
+    }
+    intent = runtime.apply_creation_template_to_intent(
+        ParsedIntent(
+            "create_campaign", "提交创建计划", ["meta"],
+            scoped_parameters={"meta": overrides},
+        ),
+        template_id, account_id=ACCOUNT, account_scope=scope,
+    )
+    card = runtime.build_creation_ui(
+        intent, account_id=ACCOUNT, account_scope=scope,
+    )["cards"][0]
+    assert card["ready"] is True
+    assert card["missing_fields"] == []
+    params = intent.scoped_parameters["meta"]
+    assert params["meta_create_campaign"]["name"] == overrides["campaign.name"]
+    assert params["meta_create_adset"]["promoted_object"]["application_id"] == (
+        template["values"]["ad_set.promoted_object.application_id"]
+    )
+    assert params["meta_create_app_promotion_ad"]["application_id"] == (
+        template["values"]["ad.application_id"]
+    )
+    assert {
+        params[tool]["status"] for tool in (
+            "meta_create_campaign", "meta_create_adset", "meta_create_app_promotion_ad",
+        )
+    } == {"PAUSED"}
 
 
 @pytest.mark.parametrize("key", TEMPLATE_KEYS)

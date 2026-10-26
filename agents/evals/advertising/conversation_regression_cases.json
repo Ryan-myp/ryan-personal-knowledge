@@ -69,5 +69,80 @@
       "forbidden_tools": ["meta_create_campaign", "tiktok_create_campaign", "google_create_campaign"],
       "needs_input": true, "max_tool_calls": 4
     }
+  },
+  {
+    "id": "capabilities-paraphrase",
+    "input": "这个工作台能做什么？别介绍底层模型。",
+    "expected_behavior": "基于注册能力介绍广告操作与知识服务，不查账户或网页。",
+    "assertions": {
+      "reply_contains": ["广告", "知识"],
+      "forbidden_tools": ["agent_web_search", "agent_knowledge_search"],
+      "max_tool_calls": 0
+    }
+  },
+  {
+    "id": "knowledge-attribution-paraphrase",
+    "input": "从我们的知识库里找找，归因窗口会怎样影响 ROAS？只讲原理。",
+    "expected_behavior": "检索知识并说明归因口径，不请求广告账户。",
+    "assertions": {
+      "required_tools": ["agent_knowledge_search"],
+      "forbidden_tools": ["agent_web_search", "meta_list_accounts"],
+      "reply_nonempty": true, "max_tool_calls": 4
+    }
+  },
+  {
+    "id": "external-product-paraphrase",
+    "input": "帮我联网看看 Hermes Agent 最近公开了哪些功能，附来源，不要查广告账户。",
+    "expected_behavior": "使用网页搜索获取外部公开信息。",
+    "assertions": {
+      "required_tools": ["agent_web_search"],
+      "forbidden_tools": ["meta_list_accounts", "tiktok_list_accounts"],
+      "max_tool_calls": 4
+    }
+  },
+  {
+    "id": "diagram-creation-paraphrase",
+    "input": "画个从选模板到创建 Campaign、Ad Set、Ad 的流程示意图，不必获取账户数据。",
+    "expected_behavior": "绘图说明而非查询或创建真实广告。",
+    "assertions": {
+      "reply_nonempty": true,
+      "forbidden_tools": [
+        "meta_list_campaigns", "meta_create_campaign", "agent_web_search"
+      ],
+      "max_tool_calls": 0
+    }
+  },
+  {
+    "id": "read-account-not-external",
+    "input": "我想看 Meta 广告账户下面的 Campaign 列表，不是公开网页资料。",
+    "expected_behavior": "识别为账户数据查询，缺少账户时澄清，不搜索互联网。",
+    "assertions": {
+      "forbidden_tools": ["agent_web_search", "agent_knowledge_search"],
+      "reply_nonempty": true, "max_tool_calls": 4
+    }
+  },
+  {
+    "id": "no-write-budget-paraphrase",
+    "input": "先分析把 Google Campaign 预算分一部分给 Meta 的风险，暂时不要执行。",
+    "expected_behavior": "只给预算迁移分析，不做真实写入。",
+    "assertions": {
+      "reply_nonempty": true,
+      "forbidden_tools": [
+        "google_update_campaign_budget", "meta_update_campaign"
+      ],
+      "max_tool_calls": 4
+    }
+  },
+  {
+    "id": "ambiguous-create-paraphrase",
+    "input": "帮我投一个新的广告，其他的你看着办。",
+    "expected_behavior": "不猜账户、类型和预算，先澄清。",
+    "assertions": {
+      "needs_input": true,
+      "forbidden_tools": [
+        "google_create_campaign", "meta_create_campaign", "tiktok_create_campaign"
+      ],
+      "max_tool_calls": 4
+    }
   }
 ]

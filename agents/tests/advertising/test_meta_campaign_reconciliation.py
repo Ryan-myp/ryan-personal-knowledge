@@ -2,7 +2,10 @@ import pytest
 
 from agents.agent_harness.core.interfaces import ToolContext
 from agents.tools.advertising.clients.meta_client import MetaAPIClient
-from agents.tools.advertising.providers.meta.campaigns import MetaGetCampaignHandler
+from agents.tools.advertising.providers.meta.campaigns import (
+    MetaGetCampaignHandler,
+    MetaListCampaignsHandler,
+)
 
 
 def test_exact_name_lookup_uses_provider_filter_instead_of_first_account_page():
@@ -52,6 +55,107 @@ def test_campaign_detail_default_fields_use_meta_stop_time():
     fields = calls[0][2]["extra_params"]["fields"].split(",")
     assert "stop_time" in fields
     assert "end_time" not in fields
+
+
+def test_campaign_detail_rejects_unsupported_field_before_graph_request():
+    client = MetaAPIClient({"access_token": "fixture"})
+    client.request = lambda *_args, **_kwargs: pytest.fail("invalid field reached Graph")
+
+    with pytest.raises(ValueError, match="Unsupported Meta Campaign fields"):
+        client.get_campaign("456", fields=["id", "is_active"])
+
+
+def test_campaign_detail_tool_fields_match_provider_contract():
+    from agents.tools.advertising.providers.meta import create_meta_tool_source
+
+    definition = next(
+        binding.definition
+        for binding in create_meta_tool_source(None).list_bindings()
+        if binding.definition.name == "meta_get_campaign"
+    )
+    allowed = definition.input_schema.properties["fields"]["items"]["enum"]
+    assert "stop_time" in allowed
+    assert "is_active" not in allowed
+
+
+def test_campaign_selection_queries_exact_id_without_scanning_account_edge():
+    class Client(MetaAPIClient):
+        def __init__(self):
+            super().__init__({"access_token": "fixture"})
+
+        def list_campaigns(self, *_args, **_kwargs):
+            pytest.fail("exact lookup must not scan the Campaign edge")
+
+        def resource_belongs_to_account(self, account_id, resource_type, resource_id):
+            return (account_id, resource_type, resource_id) == ("123", "campaign", "456")
+
+        def get_campaign(self, campaign_id, fields=None):
+            return {"id": campaign_id, "name": "Exact Campaign", "status": "PAUSED"}
+
+    handler = MetaListCampaignsHandler(Client())
+    result = handler.execute(
+        ToolContext(session_id="qa", user_id="qa", account_id="123"),
+        {"campaign_id": "456", "limit": 1000},
+    )
+    assert result.success is True
+    assert [row["id"] for row in result.data["campaigns"]] == ["456"]
+    assert handler.execute(
+        ToolContext(session_id="qa", user_id="qa", account_id="999"),
+        {"campaign_id": "456"},
+    ).success is False
+
+
+def test_campaign_selection_declares_exact_lookup_query():
+    from agents.tools.advertising.providers.meta import create_meta_tool_source
+
+    definition = next(
+        binding.definition
+        for binding in create_meta_tool_source(None).list_bindings()
+        if binding.definition.name == "meta_update_campaign"
+    )
+    assert definition.input_schema.properties["campaign_id"]["lookup_query_field"] == "campaign_id"
+
+
+def test_ad_detail_rejects_campaign_only_fields_before_graph_request():
+    client = MetaAPIClient({"access_token": "fixture"})
+    client.request = lambda *_args, **_kwargs: pytest.fail("invalid field reached Graph")
+
+    with pytest.raises(ValueError, match="Unsupported Meta Ad fields"):
+        client.get_ad("456", fields=["id", "promoted_object"])
+
+
+def test_ad_detail_tool_fields_match_provider_contract():
+    from agents.tools.advertising.providers.meta import create_meta_tool_source
+
+    definition = next(
+        binding.definition
+        for binding in create_meta_tool_source(None).list_bindings()
+        if binding.definition.name == "meta_get_ad"
+    )
+    allowed = definition.input_schema.properties["fields"]["items"]["enum"]
+    assert "creative" in allowed
+    assert "promoted_object" not in allowed
+
+
+def test_adset_detail_rejects_alias_field_before_graph_request():
+    client = MetaAPIClient({"access_token": "fixture"})
+    client.request = lambda *_args, **_kwargs: pytest.fail("invalid field reached Graph")
+
+    with pytest.raises(ValueError, match="Unsupported Meta Ad Set fields"):
+        client.get_adset("456", fields=["id", "adset_name"])
+
+
+def test_adset_detail_tool_fields_match_provider_contract():
+    from agents.tools.advertising.providers.meta import create_meta_tool_source
+
+    definition = next(
+        binding.definition
+        for binding in create_meta_tool_source(None).list_bindings()
+        if binding.definition.name == "meta_get_adset"
+    )
+    allowed = definition.input_schema.properties["fields"]["items"]["enum"]
+    assert "name" in allowed
+    assert "adset_name" not in allowed
 
 
 def test_name_lookup_rejects_partial_matches_and_ambiguous_exact_names():
@@ -119,6 +223,33 @@ def test_account_ownership_is_checked_on_the_exact_node(kind, owner, expected):
     assert client.resource_belongs_to_account("act_123", kind, "456") is expected
     assert len(calls) == 1
     assert calls[0][1] == "/456"
+
+
+@pytest.mark.parametrize("failure", ["temporary", "rate_limit", "auth"])
+def test_account_ownership_does_not_scan_account_on_provider_failure(failure):
+    from agents.tools.advertising.clients.base import (
+        AuthError, RateLimitError, TemporaryError,
+    )
+
+    client = MetaAPIClient({"access_token": "fixture"})
+    errors = {
+        "temporary": TemporaryError("upstream 504"),
+        "rate_limit": RateLimitError("upstream 429"),
+        "auth": AuthError("upstream 401"),
+    }
+    calls = []
+
+    def failing_request(method, endpoint, **kwargs):
+        calls.append(endpoint)
+        raise errors[failure]
+
+    client.request = failing_request
+    client.list_campaigns = lambda *_args, **_kwargs: pytest.fail(
+        "transient and authorization failures must not scan the account"
+    )
+    with pytest.raises(type(errors[failure])):
+        client.resource_belongs_to_account("123", "campaign", "456")
+    assert calls == ["/456"]
 
 
 def test_ad_readback_includes_campaign_and_creative_relationships():
