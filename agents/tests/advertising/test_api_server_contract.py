@@ -10,6 +10,7 @@ import subprocess
 import threading
 import asyncio
 from pathlib import Path
+from types import SimpleNamespace
 
 import httpx
 import pytest
@@ -2790,8 +2791,8 @@ def test_chat_stream_forwards_runtime_events_without_inventing_steps(fake_server
 
 
 @pytest.mark.parametrize("user_input,language,summary", [
-    ("执行这个任务", "zh", "正在检查"),
-    ("Please query the reports.", "en", "Checking the request"),
+    ("执行这个任务", "zh", "正在梳理请求目标"),
+    ("Please query the reports.", "en", "Clarifying the request"),
 ])
 def test_chat_stream_forwards_model_lifecycle_but_never_model_deltas(
     fake_server, user_input, language, summary,
@@ -2803,6 +2804,16 @@ def test_chat_stream_forwards_model_lifecycle_but_never_model_deltas(
         "<|tool_call_begin|> agent-platform:knowledge_search "
         "<|tool_call_argument_begin|>{\"query\":\"Meta Canvas\"}"
         "<|tool_call_end|>"
+    )
+    fake_server.registry.get = lambda _name: (
+        SimpleNamespace(
+            intent_aliases=["知识库检索", "search knowledge base"],
+            intent_types=["knowledge_search"],
+            namespace="agent_platform",
+            resource_type="knowledge",
+            action="search",
+        ),
+        object(),
     )
 
     def run(**kwargs):
@@ -2828,6 +2839,11 @@ def test_chat_stream_forwards_model_lifecycle_but_never_model_deltas(
             "provider_index": 0,
             "usage": {"input_tokens": 12, "output_tokens": 4},
         })
+        observe({
+            "type": "tool_execution_start",
+            "tool_name": "agent_knowledge_search",
+            "arguments": {"query": "private query text"},
+        })
         return {"status": "failed", "reply": protocol_text, "results": []}
 
     fake_server.run = run
@@ -2847,6 +2863,17 @@ def test_chat_stream_forwards_model_lifecycle_but_never_model_deltas(
     assert '"content_type": "execution_summary"' in response.text
     assert f'"language_code": "{language}"' in response.text
     assert summary in response.text
+    assert (
+        ("知识库检索" if language == "zh" else "search knowledge base")
+        in response.text
+    )
+    summary_events = [
+        json.loads(line.removeprefix("data: "))
+        for line in response.text.splitlines()
+        if line.startswith("data: ")
+        and '"content_type": "execution_summary"' in line
+    ]
+    assert all("private query text" not in item["content"] for item in summary_events)
     assert "Private scratchpad" not in response.text
     assert "<|tool_" not in response.text
     assert "API Error:" not in response.text

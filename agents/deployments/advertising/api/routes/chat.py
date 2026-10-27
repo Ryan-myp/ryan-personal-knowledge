@@ -450,7 +450,9 @@ def create_chat_router(context: ApiContext) -> APIRouter:
                 )
 
             async def generate():
-                summaries = StreamExecutionSummaries(language)
+                summaries = StreamExecutionSummaries(
+                    language, registry=getattr(runtime, "registry", None),
+                )
 
                 def event(payload: dict[str, Any]) -> str:
                     return (

@@ -42,6 +42,82 @@ def test_confirmation_is_not_described_as_successful_external_execution():
     assert "已完成" not in event["content"]
 
 
+def test_execution_summary_explains_tool_selection_from_registered_contract():
+    definition = SimpleNamespace(
+        intent_aliases=["知识库检索", "搜索知识库"],
+        intent_types=["knowledge_search"],
+        namespace="agent_platform",
+        resource_type="knowledge",
+        action="search",
+        result_items_key="results",
+    )
+    registry = SimpleNamespace(get=lambda _name: (definition, object()))
+    progress = StreamExecutionSummaries("zh", registry=registry)
+
+    started = progress.for_event({
+        "type": "tool_execution_start",
+        "tool_name": "agent_knowledge_search",
+        "arguments": {"query": "给我详细讲一下 API", "access_token": "secret"},
+    })
+    assert "知识库检索" in started["content"]
+    assert "返回结果" in started["content"]
+    assert "secret" not in started["content"]
+
+    completed = progress.for_event({
+        "type": "tool_execution_end",
+        "tool_name": "agent_knowledge_search",
+        "result": {
+            "success": True,
+            "data": {"query_summary": {"returned_count": 4}},
+        },
+    })
+    assert "4 项" in completed["content"]
+    assert "整理答复" in completed["content"]
+
+
+def test_english_execution_summary_uses_registered_english_alias():
+    definition = SimpleNamespace(
+        intent_aliases=["查询 Meta Campaign 列表", "list Meta campaigns"],
+        intent_types=["list_campaigns"],
+        namespace="meta",
+        resource_type="campaign",
+        action="list",
+    )
+    registry = SimpleNamespace(get=lambda _name: (definition, object()))
+    progress = StreamExecutionSummaries("en", registry=registry)
+    event = progress.for_event({
+        "type": "tool_execution_start", "tool_name": "meta_list_campaigns",
+    })
+    assert "list Meta campaigns" in event["content"]
+    assert "gather the relevant information" in event["content"]
+
+
+def test_model_completion_summary_reports_the_observed_next_step():
+    progress = StreamExecutionSummaries("zh")
+    event = progress.for_event({
+        "type": "model_end", "tool_call_count": 2, "has_content": False,
+    })
+    assert "2 个工具" in event["content"]
+    assert "执行并核验实际结果" in event["content"]
+
+
+def test_chinese_summary_keeps_fallback_explanation_in_chinese():
+    definition = SimpleNamespace(
+        intent_aliases=["list campaigns"],
+        intent_types=["list_campaigns"],
+        namespace="meta",
+        resource_type="campaign",
+        action="list",
+    )
+    registry = SimpleNamespace(get=lambda _name: (definition, object()))
+    progress = StreamExecutionSummaries("zh", registry=registry)
+    event = progress.for_event({
+        "type": "tool_execution_start", "tool_name": "meta_list_campaigns",
+    })
+    assert "当前步骤调用 Tool" in event["content"]
+    assert "实际返回结果" in event["content"]
+
+
 def test_raw_progress_events_are_removed_without_modifying_runtime_events():
     events = [
         {"type": "model_start", "seq": 1},
