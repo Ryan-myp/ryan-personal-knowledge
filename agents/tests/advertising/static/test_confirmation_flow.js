@@ -167,6 +167,28 @@ test('selecting an account continues the existing request without repeating its 
     assert.doesNotMatch(displayed[0][0], new RegExp(previousPrompt));
 });
 
+test('account selection carries the originating turn and tool', async () => {
+    const { context, requests } = environment();
+    context.renderStreamResult = () => {};
+    context.streamChatRequest = async params => {
+        requests.push(params);
+        return { session_id: 'session', status: 'succeeded', content: '完成', results: [] };
+    };
+
+    await context.continueWithSelectedAccount(
+        'meta-account-1',
+        { user_input: '查询 Meta 报表', session_id: 'session' },
+        { turn_id: 'turn-1', tool: 'meta_get_campaign_report' },
+    );
+
+    assert.deepEqual(JSON.parse(JSON.stringify(requests[0].interaction_response)), {
+        type: 'account_selection',
+        turn_id: 'turn-1',
+        tool_name: 'meta_get_campaign_report',
+        value: 'meta-account-1',
+    });
+});
+
 test('missing parameters merge only into the indicated namespace while preserving the draft', async () => {
     const { context, requests, nodes, node } = environment();
     context.showConfirm({ type: 'ask_params', platform: 'google-ads', missing: ['campaign_id'] }, original());

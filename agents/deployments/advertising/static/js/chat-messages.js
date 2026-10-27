@@ -31,7 +31,7 @@
                 button.textContent = `使用账户 ${String(option.label || accountId)}`;
                 button.disabled = !String(originalRequest?.user_input || '').trim();
                 button.addEventListener('click', () => {
-                    continueWithSelectedAccount(accountId, originalRequest || {});
+                    continueWithSelectedAccount(accountId, originalRequest || {}, selection);
                 });
                 actions.appendChild(button);
             });
@@ -1006,7 +1006,7 @@
             }
         }
 
-        async function continueWithSelectedAccount(accountId, originalRequest) {
+        async function continueWithSelectedAccount(accountId, originalRequest, selection = {}) {
             if (isSending || accountId == null) return;
             const sourceText = String(originalRequest?.user_input || '').trim();
             const selectedId = String(accountId).trim();
@@ -1021,6 +1021,14 @@
                 user_id: 'web_user',
                 session_id: sessionId,
                 account_id: selectedId,
+                ...(selection.turn_id && selection.tool ? {
+                    interaction_response: {
+                        type: 'account_selection',
+                        turn_id: String(selection.turn_id),
+                        tool_name: String(selection.tool),
+                        value: selectedId,
+                    },
+                } : {}),
             };
             isSending = true;
             isStopping = false;

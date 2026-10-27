@@ -9,11 +9,19 @@ from agents.agent_platform.evals.regression import RegressionAssertions
 from agents.agent_harness.core.timeouts import DEFAULT_EXECUTION_TIMEOUT_SECONDS
 
 
+class AccountSelectionResponse(BaseModel):
+    type: Literal["account_selection"]
+    turn_id: str = Field(min_length=1, max_length=200)
+    tool_name: str = Field(min_length=1, max_length=200)
+    value: str = Field(min_length=1, max_length=200)
+
+
 class ChatRequest(BaseModel):
     user_input: str = Field(default="", max_length=12_000)
     session_id: Optional[str] = None
     user_id: str = Field(default="web_user", min_length=1, max_length=200)
     account_id: str = Field(default="", max_length=200)
+    interaction_response: Optional[AccountSelectionResponse] = None
     media_ids: list[str] = Field(default_factory=list, max_length=5)
     confirmed: bool = False
     confirmation_payload: Optional[dict] = None
@@ -243,6 +251,7 @@ class ChatStreamRequest(BaseModel):
     session_id: Optional[str] = None
     user_id: str = Field(default="web_user", min_length=1, max_length=200)
     account_id: str = Field(default="", max_length=200)
+    interaction_response: Optional[AccountSelectionResponse] = None
     media_ids: list[str] = Field(default_factory=list, max_length=5)
     confirmed: bool = False
     confirmation_payload: Optional[dict] = None

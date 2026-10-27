@@ -47,6 +47,47 @@ def test_harness_metrics_track_runs_and_tools_without_payloads():
     app.close()
 
 
+def test_metrics_distinguish_parallel_same_name_calls_and_model_latency():
+    metrics = InMemoryMetrics()
+    metrics.observe({"type": "tool_execution_start", "run_id": "r", "tool_name": "lookup",
+                     "tool_call_id": "one", "arguments": {"token": "secret"}})
+    metrics.observe({"type": "tool_execution_start", "run_id": "r", "tool_name": "lookup",
+                     "tool_call_id": "two"})
+    metrics.observe({"type": "tool_execution_end", "run_id": "r", "tool_name": "lookup",
+                     "tool_call_id": "one", "result": {"token": "secret"}})
+    assert metrics.snapshot()["in_flight"] == 1
+    metrics.observe({"type": "tool_execution_end", "run_id": "r", "tool_name": "lookup",
+                     "tool_call_id": "two"})
+    metrics.observe({"type": "model_start", "model_call_id": "m1"})
+    metrics.observe({"type": "model_end", "model_call_id": "m1", "duration_ms": 1200,
+                     "usage": {"secret": "do-not-store"}})
+    metrics.observe({"type": "model_error", "model_call_id": "m2",
+                     "duration_ms": 3000, "error_type": "TimeoutError"})
+    snapshot = metrics.snapshot()
+    assert snapshot["in_flight"] == 0
+    assert snapshot["durations"]["tool_duration"]["count"] == 2
+    assert snapshot["durations"]["model_duration"]["count"] == 2
+    assert snapshot["durations"]["model_duration"]["p50_ms"] == 1200
+    assert snapshot["durations"]["model_duration"]["p95_ms"] == 3000
+    assert snapshot["counters"]["model_calls_failed"] == 1
+    assert "secret" not in str(snapshot)
+
+
+def test_metrics_keep_bounded_latency_samples_and_reset():
+    metrics = InMemoryMetrics()
+    for index in range(300):
+        metrics.observe({
+            "type": "model_end", "model_call_id": str(index),
+            "duration_ms": index,
+        })
+    snapshot = metrics.snapshot()
+    assert snapshot["durations"]["model_duration"]["count"] == 300
+    assert snapshot["durations"]["model_duration"]["sample_count"] == 256
+    assert snapshot["in_flight"] == 0
+    metrics.reset()
+    assert metrics.snapshot()["durations"] == {}
+
+
 def test_harness_metric_observer_failure_does_not_fail_a_run():
     class BrokenMetrics:
         def observe(self, _event):

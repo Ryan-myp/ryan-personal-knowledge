@@ -50,6 +50,7 @@ class AdvertisingRunService:
         session_id: str = None,
         user_id: str = "anonymous",
         account_id: str = None,
+        interaction_response: Optional[dict] = None,
         credentials: dict = None,
         platform_params: dict = None,
         confirmed: bool = False,
@@ -76,6 +77,7 @@ class AdvertisingRunService:
             tenant_id=tenant_id or "default",
             context={
                 "account_id": account_id,
+                "_agent_interaction_response": interaction_response,
                 "credentials": credentials,
                 "platform_params": platform_params,
                 "confirmed": confirmed,

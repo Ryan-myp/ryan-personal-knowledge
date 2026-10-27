@@ -82,6 +82,7 @@ def pending_input_interaction(
     transcript: Sequence[Any],
     *,
     choice: str = "",
+    response: Mapping[str, Any] | None = None,
 ) -> Mapping[str, Any] | None:
     """Return only the most recent, explicitly paused Tool interaction."""
     pending: dict[str, Any] | None = None
@@ -91,9 +92,21 @@ def pending_input_interaction(
             continue
         role = getattr(message, "role", "")
         if role == "user":
+            metadata = getattr(message, "metadata", {}) or {}
+            origin = metadata.get("interaction_origin") if isinstance(
+                metadata, Mapping,
+            ) else None
             if (
                 pending is None and choice
-                and str(getattr(message, "content", "") or "").strip() == choice
+                and (
+                    str(getattr(message, "content", "") or "").strip() == choice
+                    or (
+                        isinstance(response, Mapping)
+                        and isinstance(origin, Mapping)
+                        and origin.get("turn_id") == response.get("turn_id")
+                        and origin.get("tool_name") == response.get("tool_name")
+                    )
+                )
                 and repeated_choices < 2
             ):
                 repeated_choices += 1

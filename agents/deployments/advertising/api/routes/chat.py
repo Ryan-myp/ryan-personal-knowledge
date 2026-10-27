@@ -360,6 +360,10 @@ def create_chat_router(context: ApiContext) -> APIRouter:
                 user_input=user_input,
                 session_id=request.session_id,
                 account_id=request.account_id or None,
+                interaction_response=(
+                    request.interaction_response.model_dump()
+                    if request.interaction_response else None
+                ),
                 input_media=input_media,
                 platform_params=request.platform_params,
                 confirmed=request.confirmed,
@@ -476,6 +480,10 @@ def create_chat_router(context: ApiContext) -> APIRouter:
                     user_input=user_input,
                     session_id=request.session_id,
                     account_id=request.account_id or None,
+                    interaction_response=(
+                        request.interaction_response.model_dump()
+                        if request.interaction_response else None
+                    ),
                     input_media=input_media,
                     platform_params=request.platform_params,
                     confirmed=request.confirmed,

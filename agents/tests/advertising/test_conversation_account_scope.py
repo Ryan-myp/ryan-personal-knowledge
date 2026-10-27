@@ -98,10 +98,39 @@ def _chat_client(runtime, principal):
     return TestClient(app)
 
 
-def _prompt(client, text, session="page-conversation", endpoint="/chat", account_id=None):
+def test_single_authorized_account_report_read_requires_selection(tmp_path):
+    provider = QueryClient("meta")
+    runtime = _runtime(tmp_path, client=provider)
+    runtime.whitelist_validator.allowed_accounts = {"meta": ["test-account"]}
+    try:
+        install(
+            runtime,
+            ModelTurn(tool_calls=(call("meta_get_campaign_report", {}),)),
+            ModelTurn(content="Report read."),
+        )
+        result = runtime.run(
+            "查询 Meta Campaign 昨天的花费报表",
+            principal=_principal(accounts=("test-account",)),
+        )
+        assert result["status"] == "awaiting_input"
+        assert result.get("needs_input") is True
+        assert result["ui"]["account_selection"]["account_options"] == [
+            {"label": "账户 test-account", "value": "test-account"}
+        ]
+        assert provider.calls == []
+    finally:
+        _close(runtime)
+
+
+def _prompt(
+    client, text, session="page-conversation", endpoint="/chat",
+    account_id=None, interaction_response=None,
+):
     payload = {"user_input": text, "session_id": session}
     if account_id is not None:
         payload["account_id"] = account_id
+    if interaction_response is not None:
+        payload["interaction_response"] = interaction_response
     response = client.post(endpoint, json=payload)
     assert response.status_code == 200, response.text
     if endpoint == "/chat/stream":
@@ -303,6 +332,143 @@ def test_meta_report_account_selection_resumes_report_tool(tmp_path, endpoint):
         assert second["status"] == "succeeded", second
         assert provider.calls == [("report", "test-account", (), None)]
         assert second["results"][0]["data"]["data_status"] == "live"
+    finally:
+        _close(runtime)
+
+
+@pytest.mark.parametrize("endpoint", ["/chat", "/chat/stream"])
+def test_account_selection_structured_response_resumes_without_fixed_phrase(
+    tmp_path, endpoint,
+):
+    provider = QueryClient("meta")
+    runtime = _runtime(tmp_path, client=provider)
+    try:
+        install(runtime, ModelTurn(tool_calls=(call(
+            "meta_get_campaign_report", {},
+        ),)))
+        with _chat_client(runtime, _principal()) as client:
+            first = _prompt(client, "查询 Meta Ads 报表", endpoint=endpoint)
+            selection = first["ui"]["account_selection"]
+            assert selection["turn_id"] == first["turn_id"]
+            assert selection["tool"] == "meta_get_campaign_report"
+            runtime._sessions.clear()
+            model = install(
+                runtime,
+                ModelTurn(tool_calls=(call("meta_get_campaign_report", {}),)),
+                ModelTurn(content="已查询报表。"),
+            )
+            second = _prompt(
+                client, "好的，就这个账号", endpoint=endpoint,
+                account_id="test-account",
+                interaction_response={
+                    "type": "account_selection",
+                    "turn_id": selection["turn_id"],
+                    "tool_name": selection["tool"],
+                    "value": "test-account",
+                },
+            )
+        assert second["status"] == "succeeded", second
+        assert "meta_get_campaign_report" in model.tool_names[0]
+        assert provider.calls == [("report", "test-account", (), None)]
+    finally:
+        _close(runtime)
+
+
+@pytest.mark.parametrize("invalid", ["turn", "tool", "value"])
+def test_account_selection_rejects_mismatched_interaction(tmp_path, invalid):
+    provider = QueryClient("meta")
+    runtime = _runtime(tmp_path, client=provider)
+    try:
+        install(runtime, ModelTurn(tool_calls=(call(
+            "meta_get_campaign_report", {},
+        ),)))
+        with _chat_client(runtime, _principal()) as client:
+            first = _prompt(client, "查询 Meta Ads 报表")
+            selection = first["ui"]["account_selection"]
+            response = {
+                "type": "account_selection",
+                "turn_id": selection["turn_id"],
+                "tool_name": selection["tool"],
+                "value": "test-account",
+            }
+            response[{
+                "turn": "turn_id", "tool": "tool_name", "value": "value",
+            }[invalid]] = {
+                "turn": "stale-turn", "tool": "meta_get_campaign",
+                "value": "second-account",
+            }[invalid]
+            install(runtime, ModelTurn(content="请重新选择账户。"))
+            second = _prompt(
+                client, "就这个账号", account_id="test-account",
+                interaction_response=response,
+            )
+        assert second["results"] == []
+        assert provider.calls == []
+    finally:
+        _close(runtime)
+
+
+def test_account_selection_rejects_stale_button_after_new_question(tmp_path):
+    provider = QueryClient("meta")
+    runtime = _runtime(tmp_path, client=provider)
+    try:
+        install(runtime, ModelTurn(tool_calls=(call(
+            "meta_get_campaign_report", {},
+        ),)))
+        with _chat_client(runtime, _principal()) as client:
+            first = _prompt(client, "查询 Meta Ads 报表")
+            selection = first["ui"]["account_selection"]
+            install(runtime, ModelTurn(content="报表汇总了统计指标。"))
+            _prompt(client, "先解释一下报表是什么")
+            install(runtime, ModelTurn(content="请重新选择账户。"))
+            result = _prompt(
+                client, "就这个账号", account_id="test-account",
+                interaction_response={
+                    "type": "account_selection",
+                    "turn_id": selection["turn_id"],
+                    "tool_name": selection["tool"],
+                    "value": "test-account",
+                },
+            )
+        assert result["results"] == []
+        assert provider.calls == []
+    finally:
+        _close(runtime)
+
+
+def test_structured_account_selection_can_retry_with_new_wording(tmp_path):
+    provider = QueryClient("meta")
+    runtime = _runtime(tmp_path, client=provider)
+    try:
+        install(runtime, ModelTurn(tool_calls=(call(
+            "meta_get_campaign_report", {},
+        ),)))
+        with _chat_client(runtime, _principal()) as client:
+            first = _prompt(client, "查询 Meta Ads 报表")
+            selection = first["ui"]["account_selection"]
+            choice = {
+                "type": "account_selection",
+                "turn_id": selection["turn_id"],
+                "tool_name": selection["tool"],
+                "value": "test-account",
+            }
+            install(runtime, ModelTurn(content="暂时没有完成查询。"))
+            _prompt(
+                client, "用这个账号查", account_id="test-account",
+                interaction_response=choice,
+            )
+            runtime._sessions.clear()
+            install(
+                runtime,
+                ModelTurn(tool_calls=(call("meta_get_campaign_report", {}),)),
+                ModelTurn(content="已查询报表。"),
+            )
+            result = _prompt(
+                client, "请再试一次这个账号",
+                account_id="test-account", interaction_response=choice,
+            )
+        assert result["status"] == "succeeded", result
+        assert provider.calls == [("report", "test-account", (), None)]
     finally:
         _close(runtime)
 

@@ -33,6 +33,58 @@ def test_select_test_account_requires_one_allowlisted_test_account():
     assert account == "acct-2222"
 
 
+def test_google_smoke_runs_only_one_read_without_writing_evidence(
+    monkeypatch, tmp_path, capsys,
+):
+    from scripts.advertising import provider_query_e2e as runner
+
+    events = []
+    config = {"allowed_accounts": {"google-ads": ["test-google"]},
+              "granted_permissions": ["ads.read"]}
+    monkeypatch.setattr(runner, "_load_run_inputs",
+                        lambda *_args, **_kwargs: (
+                            config, {"google": {"configured": True}},
+                            {"google-ads": "test-google"},
+                        ))
+
+    class Runtime:
+        def close(self, wait):
+            events.append(("close", wait))
+
+    monkeypatch.setattr(runner, "_create_runtime",
+                        lambda *_args, **_kwargs: Runtime())
+
+    class Suite:
+        def __init__(self, *_args):
+            self.queries = {"google-ads": []}
+            self.errors = []
+
+        def preflight(self):
+            events.append(("preflight",))
+
+        def execute(self, provider, tool, arguments, result_key):
+            events.append((provider, tool, arguments, result_key))
+            self.queries[provider].append({
+                "tool": tool, "outcome": "passed", "row_count": 2,
+                "latency_ms": 1.0,
+            })
+            return {"ok": True, "data": {}}
+
+    monkeypatch.setattr(runner, "ReadOnlyQueryRun", Suite)
+    assert runner.main([
+        "--confirm-read-only-provider-calls", "--smoke-google",
+        "--output", str(tmp_path / "should-not-be-written.json"),
+    ]) == 0
+    assert events == [
+        ("preflight",),
+        ("google-ads", "google_list_campaigns",
+         {"customer_id": "test-google", "limit": 10}, "campaigns"),
+        ("close", True),
+    ]
+    assert not (tmp_path / "should-not-be-written.json").exists()
+    assert "test-google" not in capsys.readouterr().out
+
+
 @pytest.mark.parametrize(
     ("allowlist", "test_accounts"),
     [
@@ -783,6 +835,11 @@ def test_coverage_finalizer_records_each_fixed_tool_once_without_api_calls():
             "credential_error",
         ),
         ("permission denied", 403, "provider_permission"),
+        (
+            "Google Ads HTTP 403: Provider denied access (CUSTOMER_NOT_ENABLED)",
+            None, "provider_account_unavailable",
+        ),
+        ("Google Ads HTTP 403: forbidden", None, "provider_permission"),
         ("resource not found", 404, "provider_not_found"),
         ("TikTok error 50000: plugin not found", None, "provider_error"),
         ("too many requests", 429, "provider_rate_limit"),

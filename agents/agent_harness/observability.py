@@ -6,7 +6,8 @@ prompts, Tool arguments, Tool results, exceptions, or credentials.
 
 from __future__ import annotations
 
-from collections import Counter
+from collections import Counter, deque
+import math
 import threading
 import time
 from dataclasses import dataclass
@@ -117,6 +118,7 @@ class InMemoryMetrics:
         self._lock = threading.RLock()
         self._counters: Counter[str] = Counter()
         self._durations: dict[str, dict[str, float]] = {}
+        self._samples: dict[str, deque[float]] = {}
         self._started: dict[tuple[str, str], float] = {}
 
     def observe(self, event: Mapping[str, Any]) -> None:
@@ -125,6 +127,7 @@ class InMemoryMetrics:
             return
         run_id = str(event.get("run_id") or "")
         tool_name = str(event.get("tool_name") or "")
+        tool_call_id = str(event.get("tool_call_id") or tool_name)
         now = time.monotonic()
         with self._lock:
             self._counters["events_total"] += 1
@@ -141,18 +144,33 @@ class InMemoryMetrics:
                 self._finish_duration("run", run_id, now)
             elif event_type == "tool_execution_start":
                 self._counters["tool_calls_started"] += 1
-                self._started[("tool", f"{run_id}:{tool_name}")] = now
+                self._started[("tool", f"{run_id}:{tool_call_id}")] = now
             elif event_type == "tool_execution_end":
                 self._counters["tool_calls_finished"] += 1
                 if bool(event.get("is_error")):
                     self._counters["tool_calls_failed"] += 1
-                self._finish_duration("tool", f"{run_id}:{tool_name}", now)
+                self._finish_duration("tool", f"{run_id}:{tool_call_id}", now)
+            elif event_type in {"model_end", "model_error"}:
+                self._counters["model_calls_finished"] += 1
+                if event_type == "model_error":
+                    self._counters["model_calls_failed"] += 1
+                duration = event.get("duration_ms")
+                if (
+                    isinstance(duration, (int, float))
+                    and not isinstance(duration, bool)
+                    and math.isfinite(duration)
+                    and 0 <= duration <= 1_000_000_000
+                ):
+                    self._record_duration("model", float(duration))
 
     def _finish_duration(self, kind: str, key: str, now: float) -> None:
         started = self._started.pop((kind, key), None)
         if started is None:
             return
         elapsed_ms = max((now - started) * 1000.0, 0.0)
+        self._record_duration(kind, elapsed_ms)
+
+    def _record_duration(self, kind: str, elapsed_ms: float) -> None:
         bucket = self._durations.setdefault(
             f"{kind}_duration",
             {"count": 0.0, "total_ms": 0.0, "max_ms": 0.0},
@@ -160,6 +178,7 @@ class InMemoryMetrics:
         bucket["count"] += 1.0
         bucket["total_ms"] += elapsed_ms
         bucket["max_ms"] = max(bucket["max_ms"], elapsed_ms)
+        self._samples.setdefault(kind, deque(maxlen=256)).append(elapsed_ms)
 
     def snapshot(self) -> dict[str, Any]:
         """Return a safe, JSON-compatible snapshot."""
@@ -167,12 +186,18 @@ class InMemoryMetrics:
             durations = {}
             for name, value in self._durations.items():
                 count = value["count"]
+                samples = sorted(self._samples.get(name.removesuffix("_duration"), ()))
                 durations[name] = {
                     "count": int(count),
                     "total_ms": round(value["total_ms"], 2),
                     "max_ms": round(value["max_ms"], 2),
                     "avg_ms": round(value["total_ms"] / count, 2)
                     if count else None,
+                    "p50_ms": round(samples[math.ceil(len(samples) * 0.5) - 1], 2)
+                    if samples else None,
+                    "p95_ms": round(samples[math.ceil(len(samples) * 0.95) - 1], 2)
+                    if samples else None,
+                    "sample_count": len(samples),
                 }
             return {
                 "version": 1,
@@ -185,6 +210,7 @@ class InMemoryMetrics:
         with self._lock:
             self._counters.clear()
             self._durations.clear()
+            self._samples.clear()
             self._started.clear()
 
 

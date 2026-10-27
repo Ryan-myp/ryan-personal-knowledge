@@ -1,5 +1,5 @@
 {
-  "digest": "9c47e37c9f09e03755178ad2d3a662a5aedf2d0e34ea2358c9d044c028851f77",
+  "digest": "a613acdf24b824ba4256f81a32317a7a00e082cca27657bc3049452774050248",
   "format_version": 1,
   "platforms": {
     "advertising": {
@@ -20202,7 +20202,7 @@
       ]
     },
     "meta": {
-      "digest": "56e2c61d51e89a3cea38d03daafa35926211a8425ade915cb6579142bfcf5339",
+      "digest": "13929cbf477aed0219e1dea26bfbddcc26d64bd8f4a1dfc45ae19d2bc39071dc",
       "tool_count": 82,
       "tools": [
         {
@@ -27105,6 +27105,7 @@
           },
           "integration_api_version": "v25.0",
           "intent_aliases": [
+            "报表",
             "查询 Meta 报表",
             "查询 Meta campaign 报表",
             "查看 Meta 广告系列表现"
@@ -27978,7 +27979,8 @@
           "intent_aliases": [
             "账户列表",
             "账号列表",
-            "account list"
+            "account list",
+            "列出 Meta 账户"
           ],
           "intent_types": [
             "list_accounts"
@@ -32151,7 +32153,7 @@
       ]
     },
     "tiktok": {
-      "digest": "c2e2dae01050110105e246d5e9c42a19d40dabfe22b92af0dad19bf842c02732",
+      "digest": "99edc33d766b1f861df6dae569247877a53d4ee1fe4441a30d920f05ac8a42f5",
       "tool_count": 89,
       "tools": [
         {
@@ -42157,6 +42159,7 @@
           },
           "integration_api_version": "v1.3",
           "intent_aliases": [
+            "报表",
             "查询 TikTok 报表",
             "查询 TikTok campaign 报表",
             "查看 TikTok 广告系列表现"
@@ -43281,7 +43284,8 @@
           "intent_aliases": [
             "账户列表",
             "账号列表",
-            "account list"
+            "account list",
+            "列出 TikTok 账户"
           ],
           "intent_types": [
             "list_accounts"

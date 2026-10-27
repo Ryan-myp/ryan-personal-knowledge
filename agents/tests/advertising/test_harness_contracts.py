@@ -74,6 +74,66 @@ def test_default_read_turn_exposes_a_small_relevant_tool_set():
         runtime.close(wait=True)
 
 
+@pytest.mark.parametrize(
+    ("source", "provider", "report_tool", "account_tool"),
+    [
+        (create_meta_tool_source, "Meta", "meta_get_campaign_report", "meta_list_accounts"),
+        (create_tiktok_tool_source, "TikTok", "tiktok_get_campaign_report", "tiktok_list_accounts"),
+    ],
+)
+def test_report_account_selection_does_not_expose_account_directory(
+    source, provider, report_tool, account_tool,
+):
+    from types import SimpleNamespace
+
+    from agents.agent_harness.core.tool_selection import ToolSelector
+    from agents.applications.advertising.composition.ad_application_assembly import (
+        AdApplicationAssembly,
+    )
+
+    runtime = AdvertisingComposition(
+        require_llm=False, offline_mode=True, start_background_workers=False,
+    )
+    runtime.register_tool_source(source())
+    select = AdApplicationAssembly._tool_selector(runtime, ToolSelector())
+
+    def names(text):
+        request = SimpleNamespace(
+            user_input=text, context={}, execution_mode="dry_run",
+            principal=None,
+        )
+        return {tool.name for tool in select(request, runtime.registry.list_all())}
+
+    try:
+        report = names(
+            f"查询 {provider} Campaign 昨天的花费报表，还没选账户的话先让我选择账户。"
+        )
+        assert report == {report_tool}
+        assert account_tool not in report
+
+        account_list = names(f"查询 {provider} 广告账户列表")
+        assert account_tool in account_list
+        assert account_tool in names(f"列出 {provider} 可访问的广告账户")
+
+        both = names(f"列出 {provider} 账户列表和 Campaign 列表")
+        assert account_tool in both
+        assert f"{provider.casefold()}_list_campaigns" in both
+
+        account_and_campaign = names(f"列出 {provider} 账户和 Campaign 列表")
+        assert account_tool in account_and_campaign
+        assert f"{provider.casefold()}_list_campaigns" in account_and_campaign
+
+        report_and_list = names(f"查询 {provider} Campaign 报表和 Campaign 列表")
+        assert report_tool in report_and_list
+        assert f"{provider.casefold()}_list_campaigns" in report_and_list
+
+        negated_report = names(f"不要查询报表，只列 {provider} Campaign 列表")
+        assert report_tool not in negated_report
+        assert f"{provider.casefold()}_list_campaigns" in negated_report
+    finally:
+        runtime.close(wait=True)
+
+
 class _ScriptedHarnessModel:
     """Return explicit model ToolCalls for deterministic Run-boundary tests."""
 

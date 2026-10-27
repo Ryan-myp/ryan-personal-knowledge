@@ -122,6 +122,157 @@ def test_harness_limits_context_plus_tools_plus_history_and_emits_sizes_only():
         app.close()
 
 
+def test_trimmed_history_recalls_relevant_user_goal_without_tool_output():
+    class Model:
+        inputs = []
+
+        def complete(self, messages, _tools, _request):
+            self.inputs.append(tuple(messages))
+            return ModelTurn(content="done")
+
+    model = Model()
+    app = AgentApplication.create(
+        model=model, max_model_input_chars=11_000,
+    )
+    try:
+        app.prompt(
+            "制定跨渠道增长方案，目标是提升留存，先分析现有数据。",
+            session_id="long-goal",
+        )
+        for index in range(8):
+            app.prompt(
+                f"另一个临时问题 {index} " + "无关内容 " * 160,
+                session_id="long-goal",
+            )
+        app.prompt("继续完善上面的增长方案，尤其是留存目标。", session_id="long-goal")
+        messages = model.inputs[-1]
+        assert any(
+            message.metadata.get("context_type") == "conversation_recall"
+            and "提升留存" in message.content
+            for message in messages
+        )
+        assert not any(
+            "另一个临时问题 0" in message.content
+            for message in messages
+            if message.metadata.get("context_type") == "conversation_recall"
+        )
+    finally:
+        app.close()
+
+
+def test_trimmed_history_does_not_inject_old_topic_into_explicit_new_request():
+    from agents.agent_harness.model_limits import model_input_chars
+
+    class Model:
+        inputs = []
+
+        def complete(self, messages, _tools, _request):
+            self.inputs.append(tuple(messages))
+            return ModelTurn(content="done")
+
+    model = Model()
+    app = AgentApplication.create(model=model, max_model_input_chars=11_000)
+    try:
+        app.prompt("分析 Google campaign 数据", session_id="new-topic")
+        for index in range(8):
+            app.prompt(f"临时话题 {index} " + "无关 " * 200, session_id="new-topic")
+        app.prompt("现在介绍一下销售团队的培训体系", session_id="new-topic")
+        messages = model.inputs[-1]
+        assert not any(
+            "Google campaign" in message.content
+            for message in messages
+        )
+        assert model_input_chars(messages, ()) <= 11_000
+    finally:
+        app.close()
+
+
+def test_recall_after_hydration_is_scoped_and_never_replays_tool_results():
+    from agents.agent_harness.model_limits import model_input_chars
+
+    class TranscriptStore:
+        entries = {}
+
+        def load(self, session_id, *, tenant_id, user_id, limit=200):
+            return self.entries.get((tenant_id, user_id, session_id), [])[-limit:]
+
+        def append(self, session_id, messages, *, tenant_id, user_id):
+            self.entries.setdefault((tenant_id, user_id, session_id), []).extend(messages)
+
+        def clear(self, session_id, *, tenant_id, user_id):
+            self.entries.pop((tenant_id, user_id, session_id), None)
+
+    class Model:
+        inputs = []
+
+        def complete(self, messages, _tools, _request):
+            self.inputs.append(tuple(messages))
+            return ModelTurn(content="done")
+
+    store = TranscriptStore()
+    first = AgentApplication.create(
+        model=Model(), transcript_store=store, max_model_input_chars=11_000,
+    )
+    try:
+        first.prompt(
+            "项目蓝图：重构广告预算归因，优先解释增量收益。",
+            session_id="shared", tenant_id="tenant-a", user_id="alice",
+        )
+        for index in range(8):
+            first.prompt(
+                f"临时主题 {index} " + "无关内容 " * 160,
+                session_id="shared", tenant_id="tenant-a", user_id="alice",
+            )
+    finally:
+        first.close()
+
+    second_model = Model()
+    second = AgentApplication.create(
+        model=second_model, transcript_store=store, max_model_input_chars=11_000,
+    )
+    try:
+        second.prompt(
+            "继续重构广告预算归因的蓝图",
+            session_id="shared", tenant_id="tenant-a", user_id="alice",
+        )
+        messages = second_model.inputs[-1]
+        assert any(
+            item.metadata.get("context_type") == "conversation_recall"
+            and "增量收益" in item.content
+            for item in messages
+        )
+        assert model_input_chars(messages, ()) <= 11_000
+        second.prompt(
+            "继续重构广告预算归因的蓝图",
+            session_id="shared", tenant_id="tenant-b", user_id="alice",
+        )
+        assert not any(
+            "增量收益" in item.content for item in second_model.inputs[-1]
+        )
+    finally:
+        second.close()
+
+
+def test_recall_ignores_tool_evidence_and_redacts_old_user_credentials():
+    from agents.agent_harness.conversation_recall import relevant_user_requests
+
+    history = [
+        AgentMessage.user("分析归因效果，api_key=private-value"),
+        AgentMessage.tool(
+            '{"data":{"attribution":"unverified-provider-result"}}',
+            tool_call_id="lookup-1", name="report",
+        ),
+        AgentMessage.assistant("unverified assistant guess about attribution"),
+    ]
+    recalled = relevant_user_requests("继续分析归因效果", history)
+    assert len(recalled) == 1
+    assert "private-value" not in recalled[0]
+    assert "<redacted>" in recalled[0]
+    assert "unverified-provider-result" not in str(recalled)
+    assert "unverified assistant guess" not in str(recalled)
+    assert relevant_user_requests("完全无关的主题", history) == ()
+
+
 def test_oversized_user_input_does_not_erase_previously_kept_transcript():
     app = AgentApplication.create(
         model=lambda *_: "done", max_transcript_chars=1000,

@@ -343,6 +343,11 @@ def classify_query_failure(message: str, status_code: int | None = None) -> str:
         status = int(status_code or 0)
     except (TypeError, ValueError):
         status = 0
+    if not status:
+        match = re.search(r"\bHTTP\s+([1-5]\d\d)\b", text, re.IGNORECASE)
+        status = int(match.group(1)) if match else 0
+    if "customer_not_enabled" in text:
+        return "provider_account_unavailable"
     auth_terms = (
         "invalid access token",
         "authentication",
@@ -1357,6 +1362,11 @@ def _build_parser() -> argparse.ArgumentParser:
         help="explicitly authorize the fixed read-only test-account query suite",
     )
     parser.add_argument(
+        "--smoke-google",
+        action="store_true",
+        help="run only one bounded Google campaign list read; do not write evidence",
+    )
+    parser.add_argument(
         "--config",
         type=Path,
         default=ROOT / "agents" / "ad_agent" / "config.yaml",
@@ -1373,19 +1383,31 @@ def _build_parser() -> argparse.ArgumentParser:
 def _load_run_inputs(
     config_path: Path,
     credentials_path: Path,
+    *,
+    smoke_google: bool = False,
 ) -> tuple[dict[str, Any], dict[str, Any], dict[str, str]]:
     config = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
     credentials = json.loads(credentials_path.read_text(encoding="utf-8"))
     accounts: dict[str, str] = {}
-    for provider, spec in PROVIDER_CONFIG.items():
+    providers = ("google-ads",) if smoke_google else PROVIDER_CONFIG
+    for provider in providers:
+        spec = PROVIDER_CONFIG[provider]
         credential_key = spec["credential"]
         provider_credentials = credentials.get(credential_key)
         if not isinstance(provider_credentials, Mapping) or not provider_credentials:
             raise ValueError(f"missing configured credentials for {provider}")
-        accounts[provider] = select_test_account(
-            config.get("allowed_accounts", {}).get(provider, []),
-            _configured_test_refs(credentials, provider),
-        )
+        allowlisted = config.get("allowed_accounts", {}).get(provider, [])
+        if smoke_google:
+            if (
+                not isinstance(allowlisted, list) or len(allowlisted) != 1
+                or not str(allowlisted[0]).strip()
+            ):
+                raise ValueError("Google smoke requires exactly one allowlisted account")
+            accounts[provider] = str(allowlisted[0]).strip()
+        else:
+            accounts[provider] = select_test_account(
+                allowlisted, _configured_test_refs(credentials, provider),
+            )
     return config, credentials, accounts
 
 
@@ -1393,6 +1415,7 @@ def _create_runtime(
     config: Mapping[str, Any],
     credentials: Mapping[str, Any],
     config_path: Path,
+    accounts: Mapping[str, str] | None = None,
 ) -> AdvertisingComposition:
     runtime = AdvertisingComposition(
         require_llm=False,
@@ -1405,11 +1428,12 @@ def _create_runtime(
         allow_live_writes=False,
         start_background_workers=False,
     )
-    for provider in PROVIDER_CONFIG:
+    providers = accounts if accounts is not None else PROVIDER_CONFIG
+    for provider in providers:
         runtime.register_tool_source(create_tool_source(provider))
     runtime.set_credentials({
-        provider: credentials[spec["credential"]]
-        for provider, spec in PROVIDER_CONFIG.items()
+        provider: credentials[PROVIDER_CONFIG[provider]["credential"]]
+        for provider in providers
     })
     return runtime
 
@@ -1485,7 +1509,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 2
     output_path = args.output.resolve()
-    if not output_path.is_relative_to(ROOT):
+    if not args.smoke_google and not output_path.is_relative_to(ROOT):
         print("blocked: evidence output must remain inside the repository")
         return 2
 
@@ -1493,24 +1517,26 @@ def main(argv: list[str] | None = None) -> int:
         config, credentials, accounts = _load_run_inputs(
             args.config,
             args.credentials_file,
+            smoke_google=args.smoke_google,
         )
-        seed_evidence = json.loads(
-            (
-                ROOT
-                / "agents"
-                / "tools"
-                / "advertising"
-                / "contracts"
-                / "provider_e2e_evidence.json"
-            ).read_text(encoding="utf-8")
-        )
-        if not isinstance(seed_evidence, Mapping):
-            raise ValueError("provider resource seed evidence must be an object")
+        if not args.smoke_google:
+            seed_evidence = json.loads(
+                (
+                    ROOT
+                    / "agents"
+                    / "tools"
+                    / "advertising"
+                    / "contracts"
+                    / "provider_e2e_evidence.json"
+                ).read_text(encoding="utf-8")
+            )
+            if not isinstance(seed_evidence, Mapping):
+                raise ValueError("provider resource seed evidence must be an object")
     except (OSError, ValueError, TypeError) as exc:
         print(f"blocked: unable to load controlled test configuration ({type(exc).__name__})")
         return 2
 
-    runtime = _create_runtime(config, credentials, args.config)
+    runtime = _create_runtime(config, credentials, args.config, accounts=accounts)
     try:
         suite = ReadOnlyQueryRun(
             runtime,
@@ -1519,6 +1545,24 @@ def main(argv: list[str] | None = None) -> int:
             _collect_secret_values(credentials),
         )
         suite.preflight()
+        if args.smoke_google:
+            account = accounts["google-ads"]
+            result = suite.execute(
+                "google-ads", "google_list_campaigns",
+                {"customer_id": account, "limit": 10}, "campaigns",
+            )
+            print(json.dumps({
+                "mode": "read_only_google_smoke",
+                "provider_calls": 1,
+                "write_calls": 0,
+                "account_suffix": account[-4:],
+                "queries": suite.queries["google-ads"],
+                "failure_reasons": [
+                    {"tool": tool, "reason": reason}
+                    for _provider, tool, reason in suite.errors
+                ],
+            }, ensure_ascii=False))
+            return 0 if result["ok"] else 1
         seeded_resources = seed_created_resources_from_evidence(
             suite,
             seed_evidence,

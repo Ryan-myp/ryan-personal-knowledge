@@ -63,6 +63,7 @@ _SAFE_OPERATION_LABEL = re.compile(r"[A-Za-z0-9_.:-]{1,128}\Z")
 _QUERY_FAILURE_CATEGORIES = {
     "credential_error",
     "local_contract",
+    "provider_account_unavailable",
     "provider_error",
     "provider_not_found",
     "provider_permission",

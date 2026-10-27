@@ -864,7 +864,9 @@ class MetaToolSource(BaseProviderToolSource):
                 },
                 argument_builder=_meta_list_accounts_arguments,
                 action="list", resource_type="account", intent_types=["list_accounts"],
-                intent_aliases=["账户列表", "账号列表", "account list"],
+                intent_aliases=[
+                    "账户列表", "账号列表", "account list", "列出 Meta 账户",
+                ],
                 traits=["read", "account"],
                 result_items_key="accounts",
                 result_id_fields=["id", "account_id"],
@@ -1749,6 +1751,7 @@ class MetaToolSource(BaseProviderToolSource):
             action="report", resource_type="campaign",
             intent_types=["get_campaign_report", "download_report"],
             intent_aliases=[
+                "报表",
                 "查询 Meta 报表", "查询 Meta campaign 报表",
                 "查看 Meta 广告系列表现",
             ],

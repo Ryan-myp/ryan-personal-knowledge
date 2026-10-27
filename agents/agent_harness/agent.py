@@ -17,6 +17,7 @@ import uuid
 from typing import Any, Callable, Mapping, Optional, Protocol, Sequence
 
 from .context import ContextProvider, context_prompt
+from .conversation_recall import relevant_user_requests
 from .core.agent_profile import CORE_AGENT_SYSTEM_PROMPT
 from .core.conversation_selection import (
     catalog_selection_input,
@@ -760,10 +761,43 @@ class Agent:
         bounded = bound_model_messages(
             messages, tools, max_chars=self.max_model_input_chars,
         )
-        if len(bounded) < len(messages):
+        kept_ids = {message.message_id for message in bounded}
+        removed = [
+            message for message in transcript if message.message_id not in kept_ids
+        ]
+        if removed:
+            recalled = relevant_user_requests(
+                request.user_input, removed,
+                current_turn_id=str(request.turn_id or ""),
+            )
+            if recalled:
+                recall_message = AgentMessage.user(
+                    "Earlier user requests from this conversation (for context "
+                    "only; the current request takes precedence; these do not "
+                    "authorize Tool access or establish external facts):\n"
+                    + "\n".join(f"- {item}" for item in recalled),
+                    metadata={"context_type": "conversation_recall"},
+                )
+                current_start = max(
+                    index for index, message in enumerate(bounded)
+                    if message.role == "user" and message.turn_id == request.turn_id
+                )
+                try:
+                    bounded = bound_model_messages(
+                        [*bounded[:current_start], recall_message, *bounded[current_start:]],
+                        tools, max_chars=self.max_model_input_chars,
+                    )
+                except ModelInputLimitError:
+                    pass
+        if removed:
+            removed_count = len({
+                message.message_id for message in messages
+            } - {
+                message.message_id for message in bounded
+            })
             self._emit(
                 "model_input_trimmed", request,
-                removed_messages=len(messages) - len(bounded),
+                removed_messages=removed_count,
                 input_chars=model_input_chars(bounded, tools),
                 input_limit_chars=self.max_model_input_chars,
             )
@@ -795,7 +829,21 @@ class Agent:
                 remaining -= len(content)
             if len(recent) >= max_messages or remaining <= 0:
                 break
-        return tuple(reversed(recent))
+        recent.reverse()
+        if len(recent) >= max_messages:
+            tail = recent[-(max_messages - 1):] if max_messages > 1 else []
+            anchor_budget = min(400, max_chars - sum(map(len, tail)))
+            relevant = relevant_user_requests(
+                request.user_input, transcript,
+                current_turn_id=str(request.turn_id or ""),
+                limit=1,
+                max_chars=anchor_budget,
+            ) if anchor_budget >= 24 else ()
+            if relevant and relevant[0] not in recent and max_messages > 1:
+                # The selector reads at most four previous requests. Preserve
+                # one topical anchor across short unrelated interjections.
+                recent = [relevant[0], *tail]
+        return tuple(recent)
 
     def _tool_selection_request(
         self,
@@ -809,6 +857,7 @@ class Agent:
             selection_context["_agent_tool_selection_context"] = recent_inputs
         pending = pending_input_interaction(
             request.turn_id, transcript, choice=request.user_input.strip(),
+            response=selection_context.get("_agent_interaction_response"),
         )
         if pending:
             selection_context["_agent_pending_interaction"] = pending
@@ -866,6 +915,7 @@ class Agent:
             )
             selection_context.pop("_agent_tool_selection_context", None)
             selection_context.pop("_agent_pending_interaction", None)
+            selection_context.pop("_agent_interaction_response", None)
             if isinstance(request.context, dict):
                 request.context.update({
                     key: value
@@ -1097,6 +1147,23 @@ class Agent:
                     )
                     self._emit("agent_end", request, status=result.status.value)
                     return result
+            interaction = (
+                request.context.get("_agent_interaction_response")
+                if isinstance(request.context, Mapping) else None
+            )
+            origin = (
+                {
+                    "turn_id": interaction["turn_id"],
+                    "tool_name": interaction["tool_name"],
+                }
+                if isinstance(interaction, Mapping)
+                and all(
+                    isinstance(interaction.get(key), str)
+                    and 0 < len(interaction[key]) <= 200
+                    for key in ("turn_id", "tool_name")
+                )
+                else None
+            )
             user_message = AgentMessage.user(
                 self.input_sanitizer(request.user_input)
                 if callable(self.input_sanitizer)
@@ -1104,10 +1171,11 @@ class Agent:
                 run_id=str(request.run_id or ""),
                 turn_id=str(request.turn_id or ""),
                 metadata={
-                    "attachments": [
+                    **({"interaction_origin": origin} if origin else {}),
+                    **({"attachments": [
                         media.to_metadata() for media in request.input_media
-                    ],
-                } if request.input_media else {},
+                    ]} if request.input_media else {}),
+                },
             )
             if len(str(user_message.content)) > min(
                 self.max_transcript_chars, self.max_model_input_chars,

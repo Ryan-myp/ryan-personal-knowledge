@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from types import SimpleNamespace
 
 import pytest
@@ -415,6 +416,7 @@ def test_feedback_review_requires_expected_behavior_for_candidate():
 
 def test_feedback_resubmission_replaces_existing_rating_and_empty_rate_is_null():
     store = AdAgentStore(":memory:")
+    submitted_at = datetime.now(timezone.utc).isoformat()
     try:
         manager = SessionManager(store)
         manager.create_session(
@@ -433,7 +435,7 @@ def test_feedback_resubmission_replaces_existing_rating_and_empty_rate_is_null()
                 feedback={
                     "rating": rating,
                     "reason": None,
-                    "submitted_at": "2026-10-20T00:00:00+00:00",
+                    "submitted_at": submitted_at,
                 },
             )
 
@@ -454,6 +456,7 @@ def test_feedback_resubmission_replaces_existing_rating_and_empty_rate_is_null()
 
 
 def test_feedback_migration_backfills_existing_transcript_ratings(tmp_path):
+    submitted_at = datetime.now(timezone.utc).isoformat()
     database = tmp_path / "feedback-migration.db"
     store = AdAgentStore(str(database))
     manager = SessionManager(store)
@@ -470,7 +473,7 @@ def test_feedback_migration_backfills_existing_transcript_ratings(tmp_path):
         {"user_feedback": {
             "rating": "positive",
             "reason": "legacy reason should not be copied",
-            "submitted_at": "2026-10-20T00:00:00+00:00",
+            "submitted_at": submitted_at,
         }},
     )
     store._get_conn().execute(

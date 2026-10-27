@@ -1,0 +1,9 @@
+# Isolated Google test-account read verification; not a service configuration.
+execution_mode: dry_run
+read_only_mode: true
+allow_live_writes: false
+live_approved_tools: []
+allowed_accounts:
+  google-ads: ["8253781915"]
+granted_permissions:
+  - ads.read

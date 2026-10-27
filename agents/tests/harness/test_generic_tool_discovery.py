@@ -214,6 +214,58 @@ def test_explicit_current_namespace_overrides_conversation_history():
     assert [item.name for item in selected] == ["google_list_campaigns"]
 
 
+def test_tool_selection_recalls_relevant_topic_past_four_smalltalk_turns():
+    tools = [
+        _definition(
+            "meta_list_campaigns", namespace="meta", action="list",
+            resource="campaign", description="List Meta campaigns",
+        ),
+        _definition(
+            "google_list_campaigns", namespace="google-ads", action="list",
+            resource="campaign", description="List Google campaigns",
+        ),
+    ]
+    class Model:
+        visible = []
+
+        def complete(self, _messages, selected, _request):
+            self.visible.append({item.name for item in selected})
+            return ModelTurn(content="好的")
+
+    model = Model()
+    selector = ToolSelector()
+    history_lengths = []
+
+    def select_tools(request, catalog):
+        history = request.context.get("_agent_tool_selection_context", ())
+        history_lengths.append((len(history), sum(map(len, history))))
+        return selector.select_relevant(
+            request.user_input, catalog, conversation_context=history,
+        )
+
+    app = AgentApplication.create(
+        model=model,
+        tool_selector=select_tools,
+    )
+    app.register_tool_source(StaticToolSource(
+        "ads", [ToolBinding(tool, lambda _context, _values: {"success": True})
+                for tool in tools],
+    ))
+    try:
+        for text in (
+            "查询 Meta campaign 列表",
+            "你好", "谢谢", "了解", "稍等", "还有个问题", "好的",
+            "继续查询 campaign",
+        ):
+            assert app.prompt(text, session_id="topic").status.value == "succeeded"
+        assert model.visible[-1] == {"meta_list_campaigns"}
+        app.prompt("查询 Google campaign 列表", session_id="topic")
+        assert model.visible[-1] == {"google_list_campaigns"}
+        assert all(count <= 4 and chars <= 1200 for count, chars in history_lengths)
+    finally:
+        app.close()
+
+
 def test_child_list_alias_treats_parent_resource_as_scope():
     tools = [
         _definition(

@@ -664,9 +664,20 @@ class AdApplicationAssembly:
         if not isinstance(pending, Mapping) or not pending.get("source_input"):
             return None
         account_id = str(context.get("account_id") or "").strip()
-        # Match the UI's selection command exactly so a new question cannot
-        # revive a prior operation merely because it also names an account.
-        if not account_id or request.user_input.strip() != f"使用账户 {account_id} 继续":
+        response = context.get("_agent_interaction_response")
+        if not account_id:
+            return None
+        if response is not None:
+            if not isinstance(response, Mapping) or any((
+                response.get("type") != "account_selection",
+                response.get("turn_id") != pending.get("turn_id"),
+                response.get("tool_name") != pending.get("tool_name"),
+                response.get("value") != account_id,
+            )):
+                return None
+        elif request.user_input.strip() != f"使用账户 {account_id} 继续":
+            # Older clients have no structured selection; retain their exact
+            # command without interpreting a new question as a continuation.
             return None
         tool = next((
             tool for tool in tools
@@ -681,6 +692,38 @@ class AdApplicationAssembly:
         ):
             return None
         return tool
+
+    @staticmethod
+    def _scope_account_directory(
+        selector: ToolSelector, user_input: str, selected: list[Any],
+    ) -> list[Any]:
+        """Account selection is a prerequisite, not a second read target."""
+        account_lists = [
+            tool for tool in selected
+            if getattr(tool, "action", None) == "list"
+            and getattr(tool, "resource_type", None) == "account"
+        ]
+        if not account_lists or not selector.has_explicit_resource_target(
+            user_input,
+            [
+                tool for tool in selected
+                if getattr(tool, "resource_type", None) != "account"
+            ],
+        ):
+            return selected
+        text = user_input.casefold()
+        explicit = {
+            tool.name for tool in account_lists
+            if any(
+                len(str(alias).strip()) >= 3
+                and str(alias).strip().casefold() in text
+                for alias in getattr(tool, "intent_aliases", ()) or ()
+            )
+        }
+        return [
+            tool for tool in selected
+            if tool not in account_lists or tool.name in explicit
+        ]
 
     @staticmethod
     def _tool_selector(
@@ -747,6 +790,9 @@ class AdApplicationAssembly:
                         conversation_context=conversation_context,
                         contextual_namespaces=contextual_namespaces,
                     )
+                )
+                selected = AdApplicationAssembly._scope_account_directory(
+                    selector, request.user_input, selected,
                 )
                 attached_read_required = False
                 if not blocked_resource_target:

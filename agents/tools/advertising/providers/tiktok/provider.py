@@ -524,7 +524,9 @@ class TikTokToolSource(BaseProviderToolSource):
                 required=["advertiser_ids"], action="list", resource_type="account",
                 scope_required=False, contract_version="1.3.1",
                 intent_types=["list_accounts"], traits=["read", "account"],
-                intent_aliases=["账户列表", "账号列表", "account list"],
+                intent_aliases=[
+                    "账户列表", "账号列表", "account list", "列出 TikTok 账户",
+                ],
                 result_items_key="accounts",
                 result_id_fields=["advertiser_id", "account_id", "id"],
                 argument_builder=_account_listing_arguments,
@@ -1726,6 +1728,7 @@ class TikTokToolSource(BaseProviderToolSource):
             action="report", resource_type="campaign",
             intent_types=["get_campaign_report"],
             intent_aliases=[
+                "报表",
                 "查询 TikTok 报表", "查询 TikTok campaign 报表",
                 "查看 TikTok 广告系列表现",
             ],

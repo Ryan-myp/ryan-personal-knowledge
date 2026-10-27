@@ -1,0 +1,19 @@
+{
+  "schema_version": "google-read-diagnostic/v1",
+  "recorded_date": "2026-10-26",
+  "scope": "user-provided-google-test-account",
+  "account_suffix": "1915",
+  "tool": "google_list_campaigns",
+  "preflight": "ready_for_controlled_api_test",
+  "provider_read_attempts": 2,
+  "provider_write_attempts": 0,
+  "verdict": "not_verified",
+  "failure_category": "provider_account_unavailable",
+  "provider_status": 403,
+  "provider_code": "CUSTOMER_NOT_ENABLED",
+  "limitations": [
+    "The local whitelist and read permission passed; this does not establish that the Google account is enabled.",
+    "No Campaign result was returned, and no lower-level read or mutation was attempted.",
+    "This is a diagnostic record, not a successful Provider E2E verification."
+  ]
+}

@@ -366,13 +366,32 @@ def _matches_tool_alias(text: str, tool: Any) -> bool:
         aliases = (aliases,)
     for alias in aliases:
         alias_text = str(alias).strip().casefold()
-        if len(alias_text) < 3:
+        if len(alias_text) < 3 and not re.fullmatch(
+            r"[\u3400-\u9fff]{2}", alias_text,
+        ):
             continue
         start = normalized.find(alias_text)
         while start >= 0:
             if not _action_is_negated(normalized, start, alias_text):
                 return True
             start = normalized.find(alias_text, start + len(alias_text))
+    return False
+
+
+def _has_only_negated_alias(text: str, tool: Any) -> bool:
+    if _matches_tool_alias(text, tool):
+        return False
+    normalized = str(text or "").casefold()
+    aliases = _tool_field(tool, "intent_aliases", ()) or ()
+    if isinstance(aliases, str):
+        aliases = (aliases,)
+    for alias in aliases:
+        value = str(alias).strip().casefold()
+        if len(value) < 3 and not re.fullmatch(r"[\u3400-\u9fff]{2}", value):
+            continue
+        start = normalized.find(value)
+        if start >= 0 and _action_is_negated(normalized, start, value):
+            return True
     return False
 
 
@@ -671,13 +690,13 @@ def _descendant_followup_tools(
 def _alias_scoped_reads(user_input: str, tools: Sequence[Any]) -> list[Any]:
     """Honor explicit publisher query aliases without a domain vocabulary."""
     text = str(user_input or "").casefold()
+    tools = [
+        tool for tool in tools
+        if not _has_only_negated_alias(text, tool)
+    ]
     matched = [
         tool for tool in tools if _is_read_tool(tool)
-        and any(
-            len(str(alias).strip()) >= 3
-            and str(alias).strip().casefold() in text
-            for alias in _tool_field(tool, "intent_aliases", ()) or ()
-        )
+        and _matches_tool_alias(text, tool)
     ]
     if not matched:
         return list(tools)
@@ -735,7 +754,16 @@ def _alias_scoped_reads(user_input: str, tools: Sequence[Any]) -> list[Any]:
     )
     if other_targets:
         return list(tools)
-    selected_ids = {id(tool) for tool in (*matched, *explicit_details)}
+    explicit_lists = [
+        tool for tool in (
+            _explicit_resource_list_tools(user_input, tools)
+            if _is_explicit_list_request(text) else []
+        )
+        if str(_tool_field(tool, "resource_type")) not in parent_scopes
+    ]
+    selected_ids = {
+        id(tool) for tool in (*matched, *explicit_details, *explicit_lists)
+    }
     return [tool for tool in tools if id(tool) in selected_ids]
 
 
@@ -1099,7 +1127,15 @@ class ToolSelector:
                         ))
                         and resource_terms <= current_terms
                     ]
-                    relevant = explicit_resource_tools or list_tools
+                    explicit_other_tools = [
+                        item for item in relevant
+                        if str(_tool_field(item[2], "action", "")).casefold() != "list"
+                        and _matches_tool_alias(user_input, item[2])
+                    ]
+                    relevant = [
+                        *explicit_other_tools,
+                        *(explicit_resource_tools or list_tools),
+                    ]
         relevant.sort(key=lambda item: (-item[0], item[1]))
         effective_limit = (
             min(limit, self.max_read_tools_per_turn)
@@ -1268,6 +1304,22 @@ class ToolSelector:
         """Report whether the request matches a Tool-published resource."""
         return any(
             _matches_publisher_target(user_input, tool)
+            for tool in tools or ()
+        )
+
+    @staticmethod
+    def has_explicit_resource_target(
+        user_input: str,
+        tools: Sequence[Any],
+    ) -> bool:
+        """Match a named resource or full published alias, without fuzzy terms."""
+        query_terms = _terms(user_input)
+        return any(
+            (
+                bool(resource_terms := _terms(_tool_field(tool, "resource_type")))
+                and resource_terms <= query_terms
+            )
+            or _matches_tool_alias(user_input, tool)
             for tool in tools or ()
         )
 

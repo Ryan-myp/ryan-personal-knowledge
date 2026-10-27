@@ -144,5 +144,26 @@
       ],
       "max_tool_calls": 4
     }
+  },
+  {
+    "id": "report-account-selection",
+    "input": "查一下我 Meta Campaign 昨天的花费报表。还没选账户的话，先让我选择账户，不要联网搜索。",
+    "expected_behavior": "路由到 Meta 报表 Tool 并等待账户选择，不搜索公开网页或伪造报表数据。",
+    "assertions": {
+      "required_tools": ["meta_get_campaign_report"],
+      "forbidden_tools": ["agent_web_search", "agent_knowledge_search"],
+      "needs_input": true,
+      "max_tool_calls": 2
+    }
+  },
+  {
+    "id": "report-concept-no-account",
+    "input": "先解释一下 Campaign 报表的 spend、impressions 和 ROAS 是什么，不要读取我账户里的数据。",
+    "expected_behavior": "解释指标定义，不查询广告账户报表。",
+    "assertions": {
+      "reply_nonempty": true,
+      "forbidden_tools": ["meta_get_campaign_report", "meta_list_accounts", "agent_web_search"],
+      "max_tool_calls": 1
+    }
   }
 ]

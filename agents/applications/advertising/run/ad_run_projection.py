@@ -97,6 +97,7 @@ class AdvertisingRunProjection:
                     payload_data = interaction.get("payload")
                     if isinstance(payload_data, Mapping):
                         account_selection = dict(payload_data)
+                        account_selection["turn_id"] = str(payload.get("turn_id") or "")
                         result["needs_input"] = True
                         interaction_only = True
                 elif interaction.get("type") == "action_clarification":
