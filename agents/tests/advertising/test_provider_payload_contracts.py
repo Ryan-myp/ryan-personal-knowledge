@@ -300,6 +300,27 @@ def test_google_campaign_handler_passes_explicit_removed_filter_to_client():
     assert queries[0].endswith("LIMIT 20")
 
 
+def test_google_campaign_list_marks_limit_hit_as_incomplete_account_sample():
+    client = GoogleAdsAPIClient({"access_token": "test"}, customer_id="123")
+    client._search_all = lambda _query, **_kwargs: [
+        {"campaign": {"id": "1", "status": "REMOVED"}},
+        {"campaign": {"id": "2", "status": "REMOVED"}},
+    ]
+    handler = GoogleListCampaignsHandler(client)
+    context = ToolContext(session_id="s1", user_id="u1", account_id="123")
+
+    result = handler.execute(context, {"limit": 2})
+
+    assert result.success
+    assert result.data["query_context"] == {
+        "scope": "returned_page",
+        "returned_rows": 2,
+        "row_limit": 2,
+        "may_be_truncated": True,
+        "status": "possibly_truncated",
+    }
+
+
 def test_google_create_asset_group_uses_trusted_customer_scoped_client():
     calls = []
 

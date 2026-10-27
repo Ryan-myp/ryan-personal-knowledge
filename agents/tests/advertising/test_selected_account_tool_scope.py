@@ -76,6 +76,22 @@ def test_successful_read_scope_keeps_channel_when_http_account_was_never_selecte
     assert context["_agent_tool_namespaces"] == ["tiktok"]
 
 
+def test_campaign_filter_followup_reuses_verified_google_read_scope():
+    selected, context = _selection(
+        None,
+        "那我们根据状态过滤一下，不要 REMOVED 的",
+        {"google-ads": {"google-test"}, "meta": {"meta-test"}},
+        read_scopes={"google-ads": "google-test"},
+        history=(
+            "查询 Google Ads 报表，account 是 google-test",
+            "查询一下campaign信息",
+        ),
+    )
+    assert [tool.name for tool in selected] == ["google_list_campaigns"]
+    assert context["_agent_tool_namespaces"] == ["google-ads"]
+    assert context["_agent_tool_choice_required"] is True
+
+
 def test_meta_child_detail_followup_keeps_account_scope_and_requires_fresh_reads():
     selected, context = _selection(
         None,

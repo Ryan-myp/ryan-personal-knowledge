@@ -149,3 +149,12 @@ def test_platform_campaign_report_handlers_attach_context_to_live_results():
         assert result.data["report"] is rows
         assert result.data["report_context"]["provider"] == provider
         assert result.data["report_context"]["completeness"]["returned_rows"] == 1
+
+
+def test_empty_google_campaign_report_has_no_observed_metric_totals():
+    summary = GoogleGetReportHandler()._summarize_report([])
+    assert summary["campaign_count"] == 0
+    assert summary["total_impressions"] is None
+    assert summary["total_clicks"] is None
+    assert summary["total_spend"] is None
+    assert summary["total_conversions"] is None

@@ -120,6 +120,96 @@ def test_explicit_data_query_requires_a_fresh_tool_but_capability_questions_do_n
     assert not selector.requires_tool_call("汇总刚才查询的 campaign 结果", tools)
 
 
+def test_campaign_filter_followup_reuses_the_previous_read_without_web_search():
+    tools = [
+        binding.definition
+        for source in (
+            create_tool_source("google-ads"),
+            knowledge_search_tool_source(
+                provider=object(), required_permission="ads.read",
+            ),
+            web_search_tool_source(
+                configuration_provider=lambda: {}, required_permission="ads.read",
+            ),
+        )
+        for binding in source.list_bindings()
+    ]
+    selector = ToolSelector()
+    previous = (
+        "查询 Google Ads 报表，account 是 7574609568",
+        "查询一下campaign信息",
+    )
+    for request in (
+        "那我们根据状态过滤一下，不要 REMOVED 的",
+        "我是让你重新查询，根据状态进行过滤",
+    ):
+        selected = selector.select_relevant(
+            request, tools, conversation_context=previous,
+            contextual_namespaces=("google-ads",),
+        )
+        assert [tool.name for tool in selected] == ["google_list_campaigns"]
+        assert selector.requires_tool_call(
+            request, selected, conversation_context=previous,
+        )
+
+    assert selector.select_relevant(
+        "根据状态过滤一下", tools, contextual_namespaces=("google-ads",),
+    ) == []
+    for previous_input in (
+        "讲讲 Google campaign 的状态",
+        "查询 Google campaign 123 的详情",
+    ):
+        assert selector.select_relevant(
+            "根据状态过滤一下", tools,
+            conversation_context=(previous_input,),
+            contextual_namespaces=("google-ads",),
+        ) == []
+
+
+def test_list_filter_followup_stays_in_the_prior_provider_namespace():
+    selector = ToolSelector()
+    tools = [
+        binding.definition
+        for provider in ("google-ads", "meta", "tiktok")
+        for binding in create_tool_source(provider).list_bindings()
+    ]
+    for provider, expected in (
+        ("google-ads", "google_list_campaigns"),
+        ("meta", "meta_list_campaigns"),
+        ("tiktok", "tiktok_list_campaigns"),
+    ):
+        selected = selector.select_relevant(
+            "根据状态重新筛选",
+            tools,
+            conversation_context=(f"查询 {provider} campaign 列表",),
+            contextual_namespaces=(provider,),
+        )
+        assert [tool.name for tool in selected] == [expected]
+
+
+def test_filter_word_in_a_concept_question_does_not_query_an_account():
+    tools = [
+        binding.definition
+        for source in (
+            create_tool_source("google-ads"),
+            knowledge_search_tool_source(
+                provider=object(), required_permission="ads.read",
+            ),
+            web_search_tool_source(
+                configuration_provider=lambda: {}, required_permission="ads.read",
+            ),
+        )
+        for binding in source.list_bindings()
+    ]
+    selected = ToolSelector().select_relevant(
+        "Google Campaign 排除式定向是什么？", tools,
+    )
+    assert selected
+    assert all(
+        "semantic_discovery" in tool.traits for tool in selected
+    )
+
+
 def test_campaign_detail_with_descendants_loads_registered_tiktok_read_tools():
     tools = [binding.definition for binding in create_tool_source("tiktok").list_bindings()]
     selector = ToolSelector()

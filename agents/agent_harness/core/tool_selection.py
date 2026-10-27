@@ -24,12 +24,13 @@ _TOKEN_STOPWORDS = frozenset({
 })
 _READ_CUES = (
     "check", "find", "get", "list", "look at", "read", "search", "query",
-    "fetch", "retrieve", "show",
+    "fetch", "retrieve", "show", "filter", "exclude",
     "which", "what", "available",
     "查一下", "查找", "找一下", "查询", "列出", "列表", "清单", "查看",
     "看下", "看看", "看一下", "帮我看", "瞧一下", "获取", "检索", "搜索",
-    "有哪些", "有啥", "哪几个", "哪些", "展示",
+    "有哪些", "有啥", "哪几个", "哪些", "展示", "筛选", "过滤", "排除",
 )
+_READ_REFINEMENT_CUES = ("filter", "exclude", "筛选", "过滤", "排除")
 _LIST_READ_CUES = ("list", "列出", "列表", "清单")
 _DETAIL_READ_CUES = ("detail", "details", "详情", "详细信息", "具体信息")
 _DESCENDANT_READ_CUES = (
@@ -194,6 +195,15 @@ def _is_read_only_request(user_input: str) -> bool:
     )
 
 
+def _is_read_refinement_request(user_input: str) -> bool:
+    text = str(user_input or "").casefold()
+    return (
+        len(text) <= 128
+        and _is_read_only_request(text)
+        and any(_contains_cue(text, cue) for cue in _READ_REFINEMENT_CUES)
+    )
+
+
 def _has_explicit_read_action(user_input: str) -> bool:
     return _has_unnegated_action_cue(user_input, _READ_ACTION_CUES)
 
@@ -221,6 +231,8 @@ def _needs_conversation_context(user_input: str, tools: Sequence[Any]) -> bool:
     if not text:
         return False
     if _is_descendant_detail_followup(text):
+        return True
+    if _is_read_refinement_request(text):
         return True
     if (
         _is_read_only_request(_request_verbs(text, tools))
@@ -302,7 +314,11 @@ def _is_knowledge_explanation_request(
         _contains_cue(text, cue)
         for cue in ("有什么区别", "有啥区别", "有何区别", "区别是什么", "对比一下")
     )
-    if _has_explicit_read_action(action_text) and not is_comparison:
+    direct_reads = tuple(
+        cue for cue in _READ_ACTION_CUES
+        if cue not in _READ_REFINEMENT_CUES
+    )
+    if _has_unnegated_action_cue(action_text, direct_reads) and not is_comparison:
         return False
     strong_write_cues = tuple(
         cue for cue in _WRITE_CUES if cue not in _AMBIGUOUS_OPERATION_CUES
@@ -877,6 +893,10 @@ class ToolSelector:
             or _matches_short_cjk_alias(user_input, tool)
             for tool in available_tools or ()
         )
+        refinement_followup = (
+            _is_read_refinement_request(user_input)
+            and not publisher_target_match
+        )
         if (
             _is_short_comparative_followup(text)
             and not _is_descendant_detail_followup(text)
@@ -893,6 +913,8 @@ class ToolSelector:
         if not _needs_conversation_context(user_input, available_tools):
             prior_inputs = []
         prior_inputs = _bounded_context_inputs(prior_inputs, max_chars=1200)
+        if refinement_followup and not prior_inputs:
+            return []
         read_only_request = _is_read_only_request(verb_text)
         descendant_followup = (
             read_only_request and _is_descendant_detail_followup(user_input)
@@ -957,7 +979,7 @@ class ToolSelector:
                 ) else []
             )
         if active_namespaces:
-            if not descendant_followup:
+            if not descendant_followup and not refinement_followup:
                 prior_inputs = []
         else:
             for prior_input in reversed(prior_inputs):
@@ -1042,6 +1064,28 @@ class ToolSelector:
             candidates = explicitly_aliased_transform
         else:
             candidates = list(available_tools or ())
+        if refinement_followup:
+            for previous in reversed(prior_inputs):
+                if (
+                    not _is_read_only_request(_request_verbs(previous, candidates))
+                    or any(
+                        _contains_cue(previous, cue)
+                        for cue in _DETAIL_READ_CUES
+                    )
+                    or any(
+                        _matches_tool_alias(previous, tool)
+                        for tool in candidates
+                        if str(_tool_field(tool, "action", "")).casefold()
+                        in {"get", "report"}
+                    )
+                ):
+                    continue
+                anchored = _explicit_resource_list_tools(previous, candidates)
+                if anchored:
+                    candidates = anchored
+                    break
+            else:
+                return []
         if descendant_followup:
             return _descendant_followup_tools(
                 prior_inputs, candidates, active_namespaces,
@@ -1236,6 +1280,15 @@ class ToolSelector:
         )) and any(cue in text for cue in (
             "刚才", "之前", "上述", "previous", "earlier",
         ))
+        if (
+            read_request
+            and _is_read_refinement_request(user_input)
+            and any(
+                _explicit_resource_list_tools(previous, selected_tools)
+                for previous in conversation_context
+            )
+        ):
+            return True
         web_search_match = any(
             _is_read_tool(tool)
             and _is_web_search_tool(tool)

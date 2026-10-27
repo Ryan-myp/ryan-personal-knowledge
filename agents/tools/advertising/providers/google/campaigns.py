@@ -63,6 +63,9 @@ class GoogleListCampaignsHandler(ToolHandler):
                 return ToolResult.ok({
                     "campaigns": campaigns,
                     "account_id": customer_id,
+                    "query_context": self._query_context(
+                        campaigns, input_data.get("limit", 100), campaign_id,
+                    ),
                     "data_status": "live",
                 })
             except Exception as e:
@@ -78,6 +81,21 @@ class GoogleListCampaignsHandler(ToolHandler):
             "data_status": "offline_no_client",
             "simulated": True,
         })
+
+    @staticmethod
+    def _query_context(campaigns: list, limit: object, campaign_id: object) -> dict:
+        try:
+            row_limit = max(1, min(int(limit), 1000))
+        except (TypeError, ValueError):
+            row_limit = 100
+        may_be_truncated = campaign_id in (None, "") and len(campaigns) >= row_limit
+        return {
+            "scope": "returned_page",
+            "returned_rows": len(campaigns),
+            "row_limit": row_limit,
+            "may_be_truncated": may_be_truncated,
+            "status": "possibly_truncated" if may_be_truncated else "within_limit",
+        }
 
 
 class GoogleGetCampaignHandler(ToolHandler):

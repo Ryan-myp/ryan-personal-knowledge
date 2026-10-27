@@ -17,6 +17,7 @@ from agents.agent_harness.runtime_kernel import TurnRequest
 from agents.agent_harness.tool_execution import ToolExecutionCoordinator
 from agents.agent_platform.tools.knowledge import knowledge_search_tool_source
 from agents.agent_platform.tools.web_search import web_search_tool_source
+from agents.tools.advertising.providers.source_factory import create_tool_source
 
 
 def _tool(name: str = "lookup_record") -> ToolDefinition:
@@ -639,6 +640,59 @@ def test_llm_client_constrains_discovery_recovery_to_registered_web_search():
     assert [
         item["function"]["name"] for item in retry["tools"]
     ] == ["agent_web_search"]
+
+
+def test_unknown_provider_tool_does_not_force_an_unrelated_web_search():
+    rejected = SimpleNamespace(
+        content="", tool_calls=[SimpleNamespace(
+            id="bad-call",
+            function=SimpleNamespace(name="google_unavailable", arguments="{}"),
+        )],
+    )
+    accepted = SimpleNamespace(
+        content="", tool_calls=[SimpleNamespace(
+            id="list-call",
+            function=SimpleNamespace(
+                name="google_list_campaigns",
+                arguments='{"exclude_removed":true}',
+            ),
+        )],
+    )
+    completions = _QueuedCompletions(*(
+        SimpleNamespace(
+            choices=[SimpleNamespace(message=item, finish_reason="tool_calls")],
+            usage=SimpleNamespace(prompt_tokens=11, completion_tokens=7),
+        )
+        for item in (rejected, accepted)
+    ))
+    tools = [
+        binding.definition
+        for source in (
+            create_tool_source("google-ads"),
+            web_search_tool_source(
+                configuration_provider=lambda: {}, required_permission="ads.read",
+            ),
+        )
+        for binding in source.list_bindings()
+        if binding.definition.name in {"google_list_campaigns", "agent_web_search"}
+    ]
+    client = LLMClient(model="test-model", api_key="test-only")
+    client._client = SimpleNamespace(
+        chat=SimpleNamespace(completions=completions),
+    )
+
+    result = client.complete(
+        [AgentMessage.user("重新查询 campaign，排除 REMOVED")],
+        tools,
+        TurnRequest(user_input="重新查询 campaign，排除 REMOVED"),
+    )
+
+    assert [call.name for call in result.tool_calls] == ["google_list_campaigns"]
+    retry = completions.requests[1]
+    assert {item["function"]["name"] for item in retry["tools"]} == {
+        "google_list_campaigns", "agent_web_search",
+    }
+    assert retry["tool_choice"] == "auto"
 
 
 def test_llm_client_falls_back_to_transparent_text_if_forced_search_is_rejected():

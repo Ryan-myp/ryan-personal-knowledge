@@ -87,7 +87,13 @@ class GoogleGetReportHandler(ToolHandler):
     def _summarize_report(self, report: list) -> dict:
         """汇总报表数据"""
         if not report:
-            return {"total_impressions": 0, "total_clicks": 0, "total_spend": 0}
+            return {
+                "total_impressions": None,
+                "total_clicks": None,
+                "total_spend": None,
+                "total_conversions": None,
+                "campaign_count": 0,
+            }
         
         def metrics(row):
             return row.get('metrics', {}) or row.get('campaign', {}).get('metrics', {})
