@@ -2552,6 +2552,27 @@ def test_confirmed_single_tool_resumes_the_signed_tool_choice():
     ) is None
 
 
+def test_confirmed_chain_resumes_only_allowlisted_pending_tool():
+    from agents.applications.advertising.run.ad_run_service import AdvertisingRunService
+
+    service = AdvertisingRunService.__new__(AdvertisingRunService)
+    payload = {
+        "type": "confirm_write_plan",
+        "preview": {"pending_tool": "meta_create_traffic_ad"},
+    }
+    expected = {"type": "function", "function": {"name": "meta_create_traffic_ad"}}
+    assert service._initial_tool_choice(
+        None, None, True, payload, ["meta_create_traffic_ad"]
+    ) == expected
+    assert service._initial_tool_choice(
+        None, None, True, payload, ["meta_create_campaign"]
+    ) is None
+    assert service._initial_tool_choice(
+        None, None, False, payload, ["meta_create_traffic_ad"]
+    ) is None
+    assert service._initial_tool_choice(None, None, True, payload, None) is None
+
+
 def test_chat_returns_only_the_top_level_confirmation_token_unredacted(fake_server):
     confirmation_payload = {
         "type": "confirm_write",

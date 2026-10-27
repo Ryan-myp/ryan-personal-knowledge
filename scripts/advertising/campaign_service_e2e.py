@@ -36,7 +36,7 @@ from scripts.advertising.provider_live_e2e_memory import (
 
 PROVIDERS = ("google-ads", "meta", "tiktok")
 CONFIRMED_ACCOUNTS = {
-    "google-ads": ["9055507554"],
+    "google-ads": ["9055507554", "7574609568"],
     "meta": ["2806375919473667"],
     "tiktok": ["7397068114548195329"],
 }
@@ -65,6 +65,7 @@ GOOGLE_MUTATION_RESOURCES = {
     "assetGroups", "assetGroupListingGroupFilters", "ads",
 }
 GOOGLE_BATCH_OPERATIONS = {
+    "campaignBudgetOperation": "campaignBudgets",
     "campaignOperation": "campaigns",
     "adGroupOperation": "adGroups",
     "adGroupAdOperation": "adGroupAds",
@@ -423,6 +424,11 @@ def readback_checks(read_case, resource_id, expected):
             observed, target = float(observed), float(value)
             if read_case["provider"] == "meta":
                 target *= 100
+        elif field.endswith("_micros"):
+            if re.fullmatch(r"-?\d+", str(observed)):
+                observed = int(observed)
+            if re.fullmatch(r"-?\d+", str(target)):
+                target = int(target)
         elif field in {"headlines", "descriptions"} and isinstance(observed, list):
             observed = [
                 item.get("text") if isinstance(item, dict) else item
@@ -436,6 +442,12 @@ def readback_checks(read_case, resource_id, expected):
             "passed": observed == target if observed is not None else None,
         }
     return checks
+
+
+def _case_tool_params(case):
+    params = case["params"]
+    scoped = params.get(case["tool"])
+    return scoped if isinstance(scoped, dict) else params
 
 
 def report(directory):
@@ -498,7 +510,8 @@ def report(directory):
             "matching_result_count": len(summary["matched_results"]),
         }
         if tool and tool.action == "update" and outcome == "verified":
-            resource_id = case["params"].get(tool.resource_id_field)
+            params = _case_tool_params(case)
+            resource_id = params.get(tool.resource_id_field)
             candidates = [
                 (read_path, read_case)
                 for read_path, read_case in documents
@@ -506,7 +519,7 @@ def report(directory):
                 and definitions[read_case["tool"]].action == "get"
                 and definitions[read_case["tool"]].resource_type == tool.resource_type
                 and resource_id is not None
-                and read_case["params"].get(tool.resource_id_field) == resource_id
+                and _case_tool_params(read_case).get(tool.resource_id_field) == resource_id
                 and completion_times[read_path] > completion_times[path]
                 and classify_evidence(
                     read_case, events_by_case.get(read_path.stem, []), write=False
@@ -519,7 +532,7 @@ def report(directory):
                     candidates, key=lambda item: completion_times[item[0]]
                 )
                 checks = readback_checks(
-                    read_case, resource_id, case["params"].get("updates") or {}
+                    read_case, resource_id, params.get("updates") or {}
                 )
                 row["readback_case"] = read_path.stem
             row["readback_checks"] = checks
@@ -591,6 +604,22 @@ def _load_state(directory):
     return root, state, {"X-API-Key": key}
 
 
+def _selected_account(state, provider, account_id=None):
+    configured = state.get("accounts", {}).get(provider)
+    confirmed = CONFIRMED_ACCOUNTS.get(provider)
+    if (
+        not isinstance(configured, list)
+        or not configured
+        or not isinstance(confirmed, list)
+        or not set(configured) <= set(confirmed)
+    ):
+        raise ValueError("E2E service requires a confirmed test account")
+    account = str(account_id) if account_id is not None else configured[0]
+    if account not in configured or account not in confirmed:
+        raise ValueError("selected account is not a confirmed test account")
+    return account
+
+
 def _e2e_request_case(request):
     """Select recorder scope only for confirmed-account chat and read lookups."""
     path = str(getattr(getattr(request, "url", None), "path", ""))
@@ -633,15 +662,11 @@ def resolve_selection_tokens(
     *,
     lookup_queries=None,
     lookup_context=None,
+    account_id=None,
 ):
     """Resolve exact lookup values into tokens bound to the E2E session."""
     root, state, headers = _load_state(directory)
-    account_ids = state.get("accounts", {}).get(provider)
-    if (
-        provider not in CONFIRMED_ACCOUNTS
-        or account_ids != CONFIRMED_ACCOUNTS[provider]
-    ):
-        raise ValueError("selection lookup requires the confirmed test account")
+    account = _selected_account(state, provider, account_id)
     if not str(tool_name or "").strip() or not str(session_id or "").strip():
         raise ValueError("selection lookup requires a Tool and session ID")
     if not isinstance(field_values, dict) or not field_values:
@@ -668,7 +693,10 @@ def resolve_selection_tokens(
             or not values
         ):
             raise ValueError("selection fields must contain non-empty value lists")
-        field_schema = definition.input_schema.properties.get(field)
+        field_schema = {"properties": definition.input_schema.properties}
+        for part in field.split("."):
+            properties = field_schema.get("properties") if isinstance(field_schema, dict) else None
+            field_schema = properties.get(part) if isinstance(properties, dict) else None
         field_type = field_schema.get("type") if isinstance(field_schema, dict) else None
         field_types = (
             {field_type}
@@ -700,7 +728,7 @@ def resolve_selection_tokens(
                 raise ValueError(f"selection lookup values must not be empty for {field}")
             query_params = {
                 "platform": provider, "field": field, "tool_name": tool_name,
-                "account_id": account_ids[0], "session_id": session_id, "query": str(query),
+                "account_id": account, "session_id": session_id, "query": str(query),
             }
             if lookup_context is not None:
                 query_params["lookup_context"] = json.dumps(lookup_context, ensure_ascii=False)
@@ -711,7 +739,7 @@ def resolve_selection_tokens(
                     **headers,
                     "X-E2E-Case": case_id,
                     "X-E2E-Provider": provider,
-                    "X-E2E-Account": account_ids[0],
+                    "X-E2E-Account": account,
                 },
                 timeout=DEFAULT_EXECUTION_TIMEOUT_SECONDS,
             )
@@ -995,6 +1023,31 @@ class ProviderRecorder:
             raise PermissionError("Provider request outside the selected test channel")
         account = self.case["account"]
         path = urlsplit(request.url).path
+        keyword_ideas_path = (
+            provider == "google-ads"
+            and re.fullmatch(
+                rf"/v[\d.]+/customers/{account}:generateKeywordIdeas", path
+            ) is not None
+        )
+        if keyword_ideas_path and request.method == "POST":
+            allowed = {
+                "keywordSeed", "keywordAndUrlSeed", "geoTargetConstants",
+                "language", "keywordPlanNetwork", "pageSize", "pageToken",
+            }
+            seed = data.get("keywordSeed", data.get("keywordAndUrlSeed"))
+            keywords = seed.get("keywords") if isinstance(seed, dict) else None
+            if (
+                set(data) <= allowed
+                and sum(key in data for key in ("keywordSeed", "keywordAndUrlSeed")) == 1
+                and isinstance(keywords, list)
+                and 1 <= len(keywords) <= 20
+                and all(isinstance(item, str) and item.strip() for item in keywords)
+                and isinstance(data.get("pageSize"), int)
+                and not isinstance(data["pageSize"], bool)
+                and 1 <= data["pageSize"] <= 1000
+            ):
+                return
+            raise PermissionError("Google keyword ideas read has unsafe parameters")
         if provider == "google-ads" and f"/customers/{account}/" not in path:
             raise PermissionError("Google request outside the test account")
         if provider == "meta":
@@ -1056,6 +1109,7 @@ class ProviderRecorder:
             if request.method != "POST" or not path.endswith(":mutate"):
                 raise PermissionError("write outside campaign hierarchy")
             resource = path.rsplit("/", 1)[-1].split(":", 1)[0]
+            atomic_campaign = self._google_atomic_campaign_create(data, resource, account)
             mutations = [
                 (node, parents) for node, parents in _walk_with_keys(data)
                 if any(key in node for key in ("create", "update", "remove"))
@@ -1073,7 +1127,10 @@ class ProviderRecorder:
                         ),
                         "",
                     )
-                if target not in GOOGLE_MUTATION_RESOURCES or (
+                if (
+                    target == "campaignBudgets"
+                    and not (atomic_campaign and "create" in node)
+                ) or (target != "campaignBudgets" and target not in GOOGLE_MUTATION_RESOURCES) or (
                     target == "ads" and ("create" in node or "remove" in node)
                 ):
                     raise PermissionError("write outside campaign hierarchy")
@@ -1102,6 +1159,42 @@ class ProviderRecorder:
         if provider == "tiktok" and "/update/" in path:
             resource = "ad_group" if action.group(1) == "adgroup" else action.group(1)
             self._guard_tiktok_update(data, account, resource)
+
+    @staticmethod
+    def _google_atomic_campaign_create(data, resource, account):
+        if resource != "googleAds" or data.get("partialFailure") is True:
+            return False
+        operations = data.get("mutateOperations")
+        if not isinstance(operations, list) or len(operations) != 2:
+            return False
+        if (
+            not isinstance(operations[0], dict)
+            or set(operations[0]) != {"campaignBudgetOperation"}
+            or not isinstance(operations[1], dict)
+            or set(operations[1]) != {"campaignOperation"}
+        ):
+            return False
+        budget = operations[0].get("campaignBudgetOperation")
+        campaign = operations[1].get("campaignOperation")
+        if (
+            not isinstance(budget, dict) or set(budget) != {"create"}
+            or not isinstance(campaign, dict) or set(campaign) != {"create"}
+        ):
+            return False
+        budget_input = budget["create"]
+        campaign_input = campaign["create"]
+        return (
+            isinstance(budget_input, dict)
+            and isinstance(campaign_input, dict)
+            and budget_input.get("resourceName")
+            == f"customers/{account}/campaignBudgets/-1"
+            and budget_input.get("explicitlyShared") is False
+            and isinstance(budget_input.get("amountMicros"), int)
+            and budget_input["amountMicros"] > 0
+            and campaign_input.get("campaignBudget")
+            == f"customers/{account}/campaignBudgets/-1"
+            and str(campaign_input.get("status") or "").upper() == "PAUSED"
+        )
 
     def _require_created(self, identifiers):
         if any(str(identifier) not in self.created for identifier in identifiers):
@@ -1502,12 +1595,10 @@ def serve(directory, port):
 
 def chat(
     directory, provider, tool, params, case_id, write=False, template_id=None,
-    session_id=None, user_input=None, *, live=False,
+    session_id=None, user_input=None, *, live=False, account_id=None,
 ):
     root, state, headers = _load_state(directory)
-    if provider not in PROVIDERS:
-        raise ValueError("unknown E2E provider")
-    account = str(state["accounts"][provider][0])
+    account = _selected_account(state, provider, account_id)
     definitions = {
         binding.definition.name: binding.definition
         for binding in create_tool_source(provider).list_bindings()
@@ -1622,6 +1713,7 @@ def conversation_chat(
     *,
     live=False,
     allow_read_tools=True,
+    account_id=None,
 ):
     """Test original user text through the model with only registered reads."""
     root, state, headers = _load_state(directory)
@@ -1629,7 +1721,7 @@ def conversation_chat(
         raise ValueError("conversation queries require the confirmed test accounts")
     if not str(user_input or "").strip():
         raise ValueError("conversation queries require user text")
-    account = state["accounts"][provider][0]
+    account = _selected_account(state, provider, account_id)
     body = {
         "user_input": user_input,
         "session_id": session_id or f"qa-conversation-{provider}",
@@ -1739,7 +1831,7 @@ def _ready_creation_card(payload, *, provider, account, template_id, blueprint_i
 def template_chat(
     directory, provider, template_id, params, case_id, *,
     write=False, session_id=None, user_input=None, allow_new_hierarchy=False,
-    existing_resources_reconciled=False,
+    existing_resources_reconciled=False, account_id=None,
 ):
     """Exercise the selected template without restricting the model to one Tool."""
     root, state, headers = _load_state(directory)
@@ -1747,7 +1839,7 @@ def template_chat(
         raise ValueError("template creation requires the confirmed test accounts")
     if not template_id or not isinstance(params, dict):
         raise ValueError("template creation requires a template and JSON parameters")
-    account = state["accounts"][provider][0]
+    account = _selected_account(state, provider, account_id)
     response = requests.get(
         state["base_url"] + f"/creation-templates/{template_id}",
         headers=headers, timeout=DEFAULT_EXECUTION_TIMEOUT_SECONDS,
@@ -1995,6 +2087,7 @@ def main():
     parser.add_argument("--directory", required=True)
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--provider", choices=PROVIDERS)
+    parser.add_argument("--account-id", help="explicit confirmed test account")
     parser.add_argument("--tool")
     parser.add_argument("--params", default="{}")
     parser.add_argument("--case-id", default="probe")
@@ -2052,11 +2145,13 @@ def main():
             args.session_id,
             args.user_input,
             live=args.live,
+            account_id=args.account_id,
         )
     elif args.command == "conversation":
         conversation_chat(
             args.directory, args.provider, args.user_input, args.case_id,
             args.session_id, live=args.live, allow_read_tools=not args.no_tools,
+            account_id=args.account_id,
         )
     elif args.command == "template":
         template_chat(
@@ -2065,6 +2160,7 @@ def main():
             session_id=args.session_id, user_input=args.user_input,
             allow_new_hierarchy=args.allow_new_hierarchy,
             existing_resources_reconciled=args.confirm_resource_readback,
+            account_id=args.account_id,
         )
     elif args.command == "report":
         report(args.directory)

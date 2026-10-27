@@ -35,6 +35,17 @@ class AdvertisingRunService:
                 tool_allowlist is None or tool in tool_allowlist
             ):
                 return {"type": "function", "function": {"name": tool}}
+        if (
+            confirmed
+            and isinstance(payload, Mapping)
+            and payload.get("type") == "confirm_write_plan"
+            and tool_allowlist is not None
+            and len(tool_allowlist) == 1
+        ):
+            preview = payload.get("preview")
+            pending = preview.get("pending_tool") if isinstance(preview, Mapping) else None
+            if pending == tool_allowlist[0]:
+                return {"type": "function", "function": {"name": pending}}
         if not blueprint_id:
             return None
         blueprint = self.runtime.creation_blueprints.get(blueprint_id, version or None)

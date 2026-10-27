@@ -39,6 +39,33 @@ from agents.tools.advertising.providers.meta.ads import MetaGetAdHandler
 from agents.tools.advertising.providers.meta.creatives import MetaCreateCreativeHandler
 
 
+def _capture_google_campaign_mutations(client):
+    calls = []
+
+    def mutate(operations):
+        calls.append(operations)
+        return {"mutateOperationResponses": [
+            {"campaignBudgetResult": {
+                "resourceName": f"customers/{client.customer_id}/campaignBudgets/7",
+            }},
+            {"campaignResult": {
+                "resourceName": f"customers/{client.customer_id}/campaigns/8",
+            }},
+        ]}
+
+    def resource_mutate(resource, operation):
+        if resource in {"campaignBudgets", "campaigns"}:
+            pytest.fail("campaign budget must be atomic")
+        calls.append((resource, operation))
+        return {"results": [{
+            "resourceName": f"customers/{client.customer_id}/{resource}/1",
+        }]}
+
+    client._mutate_google_operations = mutate
+    client._mutate = resource_mutate
+    return calls
+
+
 def test_meta_get_ad_declares_and_forwards_optional_fields():
     source = create_meta_tool_source()
     definition = next(
@@ -210,6 +237,28 @@ def test_google_campaign_list_builds_filter_from_validated_campaign_id():
     assert query.endswith("LIMIT 12")
 
 
+def test_google_campaign_list_can_exclude_removed_without_changing_default():
+    client = GoogleAdsAPIClient({"access_token": "test"}, customer_id="123")
+    queries = []
+    client._search_all = lambda query, **_kwargs: queries.append(query) or []
+
+    client.list_campaigns(page_size=10)
+    client.list_campaigns(page_size=10, exclude_removed=True)
+    client.list_campaigns(campaign_id="456", exclude_removed=True)
+
+    assert "WHERE campaign.status" not in queries[0]
+    assert "WHERE campaign.status != 'REMOVED'" in queries[1]
+    assert "WHERE campaign.id = 456 AND campaign.status != 'REMOVED'" in queries[2]
+
+
+def test_google_campaign_list_rejects_non_boolean_removed_filter():
+    client = GoogleAdsAPIClient({"access_token": "test"}, customer_id="123")
+    client._search_all = lambda *_args, **_kwargs: pytest.fail("provider request must not run")
+
+    with pytest.raises(ValueError, match="exclude_removed"):
+        client.list_campaigns(exclude_removed="false")
+
+
 @pytest.mark.parametrize("campaign_id", ["0", "9" * 100])
 def test_google_campaign_list_bounds_numeric_campaign_ids(campaign_id):
     client = GoogleAdsAPIClient({"access_token": "test"}, customer_id="123")
@@ -233,6 +282,22 @@ def test_google_campaign_handler_passes_typed_campaign_id_to_client():
 
     assert result.success
     assert "WHERE campaign.id = 456" in " ".join(queries[0].split())
+
+
+def test_google_campaign_handler_passes_explicit_removed_filter_to_client():
+    client = GoogleAdsAPIClient({"access_token": "test"}, customer_id="123")
+    queries = []
+    client._search_all = lambda query, **_kwargs: queries.append(query) or []
+    handler = GoogleListCampaignsHandler(client)
+    context = ToolContext(session_id="s1", user_id="u1", account_id="123")
+
+    result = handler.execute(
+        context, {"customer_id": "123", "exclude_removed": True, "limit": 20},
+    )
+
+    assert result.success
+    assert "WHERE campaign.status != 'REMOVED'" in queries[0]
+    assert queries[0].endswith("LIMIT 20")
 
 
 def test_google_create_asset_group_uses_trusted_customer_scoped_client():
@@ -335,11 +400,7 @@ def test_google_campaign_readback_returns_schedule_fields():
 
 def test_google_campaign_date_inputs_map_to_v24_datetime_fields():
     client = GoogleAdsAPIClient({"access_token": "test"}, customer_id="123")
-    operations = []
-    client._mutate = lambda resource, operation: (
-        operations.append((resource, operation))
-        or {"results": [{"resourceName": f"customers/123/{resource}/7"}]}
-    )
+    operations = _capture_google_campaign_mutations(client)
 
     client.create_campaign(
         "Dated campaign",
@@ -351,7 +412,7 @@ def test_google_campaign_date_inputs_map_to_v24_datetime_fields():
         live=True,
     )
 
-    campaign = operations[1][1]["create"]
+    campaign = operations[0][1]["campaignOperation"]["create"]
     assert campaign["startDateTime"] == "2026-10-14 00:00:00"
     assert campaign["endDateTime"] == "2026-10-21 23:59:59"
     assert "startDate" not in campaign
@@ -2041,6 +2102,22 @@ def test_google_experiment_read_surfaces_normalize_gaql_rows_and_queries():
     assert "experiment_arm.id" not in calls[1][0]
 
 
+def test_google_get_experiment_uses_supported_gaql_fields():
+    client = GoogleAdsAPIClient({"access_token": "test"}, customer_id="123")
+    queries = []
+
+    def search(query):
+        queries.append(query)
+        return {"results": [{"experiment": {"experimentId": "42", "name": "Test"}}]}
+
+    client._search = search
+    assert client.get_experiment("42")["id"] == "42"
+    assert "experiment.experiment_id = 42" in queries[0]
+    assert "experiment.id" not in queries[0]
+    assert "experiment.base_campaign" not in queries[0]
+    assert "experiment.experiment_campaign" not in queries[0]
+
+
 def test_google_experiment_service_lifecycle_builds_v24_payloads():
     client = GoogleAdsAPIClient({"access_token": "test"}, customer_id="123")
     mutate_calls = []
@@ -2399,6 +2476,8 @@ def test_google_campaign_list_uses_trusted_account_context_not_tool_parameter():
         tool.input_schema.properties["customer_id"]["description"]
     )
     assert "campaign_id" in tool.input_schema.properties
+    assert tool.input_schema.properties["exclude_removed"]["type"] == "boolean"
+    assert tool.contract_version == "1.5.1"
 
 
 def test_google_asset_reads_take_account_scope_from_runtime_context():
@@ -2620,6 +2699,21 @@ def test_meta_pixel_get_checks_account_ownership_and_forwards_fields():
     assert calls == [
         ("ownership", "act-123", "pixel", "px-1"),
         ("GET", "/px-1", {"fields": "id,name"}),
+    ]
+
+
+def test_meta_pixel_get_default_avoids_owner_only_fields():
+    client = MetaAPIClient({"access_token": "test"})
+    client.resource_belongs_to_account = lambda *_args: True
+    calls = []
+    client.request = lambda method, endpoint, data=None, **kwargs: (
+        calls.append((method, endpoint, kwargs.get("extra_params")))
+        or {"id": "px-1", "name": "Web Pixel"}
+    )
+
+    assert client.get_pixel("123", "px-1")["id"] == "px-1"
+    assert calls == [
+        ("GET", "/px-1", {"fields": "id,name,last_fired_time"}),
     ]
 
 
@@ -4528,6 +4622,18 @@ def test_tiktok_smart_plus_product_sales_and_video_cover_fail_before_network():
 
     adgroup_schema = definitions["tiktok_smart_plus_create_adgroup"].input_schema
     assert "catalog_authorized_bc_id" not in adgroup_schema.properties
+    missing_objective = validate_tool_input(
+        adgroup_schema,
+        {
+            "account_id": "123", "campaign_id": "campaign-1",
+            "adgroup_name": "Traffic group", "promotion_type": "WEBSITE",
+            "optimization_goal": "CLICK", "bid_type": "BID_TYPE_NO_BID",
+            "billing_event": "CPC", "schedule_type": "SCHEDULE_START_END",
+            "schedule_start_time": "2026-10-28 00:00:00",
+        },
+        include_tool_requirements=True,
+    )
+    assert any("objective_type" in error for error in missing_objective)
     errors = validate_tool_input(
         adgroup_schema,
         {
@@ -5501,7 +5607,7 @@ def test_google_campaign_criterion_update_and_delete_are_scoped():
     update = calls[-2][2]["operations"][0]
     assert update["update"]["resourceName"] == "customers/123/campaignCriteria/456~7"
     assert update["update"]["bidModifier"] == 1.25
-    assert update["updateMask"] == {"paths": ["status", "bidModifier"]}
+    assert update["updateMask"] == "status,bidModifier"
     remove = calls[-1][2]["operations"][0]
     assert remove["remove"] == "customers/123/campaignCriteria/456~7"
 
@@ -6909,19 +7015,7 @@ def test_meta_adset_client_preserves_selected_lowest_cost_strategy_on_wire():
 
 def test_google_creation_options_are_mapped_to_rest_resources():
     client = GoogleAdsAPIClient({"access_token": "test", "customer_id": "123"})
-    operations = []
-
-    def fake_mutate(resource, operation):
-        operations.append((resource, operation))
-        return {
-            "data": {
-                "results": [{
-                    "resourceName": f"customers/g1/{resource}/resource-1"
-                }]
-            }
-        }
-
-    client._mutate = fake_mutate
+    operations = _capture_google_campaign_mutations(client)
     client.create_campaign(
         "Sales", "SEARCH", "TARGET_ROAS", 10,
         target_roas=3.5,
@@ -6929,8 +7023,8 @@ def test_google_creation_options_are_mapped_to_rest_resources():
         start_date="2026-08-28", end_date="2026-09-04",
         live=True,
     )
-    campaign = operations[1][1]["create"]
-    assert operations[0][1]["create"]["explicitlyShared"] is False
+    campaign = operations[0][1]["campaignOperation"]["create"]
+    assert operations[0][0]["campaignBudgetOperation"]["create"]["explicitlyShared"] is False
     assert campaign["startDateTime"] == "2026-08-28 00:00:00"
     assert campaign["endDateTime"] == "2026-09-04 23:59:59"
     assert campaign["networkSettings"]["targetGoogleSearch"] is True
@@ -6940,11 +7034,7 @@ def test_google_creation_options_are_mapped_to_rest_resources():
 
 def test_google_pmax_retail_context_is_forwarded_for_listing_groups():
     client = GoogleAdsAPIClient({"access_token": "test", "customer_id": "123"})
-    operations = []
-    client._mutate = lambda resource, operation: (
-        operations.append((resource, operation))
-        or {"data": {"results": [{"resourceName": f"customers/123/{resource}/1"}]}}
-    )
+    operations = _capture_google_campaign_mutations(client)
 
     client.create_campaign(
         "Retail PMax", "PERFORMANCE_MAX", "MAXIMIZE_CONVERSIONS", 20,
@@ -6952,7 +7042,7 @@ def test_google_pmax_retail_context_is_forwarded_for_listing_groups():
         shopping_setting={"merchant_id": 115791065, "campaign_priority": 0},
         live=True,
     )
-    assert operations[1][1]["create"]["shoppingSetting"] == {
+    assert operations[0][1]["campaignOperation"]["create"]["shoppingSetting"] == {
         "merchantId": 115791065,
     }
 
@@ -6969,7 +7059,7 @@ def test_google_pmax_retail_context_is_forwarded_for_listing_groups():
         target_impression_share=0.7,
         live=True,
     )
-    impression_share_campaign = operations[1][1]["create"]
+    impression_share_campaign = operations[0][1]["campaignOperation"]["create"]
     assert impression_share_campaign["targetImpressionShare"] == {
         "location": "ANYWHERE_ON_PAGE",
         "locationFractionMicros": 700000,
@@ -6984,7 +7074,7 @@ def test_google_pmax_retail_context_is_forwarded_for_listing_groups():
         },
         live=True,
     )
-    app_campaign = operations[-1][1]["create"]
+    app_campaign = operations[-1][1]["campaignOperation"]["create"]
     assert app_campaign["appCampaignSetting"] == {
         "appId": "com.example.app",
         "appStore": "GOOGLE_APP_STORE",
@@ -6996,14 +7086,14 @@ def test_google_pmax_retail_context_is_forwarded_for_listing_groups():
         target_roas=2.5,
         live=True,
     )
-    value_campaign = operations[-1][1]["create"]
+    value_campaign = operations[-1][1]["campaignOperation"]["create"]
     assert value_campaign["maximizeConversionValue"] == {"targetRoas": 2.5}
 
     client.create_campaign(
         "Clicks", "SEARCH", "MAXIMIZE_CLICKS", 10,
         live=True,
     )
-    clicks_campaign = operations[-1][1]["create"]
+    clicks_campaign = operations[-1][1]["campaignOperation"]["create"]
     # Google Ads v24 represents the UI's Maximize clicks strategy as
     # TargetSpend; the removed maximizeClicks field must never reach REST.
     assert clicks_campaign["targetSpend"] == {}
@@ -7339,18 +7429,13 @@ def test_google_campaign_contract_covers_channel_specific_parameters():
 
 def test_google_campaign_client_normalizes_channel_alias_and_video_bidding():
     client = GoogleAdsAPIClient({"access_token": "test", "customer_id": "123"})
-    operations = []
-    client._mutate = lambda resource, operation: (
-        operations.append((resource, operation)) or {
-            "data": {"results": [{"resourceName": f"customers/g1/{resource}/resource-1"}]}
-        }
-    )
+    operations = _capture_google_campaign_mutations(client)
 
     client.create_campaign(
         "PMax", "MAX", "MAXIMIZE_CONVERSIONS", 10,
         live=True,
     )
-    campaign = operations[1][1]["create"]
+    campaign = operations[0][1]["campaignOperation"]["create"]
     assert campaign["advertisingChannelType"] == "PERFORMANCE_MAX"
 
     operations.clear()
@@ -7359,23 +7444,14 @@ def test_google_campaign_client_normalizes_channel_alias_and_video_bidding():
         network_setting={"target_content_network": True},
         live=True,
     )
-    campaign = operations[1][1]["create"]
+    campaign = operations[0][1]["campaignOperation"]["create"]
     assert campaign["targetCpm"] == {"targetCpmMicros": 2500000}
     assert campaign["networkSettings"] == {"targetContentNetwork": True}
 
 
 def test_google_app_campaign_mutation_includes_account_scoped_conversion_actions():
     client = GoogleAdsAPIClient({"access_token": "test", "customer_id": "123"})
-    operations = []
-
-    def fake_mutate(resource, operation):
-        operations.append((resource, operation))
-        resource_id = "7" if resource == "campaignBudgets" else "42"
-        return {"results": [{
-            "resourceName": f"customers/123/{resource}/{resource_id}"
-        }]}
-
-    client._mutate = fake_mutate
+    operations = _capture_google_campaign_mutations(client)
     client.create_campaign(
         name="App conversion",
         advertising_channel_type="MULTI_CHANNEL",
@@ -7397,7 +7473,7 @@ def test_google_app_campaign_mutation_includes_account_scoped_conversion_actions
         live=True,
     )
 
-    campaign = operations[1][1]["create"]
+    campaign = operations[0][1]["campaignOperation"]["create"]
     assert campaign["selectiveOptimization"] == {
         "conversionActions": ["customers/123/conversionActions/9"]
     }
@@ -7428,18 +7504,13 @@ def test_google_app_campaign_mutation_includes_account_scoped_conversion_actions
 
 def test_google_pmax_campaign_defaults_brand_guidelines_to_disabled():
     client = GoogleAdsAPIClient({"access_token": "test", "customer_id": "123"})
-    operations = []
-    client._mutate = lambda resource, operation: (
-        operations.append((resource, operation)) or {
-            "data": {"results": [{"resourceName": f"customers/g1/{resource}/resource-1"}]}
-        }
-    )
+    operations = _capture_google_campaign_mutations(client)
 
     client.create_campaign(
         "PMax", "PERFORMANCE_MAX", "MAXIMIZE_CONVERSIONS", 10,
         live=True,
     )
-    assert operations[1][1]["create"]["brandGuidelinesEnabled"] is False
+    assert operations[0][1]["campaignOperation"]["create"]["brandGuidelinesEnabled"] is False
 
 
 def test_google_keyword_creation_batches_criterion_operations():
@@ -7616,6 +7687,9 @@ def test_google_product_group_queries_normalize_listing_group_rows():
 def test_google_product_group_update_and_delete_use_composite_criterion_resource():
     client = GoogleAdsAPIClient({"access_token": "test"}, customer_id="123")
     calls = []
+    client.get_product_group = lambda _group, _criterion: {
+        "status": "PAUSED", "cpc_bid_micros": "250000",
+    }
     client._mutate = lambda resource, operation: (
         calls.append((resource, operation)) or {}
     )
@@ -7624,6 +7698,7 @@ def test_google_product_group_update_and_delete_use_composite_criterion_resource
         "456", "789", {"status": "PAUSED", "cpc_bid": 0.25}
     ) == {
         "success": True, "ad_group_id": "456", "product_group_id": "789",
+        "verified": True,
     }
     assert calls[0] == (
         "adGroupCriteria",
@@ -7647,6 +7722,59 @@ def test_google_product_group_update_and_delete_use_composite_criterion_resource
 
     with pytest.raises(ValueError, match="Unsupported Google product group"):
         client.update_product_group("456", "789", {"product_group_type": "brand"})
+
+
+def test_google_product_group_update_rejects_unpersisted_status():
+    client = GoogleAdsAPIClient({"access_token": "test"}, customer_id="123")
+    client._mutate = lambda *_args: {"results": [{
+        "resourceName": "customers/123/adGroupCriteria/456~789",
+    }]}
+    client.get_product_group = lambda *_args: {
+        "status": "ENABLED", "cpc_bid_micros": "110000",
+    }
+    with pytest.raises(APIError, match="status did not persist"):
+        client.update_product_group(
+            "456", "789", {"status": "PAUSED", "cpc_bid_micros": 110000},
+        )
+
+
+def test_google_rest_mutate_serializes_field_mask_without_changing_callers():
+    client = GoogleAdsAPIClient({"access_token": "test"}, customer_id="123")
+    calls = []
+    client.request_raw = lambda method, url, data=None, **kwargs: (
+        calls.append((method, url, data)) or {"status_code": 200}
+    )
+    operation = {
+        "update": {"resourceName": "customers/123/adGroupCriteria/456~789", "status": "PAUSED"},
+        "updateMask": {"paths": ["status"]},
+    }
+    client._mutate("adGroupCriteria", operation)
+    assert calls[0][2]["operations"][0]["updateMask"] == "status"
+    assert operation["updateMask"] == {"paths": ["status"]}
+
+    batch = [{
+        "adGroupCriterionOperation": {
+            "update": operation["update"],
+            "updateMask": {"paths": ["status", "cpcBidMicros"]},
+        }
+    }]
+    client._mutate_google_operations(batch)
+    assert calls[1][2]["mutateOperations"][0][
+        "adGroupCriterionOperation"
+    ]["updateMask"] == "status,cpcBidMicros"
+    assert batch[0]["adGroupCriterionOperation"]["updateMask"] == {
+        "paths": ["status", "cpcBidMicros"],
+    }
+
+
+def test_google_rest_mutate_rejects_invalid_field_mask_before_network():
+    client = GoogleAdsAPIClient({"access_token": "test"}, customer_id="123")
+    client.request_raw = lambda *_args, **_kwargs: pytest.fail("invalid mask sent")
+    with pytest.raises(ValueError, match="updateMask"):
+        client._mutate("adGroupCriteria", {
+            "update": {"status": "PAUSED"},
+            "updateMask": {"paths": []},
+        })
 
 
 def test_google_product_group_lifecycle_tools_are_scoped_and_live_gated():
@@ -8970,17 +9098,19 @@ def test_google_live_campaign_defaults_required_eu_political_declaration():
     client = GoogleAdsAPIClient({"access_token": "test"}, customer_id="123")
     calls = []
 
-    def fake_mutate(resource, operation):
-        calls.append((resource, operation))
-        if resource == "campaignBudgets":
-            return {"results": [{
-                "resourceName": "customers/123/campaignBudgets/7"
-            }]}
-        return {"results": [{
-            "resourceName": "customers/123/campaigns/8"
-        }]}
+    def fake_mutate(operations):
+        calls.append(operations)
+        return {"mutateOperationResponses": [
+            {"campaignBudgetResult": {
+                "resourceName": "customers/123/campaignBudgets/7",
+            }},
+            {"campaignResult": {
+                "resourceName": "customers/123/campaigns/8",
+            }},
+        ]}
 
-    client._mutate = fake_mutate
+    client._mutate_google_operations = fake_mutate
+    client._mutate = lambda *_args: pytest.fail("separate budget mutation")
     result = client.create_campaign(
         name="Required declaration",
         advertising_channel_type="SEARCH",
@@ -8991,7 +9121,14 @@ def test_google_live_campaign_defaults_required_eu_political_declaration():
     )
 
     assert result == "8"
-    campaign_payload = calls[1][1]["create"]
+    assert len(calls) == 1
+    budget_op, campaign_op = calls[0]
+    assert budget_op["campaignBudgetOperation"]["create"]["explicitlyShared"] is False
+    assert budget_op["campaignBudgetOperation"]["create"]["resourceName"] == (
+        "customers/123/campaignBudgets/-1"
+    )
+    campaign_payload = campaign_op["campaignOperation"]["create"]
+    assert campaign_payload["campaignBudget"] == "customers/123/campaignBudgets/-1"
     assert campaign_payload["containsEuPoliticalAdvertising"] == (
         "DOES_NOT_CONTAIN_EU_POLITICAL_ADVERTISING"
     )

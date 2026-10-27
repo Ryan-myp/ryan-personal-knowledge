@@ -48,6 +48,25 @@ def test_catalog_lookup_metadata_uses_the_declared_exact_id_query():
     ] == "catalog_id"
 
 
+def test_image_pickers_use_exact_hash_lookup_instead_of_listing_all_assets():
+    definitions = {
+        item.definition.name: item.definition
+        for item in create_meta_tool_source().list_bindings()
+    }
+    for tool_name in (
+        "meta_create_traffic_ad",
+        "meta_create_conversion_ad",
+        "meta_create_app_promotion_ad",
+    ):
+        field = definitions[tool_name].input_schema.properties["image_hash"]
+        assert field["lookup_tool"] == "meta_list_image_assets"
+        assert field["lookup_query_field"] == "hash"
+    nested = definitions["meta_create_ad"].input_schema.properties[
+        "object_story_spec"
+    ]["properties"]["link_data"]["properties"]["image_hash"]
+    assert nested["lookup_query_field"] == "hash"
+
+
 def test_app_template_uses_account_scoped_application_lookup_at_both_levels():
     definitions = {item.definition.name: item.definition for item in create_meta_tool_source().list_bindings()}
     assert definitions["meta_create_adset"].input_schema.properties["promoted_object"][

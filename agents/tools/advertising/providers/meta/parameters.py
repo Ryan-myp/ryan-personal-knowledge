@@ -171,6 +171,11 @@ def _meta_asset_ref(
         lookup_tool=lookup_tool, lookup_result_key=result_key,
         selection_value_fields=value_fields,
         selection_label_fields=label_fields,
+        **(
+            {"lookup_query_field": "hash"}
+            if lookup_tool == "meta_list_image_assets"
+            else {}
+        ),
     )
 
 
@@ -763,6 +768,7 @@ def meta_creative_schema() -> dict[str, Any]:
                 lookup_tool="meta_list_image_assets", lookup_result_key="image_assets",
                 selection_value_fields=["hash", "image_hash", "id"],
                 selection_label_fields=["name", "hash", "id"],
+                lookup_query_field="hash",
             ),
             "image_url": _field("string", "Image URL for create"),
             "fields": _field("array", "Fields to return", items={"type": "string"}),
@@ -1475,6 +1481,7 @@ def meta_link_ad_schema() -> dict[str, Any]:
                 lookup_tool="meta_list_image_assets", lookup_result_key="image_assets",
                 selection_value_fields=["hash", "image_hash", "id"],
                 selection_label_fields=["name", "hash", "id"],
+                lookup_query_field="hash",
                 **_ui_equals("media_type", "IMAGE"),
             ),
             "video_id": _field(

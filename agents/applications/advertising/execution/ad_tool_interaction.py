@@ -196,13 +196,26 @@ class AdvertisingToolInteractionProvider:
         if str(getattr(definition, "action", "") or "").lower() != "create":
             return False
         arguments = getattr(context.tool_call, "arguments", {})
-        if validate_tool_input(definition.input_schema, dict(arguments)):
-            return False
         request_context = context.request.context
         selected_workflow = isinstance(request_context, Mapping) and (
             request_context.get("creation_blueprint_id")
             or request_context.get("creation_template_id")
         )
+        platform_params = request_context.get("platform_params") if isinstance(request_context, Mapping) else None
+        singleton_input = (
+            not request_context.get("creation_template_id")
+            and tuple(getattr(context.request, "tool_allowlist", None) or ()) == (definition.name,)
+            and isinstance(platform_params, Mapping)
+            and isinstance(platform_params.get(definition.namespace), Mapping)
+            and isinstance(platform_params[definition.namespace].get(definition.name), Mapping)
+        )
+        if selected_workflow and singleton_input:
+            return bool(validate_tool_input(
+                definition.input_schema, dict(arguments),
+                include_tool_requirements=True,
+            ))
+        if validate_tool_input(definition.input_schema, dict(arguments)):
+            return False
         if not selected_workflow:
             provider_required = getattr(definition.input_schema, "requires", ()) or ()
             if any(arguments.get(field) in (None, "", []) for field in provider_required):
@@ -214,8 +227,6 @@ class AdvertisingToolInteractionProvider:
         """Materialize trusted template/form values before the Harness policy gate."""
         definition = getattr(context, "tool_definition", None)
         original = dict(getattr(context.tool_call, "arguments", {}) or {})
-        if str(getattr(definition, "action", "") or "").lower() != "create":
-            return original
         request = context.request
         request_context = (
             request.context if isinstance(request.context, Mapping) else {}
@@ -224,11 +235,31 @@ class AdvertisingToolInteractionProvider:
             request_context.get("creation_blueprint_id")
             or request_context.get("creation_template_id")
         )
-        if not selected_workflow:
+        platform_params = request_context.get("platform_params")
+        explicit_tool_input = False
+        if (
+            not selected_workflow
+            and tuple(getattr(request, "tool_allowlist", None) or ())
+            == (definition.name,)
+            and isinstance(platform_params, Mapping)
+        ):
+            namespace = self.runtime._canonical_platform(str(definition.namespace))
+            explicit_tool_input = any(
+                self.runtime._canonical_platform(str(key)) == namespace
+                and isinstance(values, Mapping)
+                and isinstance(values.get(definition.name), Mapping)
+                for key, values in platform_params.items()
+            )
+        if not selected_workflow and not explicit_tool_input:
+            return original
+        if (
+            str(getattr(definition, "action", "") or "").lower() != "create"
+            and not explicit_tool_input
+        ):
             return original
 
         intent, _tool_plan, _request_context = self._intent(
-            context, definition, original,
+            context, definition, {} if explicit_tool_input else original,
         )
         input_builder = getattr(self.runtime, "input_builder", None)
         build = getattr(input_builder, "build", None)
@@ -287,7 +318,7 @@ class AdvertisingToolInteractionProvider:
             if parent_id is not None:
                 effective[parent_field] = parent_id
         for field in reference_fields:
-            if field in properties and field in original:
+            if not explicit_tool_input and field in properties and field in original:
                 effective.setdefault(field, original[field])
         return effective
 

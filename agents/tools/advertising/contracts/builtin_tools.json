@@ -1,5 +1,5 @@
 {
-  "digest": "a1c5c7244b04ec857d6472c5cd09bd11488765ef49f129e3a03f3639338ac624",
+  "digest": "b3478e61410bc9accf851ce1c400a6c69fa7355e841511e44c4ec98847a1309b",
   "format_version": 1,
   "platforms": {
     "advertising": {
@@ -3269,7 +3269,7 @@
       ]
     },
     "google-ads": {
-      "digest": "3c6c72ed3ee5e460c0a53a3daa34360cd1258a87845f3b27913abe731d4a0917",
+      "digest": "9752abb43dd786cc47d769525d6f09973056c87f2f42778d919f6b76cada2a0b",
       "tool_count": 111,
       "tools": [
         {
@@ -16709,8 +16709,8 @@
           "action": "list",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
-          "contract_hash": "bf43320167441c61d8b0e1853be0ac5c20a4cda96c5a5c936e05e9663a91e56a",
-          "contract_version": "1.5.0",
+          "contract_hash": "c98f15964ef7462d7154b79ae8b9eef4cae6dc14ab80160936b9a3c1f5c62267",
+          "contract_version": "1.5.1",
           "description": "查询 Google Ads Campaign 列表。",
           "effect_class": "read",
           "idempotency_key_field": null,
@@ -16739,6 +16739,10 @@
               "customer_id": {
                 "description": "Optional scope assertion only; the account is always taken from trusted request context.",
                 "type": "string"
+              },
+              "exclude_removed": {
+                "description": "可选：仅返回未移除的 Campaign；默认仍包含 REMOVED。",
+                "type": "boolean"
               },
               "limit": {
                 "type": "integer"
@@ -20205,7 +20209,7 @@
       ]
     },
     "meta": {
-      "digest": "ad269ce12b142f147d8b8a6ddc9262fb4a8281d7f38c3ce2a366e3c5c037ab11",
+      "digest": "427116de7286110e716de2da18a43df0e61fc1ab9e058b9abacefbb9fb64bdc2",
       "tool_count": 82,
       "tools": [
         {
@@ -20353,7 +20357,7 @@
             }
           ],
           "cancellation_mode": "cooperative",
-          "contract_hash": "a1ffc32127df877fd9a53f18a52b02b31db627ba2edaa3626d1b0a03e9dd6cbf",
+          "contract_hash": "63adbda6b4386783b701321744235ce950e0c708df0c2eecf54c0ae10d9e3ef2",
           "contract_version": "1.5.1",
           "description": "创建 Meta Ad。",
           "effect_class": "write",
@@ -20558,6 +20562,7 @@
                               "lookup_defaults": {
                                 "limit": 1000
                               },
+                              "lookup_query_field": "hash",
                               "lookup_result_key": "image_assets",
                               "lookup_tool": "meta_list_image_assets",
                               "minLength": 1,
@@ -20754,6 +20759,7 @@
                         "lookup_defaults": {
                           "limit": 1000
                         },
+                        "lookup_query_field": "hash",
                         "lookup_result_key": "image_assets",
                         "lookup_tool": "meta_list_image_assets",
                         "minLength": 1,
@@ -22526,7 +22532,7 @@
             }
           ],
           "cancellation_mode": "cooperative",
-          "contract_hash": "23d289988c466fdba494c6a7896cec89dccac20d908cc38e740447c0d625dd84",
+          "contract_hash": "2574ea23081f0c8ac07957f062eb37db8b7240151c935f0d0754785e78e5a485",
           "contract_version": "1.5.1",
           "description": "创建 Meta App Promotion 安装广告；live 创建固定为 PAUSED。",
           "effect_class": "write",
@@ -22615,6 +22621,7 @@
                 "lookup_defaults": {
                   "limit": 1000
                 },
+                "lookup_query_field": "hash",
                 "lookup_result_key": "image_assets",
                 "lookup_tool": "meta_list_image_assets",
                 "minLength": 1,
@@ -23658,7 +23665,7 @@
             }
           ],
           "cancellation_mode": "cooperative",
-          "contract_hash": "1d0c42074c7796fec6d2d5f135fd47f9b5cc30017d32ef4de164fec91c548c1b",
+          "contract_hash": "0e2222a27bec5b5dcacb5e9ca6847b1e5e705fbd310e78022bd41f5cd56b04c6",
           "contract_version": "1.5.1",
           "description": "创建 Meta Conversion 网站链接广告；默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -23739,6 +23746,7 @@
                 "lookup_defaults": {
                   "limit": 1000
                 },
+                "lookup_query_field": "hash",
                 "lookup_result_key": "image_assets",
                 "lookup_tool": "meta_list_image_assets",
                 "minLength": 1,
@@ -25338,7 +25346,7 @@
             }
           ],
           "cancellation_mode": "cooperative",
-          "contract_hash": "1d0c42074c7796fec6d2d5f135fd47f9b5cc30017d32ef4de164fec91c548c1b",
+          "contract_hash": "0e2222a27bec5b5dcacb5e9ca6847b1e5e705fbd310e78022bd41f5cd56b04c6",
           "contract_version": "1.5.1",
           "description": "创建 Meta Traffic 网站链接广告；默认仅生成 dry-run 计划。",
           "effect_class": "write",
@@ -25419,6 +25427,7 @@
                 "lookup_defaults": {
                   "limit": 1000
                 },
+                "lookup_query_field": "hash",
                 "lookup_result_key": "image_assets",
                 "lookup_tool": "meta_list_image_assets",
                 "minLength": 1,
@@ -32159,7 +32168,7 @@
       ]
     },
     "tiktok": {
-      "digest": "c3ed615e37b1e4b041d5b223449406eb92394c7dc6c8305c0e8d9c683e6146da",
+      "digest": "3e44d1478f2ba685e6409934aedf34fa8adb1aca88f472b68a9442446f732f4f",
       "tool_count": 89,
       "tools": [
         {
@@ -47057,7 +47066,7 @@
             }
           ],
           "cancellation_mode": "cooperative",
-          "contract_hash": "68ff5ace92fd631ce6aa5a4d4f1efe411d615f52ef18763793be4ffebade99cc",
+          "contract_hash": "1214bec7f0bb4f0998ae6fd0ca63b74eb9f34af2e9f306f3f00925d1b201d820",
           "contract_version": "1.6.0",
           "description": "使用 TikTok Upgraded Smart+ Ad Group API 创建广告组；定向、优化目标、出价和排期由渠道级联规则校验，live 仅允许创建暂停状态。",
           "effect_class": "write",
@@ -47711,6 +47720,7 @@
             "required": [
               "account_id",
               "campaign_id",
+              "objective_type",
               "adgroup_name",
               "promotion_type",
               "optimization_goal",
@@ -47721,6 +47731,7 @@
             ],
             "requires": [
               "campaign_id",
+              "objective_type",
               "adgroup_name",
               "promotion_type",
               "optimization_goal",

@@ -2021,12 +2021,12 @@ def tiktok_smart_plus_adgroup_schema() -> dict[str, Any]:
     """Closed contract for ``smart_plus/adgroup/create``."""
     return {
         "required": [
-            "campaign_id", "adgroup_name", "promotion_type",
+            "campaign_id", "objective_type", "adgroup_name", "promotion_type",
             "optimization_goal", "bid_type", "billing_event",
             "schedule_type", "schedule_start_time",
         ],
         "requires": [
-            "campaign_id", "adgroup_name", "promotion_type",
+            "campaign_id", "objective_type", "adgroup_name", "promotion_type",
             "optimization_goal", "bid_type", "billing_event",
             "schedule_type", "schedule_start_time",
         ],
@@ -2039,8 +2039,8 @@ def tiktok_smart_plus_adgroup_schema() -> dict[str, Any]:
         # The ad-group endpoint does not receive the campaign objective on
         # the wire, but the client needs the parent objective to validate its
         # cascade.  Keep it as a hidden, intent-derived context field so the
-        # Runtime can pass it through without asking the operator to enter it
-        # twice or teaching Runtime about TikTok objectives.
+        # Runtime can pass it through without teaching Runtime about TikTok
+        # objectives. Omitting it would silently treat Traffic as Sales.
         "conditional_rules": [
             {
                 "if": {"objective_type": "APP_PROMOTION"},

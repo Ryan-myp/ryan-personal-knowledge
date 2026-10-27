@@ -140,9 +140,15 @@ def test_google_specialized_provider_plans_use_v24_adgroup_ad_payloads():
 def test_google_demand_gen_ad_group_and_campaign_settings_map_to_wire_fields():
     client = GoogleAdsAPIClient({"access_token": "test", "customer_id": "123"})
     operations = []
+    client._mutate_google_operations = lambda batch: (
+        operations.append(batch) or {"mutateOperationResponses": [
+            {"campaignBudgetResult": {"resourceName": "customers/123/campaignBudgets/1"}},
+            {"campaignResult": {"resourceName": "customers/123/campaigns/1"}},
+        ]}
+    )
     client._mutate = lambda resource, operation: (
         operations.append((resource, operation)) or {
-            "data": {"results": [{"resourceName": f"customers/123/{resource}/1"}]}
+            "results": [{"resourceName": f"customers/123/{resource}/1"}],
         }
     )
     client.create_campaign(
@@ -150,7 +156,7 @@ def test_google_demand_gen_ad_group_and_campaign_settings_map_to_wire_fields():
         demand_gen_campaign_settings={"upgraded_targeting": True},
         live=True,
     )
-    campaign = operations[1][1]["create"]
+    campaign = operations[0][1]["campaignOperation"]["create"]
     assert campaign["demandGenCampaignSettings"] == {"upgradedTargeting": True}
 
     operations.clear()

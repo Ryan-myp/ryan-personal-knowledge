@@ -37,6 +37,9 @@ class GoogleListCampaignsHandler(ToolHandler):
                 # accounts while preserving the generic Runtime provenance
                 # gate for live parent-resource writes.
                 campaign_id = input_data.get("campaign_id")
+                exclude_removed = input_data.get("exclude_removed", False)
+                if type(exclude_removed) is not bool:
+                    return ToolResult.error("exclude_removed must be a boolean")
                 if campaign_id not in (None, ""):
                     campaign_id = str(campaign_id).strip()
                     if not campaign_id.isascii() or not campaign_id.isdecimal():
@@ -44,6 +47,12 @@ class GoogleListCampaignsHandler(ToolHandler):
                     campaigns = client.list_campaigns(
                         campaign_id=campaign_id,
                         page_size=input_data.get("limit", 100),
+                        **({"exclude_removed": True} if exclude_removed else {}),
+                    )
+                elif exclude_removed:
+                    campaigns = client.list_campaigns(
+                        page_size=input_data.get("limit", 100),
+                        exclude_removed=True,
                     )
                 else:
                     campaigns = call_with_optional_page_size(

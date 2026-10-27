@@ -34,6 +34,72 @@ def test_valid_standalone_tool_does_not_require_sibling_blueprint_fields():
     assert interaction.creation_input_required(_context({})) is False
 
 
+def test_explicit_single_tool_structured_input_survives_model_drift():
+    class Runtime:
+        _sessions = {}
+        @staticmethod
+        def _canonical_platform(value):
+            return value
+        input_builder = SimpleNamespace(build=lambda _tool, intent, _ns, _ctx: dict(
+            intent.scoped_parameters["example"]["example_create_campaign"]
+        ))
+    interaction = AdvertisingToolInteractionProvider(Runtime())
+    context = _context({
+        "platform_params": {
+            "example": {
+                "example_create_campaign": {
+                    "name": "QA_PAUSED",
+                    "objective_type": "TRAFFIC",
+                }
+            }
+        }
+    })
+    context.request.tool_allowlist = ("example_create_campaign",)
+    context.request.user_input = "create"
+    context.request.session_id = "test"
+    context.tool_definition.input_schema.properties["objective_type"] = {"type": "string"}
+    context.tool_call.arguments = {"name": "model-name", "campaign_id": "extra"}
+    assert interaction.resolve_tool_arguments(context) == {
+        "name": "QA_PAUSED",
+        "objective_type": "TRAFFIC",
+    }
+
+
+def test_structured_tool_input_does_not_override_unselected_tool_or_plain_chat():
+    interaction = AdvertisingToolInteractionProvider(object())
+    context = _context({
+        "platform_params": {
+            "example": {"example_create_campaign": {"name": "structured"}}
+        }
+    })
+    context.request.tool_allowlist = ("another_tool",)
+    assert interaction.resolve_tool_arguments(context) == {"name": "QA_campaign"}
+    context.request.tool_allowlist = None
+    assert interaction.resolve_tool_arguments(context) == {"name": "QA_campaign"}
+
+
+def test_explicit_structured_input_rejects_builder_selection_errors():
+    class Runtime:
+        _sessions = {}
+        @staticmethod
+        def _canonical_platform(value):
+            return value
+        input_builder = SimpleNamespace(build=lambda *_: {
+            "name": "QA", "_selection_errors": ["invalid proof"],
+        })
+    interaction = AdvertisingToolInteractionProvider(Runtime())
+    context = _context({
+        "platform_params": {
+            "example": {"example_create_campaign": {"name": "QA"}}
+        }
+    })
+    context.request.tool_allowlist = ("example_create_campaign",)
+    context.request.user_input = "create"
+    context.request.session_id = "test"
+    with pytest.raises(ValueError, match="invalid proof"):
+        interaction.resolve_tool_arguments(context)
+
+
 def test_explicit_blueprint_still_requires_the_selected_workflow_inputs():
     interaction = AdvertisingToolInteractionProvider(object())
     interaction._creation_ui = lambda *_: {"needs_input": True}
@@ -43,6 +109,33 @@ def test_explicit_blueprint_still_requires_the_selected_workflow_inputs():
         )
         is True
     )
+
+
+def test_singleton_structured_campaign_does_not_require_blueprint_siblings():
+    interaction = AdvertisingToolInteractionProvider(object())
+    interaction._creation_ui = lambda *_: {"needs_input": True}
+    context = _context({
+        "creation_blueprint_id": "example.full",
+        "platform_params": {
+            "example": {"example_create_campaign": {"name": "QA_campaign"}},
+        },
+    })
+    context.request.tool_allowlist = ("example_create_campaign",)
+    assert interaction.creation_input_required(context) is False
+
+
+def test_singleton_structured_campaign_still_requires_its_own_fields():
+    interaction = AdvertisingToolInteractionProvider(object())
+    interaction._creation_ui = lambda *_: {"needs_input": False}
+    context = _context({
+        "creation_blueprint_id": "example.full",
+        "platform_params": {
+            "example": {"example_create_campaign": {"name": "QA_campaign"}},
+        },
+    })
+    context.request.tool_allowlist = ("example_create_campaign",)
+    context.tool_call.arguments = {}
+    assert interaction.creation_input_required(context) is True
 
 
 def test_template_and_structured_values_override_model_tool_suggestions():

@@ -2313,6 +2313,10 @@ class GoogleToolSource(BaseProviderToolSource):
                         "description": "可选：精确查询一个 Campaign ID，适用于父资源选择",
                     },
                     "limit": {"type": "integer"},
+                    "exclude_removed": {
+                        "type": "boolean",
+                        "description": "可选：仅返回未移除的 Campaign；默认仍包含 REMOVED。",
+                    },
                 },
             ),
             action="list", resource_type="campaign",
@@ -2328,6 +2332,7 @@ class GoogleToolSource(BaseProviderToolSource):
             result_items_key="campaigns",
             result_summary_fields=["status"],
             result_id_fields=["id", "campaign_id", "resource_name"],
+            contract_version="1.5.1",
             risk_level=RiskLevel.LOW,
             effect_class=ToolEffect.READ,
             replay_policy=ReplayPolicy.SAFE,

@@ -55,6 +55,93 @@ def test_query_service_is_read_only_and_keeps_only_confirmed_test_accounts():
         driver.build_service_config({"meta": ["unconfirmed"]}, read_only=True)
 
 
+def test_new_google_test_account_is_allowlisted_without_changing_default_safety():
+    from types import SimpleNamespace
+    from scripts.advertising import campaign_service_e2e as driver
+
+    account = "7574609568"
+    assert account in driver.CONFIRMED_ACCOUNTS["google-ads"]
+    for name in ("config.yaml", "config.test-live.yaml"):
+        config = driver.yaml.safe_load(
+            (driver.ROOT / "agents" / "ad_agent" / name).read_text()
+        )
+        assert account in config["allowed_accounts"]["google-ads"]
+        assert config["execution_mode"] == "dry_run"
+    default = driver.yaml.safe_load(
+        (driver.ROOT / "agents/ad_agent/config.yaml").read_text()
+    )
+    assert default["allow_live_writes"] is False
+    assert default["live_approved_tools"] == []
+    read_only = driver.yaml.safe_load(
+        (driver.ROOT / "agents/ad_agent/config.google-7574609568-readonly.yaml").read_text()
+    )
+    assert read_only["allowed_accounts"]["google-ads"] == [account]
+    assert read_only["read_only_mode"] is True
+    assert read_only["allow_live_writes"] is False
+    assert read_only["live_approved_tools"] == []
+    assert _e2e_request_case(SimpleNamespace(
+        url=SimpleNamespace(path="/chat"),
+        headers={
+            "x-e2e-provider": "google-ads",
+            "x-e2e-account": account,
+            "x-e2e-case": "confirmed-test",
+        },
+    ))["account"] == account
+
+
+def test_explicit_google_account_is_used_for_chat_and_conversation(monkeypatch, tmp_path):
+    from types import SimpleNamespace
+    from scripts.advertising import campaign_service_e2e as driver
+
+    state = {"base_url": "http://localhost", "accounts": driver.CONFIRMED_ACCOUNTS}
+    monkeypatch.setattr(
+        driver, "_load_state",
+        lambda _directory: (tmp_path, state, {"X-API-Key": "fixture"}),
+    )
+    monkeypatch.setattr(driver, "_json_write", lambda *_args: None)
+    calls = []
+    payload = {"status": "succeeded", "results": [], "tool_call_count": 0}
+    def post(_url, **kwargs):
+        calls.append(kwargs)
+        return SimpleNamespace(
+            status_code=200, raise_for_status=lambda: None, json=lambda: payload,
+        )
+    monkeypatch.setattr(driver.requests, "post", post)
+
+    driver.chat(
+        tmp_path, "google-ads", "google_list_campaigns", {"limit": 1},
+        "chosen-account-chat", live=True, account_id="7574609568",
+    )
+    driver.conversation_chat(
+        tmp_path, "google-ads", "列出 Campaign", "chosen-account-conversation",
+        live=True, account_id="7574609568",
+    )
+    for call in calls:
+        assert call["json"]["account_id"] == "7574609568"
+        assert call["headers"]["X-E2E-Account"] == "7574609568"
+
+
+@pytest.mark.parametrize("account", ["1234567890", "7574609568"])
+def test_chat_rejects_unconfirmed_or_unconfigured_account(monkeypatch, tmp_path, account):
+    from scripts.advertising import campaign_service_e2e as driver
+
+    monkeypatch.setattr(driver, "_load_state", lambda _directory: (
+        tmp_path, {
+            "base_url": "http://localhost",
+            "accounts": {"google-ads": ["9055507554"]},
+        }, {},
+    ))
+    monkeypatch.setattr(
+        driver.requests, "post",
+        lambda *_args, **_kwargs: pytest.fail("unscoped HTTP request"),
+    )
+    with pytest.raises(ValueError, match="confirmed test account"):
+        driver.chat(
+            tmp_path, "google-ads", "google_list_campaigns", {},
+            "rejected-account", live=True, account_id=account,
+        )
+
+
 def test_e2e_service_start_validates_durable_memory_before_launch(
     monkeypatch, tmp_path
 ):
@@ -186,7 +273,7 @@ def test_selection_token_helper_resolves_only_exact_requested_values(
             tmp_path,
             {
                 "base_url": "http://localhost",
-                "accounts": {"google-ads": ["9055507554"]},
+                    "accounts": driver.CONFIRMED_ACCOUNTS,
             },
             {"X-API-Key": "test-key"},
         ),
@@ -236,6 +323,63 @@ def test_selection_token_helper_resolves_only_exact_requested_values(
     assert calls[0][1]["headers"]["X-E2E-Case"] == "google-template-assets"
     assert calls[0][1]["headers"]["X-E2E-Provider"] == "google-ads"
     assert calls[0][1]["headers"]["X-E2E-Account"] == "9055507554"
+
+
+def test_selection_lookup_uses_explicit_account(monkeypatch, tmp_path):
+    from scripts.advertising import campaign_service_e2e as driver
+
+    monkeypatch.setattr(driver, "_load_state", lambda _directory: (
+        tmp_path,
+        {"base_url": "http://localhost", "accounts": driver.CONFIRMED_ACCOUNTS},
+        {},
+    ))
+    response = requests.Response()
+    response.status_code = 200
+    response._content = json.dumps({"options": [{
+        "value": "7574609568", "selection_token": "ps1.private.signature",
+    }]}).encode()
+    calls = []
+    monkeypatch.setattr(
+        driver.requests, "get",
+        lambda *_args, **kwargs: (calls.append(kwargs) or response),
+    )
+    result = driver.resolve_selection_tokens(
+        tmp_path, "google-ads", "google_create_campaign",
+        {"customer_id": ["7574609568"]}, "new-account-lookup",
+        "new-account-session", account_id="7574609568",
+    )
+    assert result == {"customer_id": "ps1.private.signature"}
+    assert calls[0]["params"]["account_id"] == "7574609568"
+    assert calls[0]["headers"]["X-E2E-Account"] == "7574609568"
+
+
+def test_selection_lookup_supports_nested_tool_schema_field(monkeypatch, tmp_path):
+    from scripts.advertising import campaign_service_e2e as driver
+
+    monkeypatch.setattr(driver, "_load_state", lambda _directory: (
+        tmp_path,
+        {"base_url": "http://localhost", "accounts": driver.CONFIRMED_ACCOUNTS},
+        {},
+    ))
+    response = requests.Response()
+    response.status_code = 200
+    response._content = json.dumps({"options": [{
+        "value": "720759025118418", "selection_token": "ps1.private.signature",
+    }]}).encode()
+    calls = []
+    monkeypatch.setattr(
+        driver.requests, "get",
+        lambda *_args, **kwargs: (calls.append(kwargs) or response),
+    )
+    result = driver.resolve_selection_tokens(
+        tmp_path, "meta", "meta_create_adset",
+        {"promoted_object.product_set_id": ["720759025118418"]},
+        "catalog-nested-lookup", "catalog-nested-session",
+        lookup_context={"catalog_id": "584715368753247"},
+    )
+    assert result == {"promoted_object.product_set_id": "ps1.private.signature"}
+    assert calls[0]["params"]["field"] == "promoted_object.product_set_id"
+    assert json.loads(calls[0]["params"]["lookup_context"])["catalog_id"] == "584715368753247"
 
 
 def test_selection_token_helper_preserves_scalar_field_shape(monkeypatch, tmp_path):
@@ -656,7 +800,7 @@ def test_confirmation_response_is_saved_even_if_second_request_times_out(
         "_load_state",
         lambda _: (
             tmp_path,
-            {"base_url": "http://localhost", "accounts": {"meta": ["123"]}},
+            {"base_url": "http://localhost", "accounts": driver.CONFIRMED_ACCOUNTS},
             {},
         ),
     )
@@ -710,7 +854,7 @@ def test_chat_forwards_template_without_selecting_the_full_blueprint(
         "_load_state",
         lambda _: (
             tmp_path,
-            {"base_url": "http://localhost", "accounts": {"meta": ["123"]}},
+            {"base_url": "http://localhost", "accounts": driver.CONFIRMED_ACCOUNTS},
             {},
         ),
     )
@@ -1117,7 +1261,7 @@ def test_chat_can_continue_an_existing_template_session(monkeypatch, tmp_path):
         "_load_state",
         lambda _: (
             tmp_path,
-            {"base_url": "http://localhost", "accounts": {"meta": ["123"]}},
+            {"base_url": "http://localhost", "accounts": driver.CONFIRMED_ACCOUNTS},
             {},
         ),
     )
@@ -1157,7 +1301,7 @@ def test_chat_keeps_selection_tokens_structured_and_redacts_prompt(
         "_load_state",
         lambda _: (
             tmp_path,
-            {"base_url": "http://localhost", "accounts": {"meta": ["123"]}},
+            {"base_url": "http://localhost", "accounts": driver.CONFIRMED_ACCOUNTS},
             {},
         ),
     )
@@ -1226,7 +1370,7 @@ def test_chat_keeps_blueprint_metadata_out_of_tool_arguments(
         "_load_state",
         lambda _: (
             tmp_path,
-            {"base_url": "http://localhost", "accounts": {"meta": ["123"]}},
+            {"base_url": "http://localhost", "accounts": driver.CONFIRMED_ACCOUNTS},
             {},
         ),
     )
@@ -1810,6 +1954,71 @@ def test_google_pmax_asset_group_requires_its_created_paused_campaign(tmp_path):
         recorder._guard_google(request_data, path)
 
 
+def test_google_keyword_ideas_read_is_scoped_to_test_account(tmp_path):
+    recorder = ProviderRecorder(tmp_path)
+    recorder.case = {
+        "case_id": "google-keywords", "provider": "google-ads", "account": "123",
+    }
+    body = {
+        "keywordSeed": {"keywords": ["running shoes"]},
+        "keywordPlanNetwork": "GOOGLE_SEARCH",
+        "pageSize": 5,
+    }
+    url = "https://googleads.googleapis.com/v24/customers/123:generateKeywordIdeas"
+    request = requests.Request("POST", url, json=body).prepare()
+    recorder._guard(request, "google-ads", body)
+
+    for unsafe_url, unsafe_body, method in (
+        (url.replace("/123:", "/456:"), body, "POST"),
+        (url, {**body, "mutateOperations": []}, "POST"),
+        (url, {**body, "keywordSeed": {"keywords": []}}, "POST"),
+        (url, body, "DELETE"),
+    ):
+        request = requests.Request(method, unsafe_url, json=unsafe_body).prepare()
+        with pytest.raises(PermissionError):
+            recorder._guard(request, "google-ads", unsafe_body)
+
+
+def test_google_budget_is_only_allowed_inside_paused_campaign_atomic_create(tmp_path):
+    recorder = ProviderRecorder(tmp_path)
+    recorder.case = {"case_id": "google-atomic", "provider": "google-ads", "account": "123"}
+    url = "https://googleads.googleapis.com/v24/customers/123/googleAds:mutate"
+    budget = {"create": {
+        "resourceName": "customers/123/campaignBudgets/-1",
+        "name": "QA Budget", "amountMicros": 1000000, "explicitlyShared": False,
+    }}
+    campaign = {"create": {
+        "name": "QA Campaign", "status": "PAUSED",
+        "campaignBudget": "customers/123/campaignBudgets/-1",
+    }}
+    operations = [
+        {"campaignBudgetOperation": budget},
+        {"campaignOperation": campaign},
+    ]
+    request = requests.Request("POST", url, json={"mutateOperations": operations}).prepare()
+    recorder._guard(request, "google-ads", json.loads(request.body))
+    for unsafe in (
+        operations[:1],
+        [{"campaignBudgetOperation": {"create": {
+            **budget["create"], "resourceName": "customers/123/campaignBudgets/-2",
+        }}}, operations[1]],
+        [{**operations[0], "assetOperation": {"create": {}}}, operations[1]],
+        [operations[0], {**operations[1], "adGroupOperation": {"create": {}}}],
+        [{"campaignBudgetOperation": {"remove": "customers/123/campaignBudgets/9"}},
+         operations[1]],
+        [operations[0], {"campaignOperation": {"create": {**campaign["create"], "status": "ENABLED"}}}],
+    ):
+        request = requests.Request("POST", url, json={"mutateOperations": unsafe}).prepare()
+        with pytest.raises(PermissionError):
+            recorder._guard(request, "google-ads", json.loads(request.body))
+    separate = requests.Request(
+        "POST", "https://googleads.googleapis.com/v24/customers/123/campaignBudgets:mutate",
+        json={"operations": [budget]},
+    ).prepare()
+    with pytest.raises(PermissionError):
+        recorder._guard(separate, "google-ads", json.loads(separate.body))
+
+
 def test_provider_recorder_restores_google_resource_ids_after_restart(tmp_path):
     (tmp_path / "created-resource-ids.json").write_text(
         json.dumps(["customers/9055507554/campaigns/24357433403"]),
@@ -2050,6 +2259,29 @@ def test_successful_transport_does_not_hide_an_unchanged_requested_name():
     assert checks["status"]["passed"] is True
 
 
+def test_readback_compares_micros_as_integers_without_masking_status_failure():
+    read = {
+        "tool": "google_get_product_group",
+        "provider": "google-ads",
+        "response": {
+            "results": [{
+                "tool": "google_get_product_group",
+                "success": True,
+                "data": {
+                    "product_group": {
+                        "id": "123", "status": "ENABLED", "cpc_bid_micros": "110000",
+                    }
+                },
+            }]
+        },
+    }
+    checks = readback_checks(
+        read, "123", {"status": "PAUSED", "cpc_bid_micros": 110000}
+    )
+    assert checks["status"]["passed"] is False
+    assert checks["cpc_bid_micros"]["passed"] is True
+
+
 def test_report_ignores_non_case_json_artifacts(tmp_path, capsys):
     from scripts.advertising.campaign_service_e2e import report
 
@@ -2080,6 +2312,23 @@ def test_report_ignores_non_case_json_artifacts(tmp_path, capsys):
     document = json.loads((tmp_path / "report.json").read_text(encoding="utf-8"))
     assert [case["case_id"] for case in document["cases"]] == ["valid-case"]
     assert "1" in capsys.readouterr().out
+
+
+def test_report_extracts_explicit_tool_scoped_parameters():
+    from scripts.advertising.campaign_service_e2e import _case_tool_params
+
+    assert _case_tool_params({
+        "tool": "meta_update_adset",
+        "params": {
+            "meta_update_adset": {
+                "adset_id": "123", "updates": {"name": "verified"},
+            }
+        },
+    }) == {"adset_id": "123", "updates": {"name": "verified"}}
+    assert _case_tool_params({
+        "tool": "meta_get_adset",
+        "params": {"adset_id": "123"},
+    }) == {"adset_id": "123"}
 
 
 def test_ad_readback_checks_the_real_creative_reference():

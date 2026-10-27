@@ -19,10 +19,14 @@ def test_test_live_profile_preserves_default_preview_and_test_account_scope():
     assert profile["allow_live_writes"] is True
     assert profile["execution_timeout_seconds"] == 500
     assert profile["allowed_accounts"] == {
-        "google-ads": ["9055507554"],
+        "google-ads": ["9055507554", "7574609568"],
         "meta": ["2806375919473667"],
         "tiktok": ["7397068114548195329"],
     }
+    assert all(
+        set(accounts) <= set(default["allowed_accounts"][provider])
+        for provider, accounts in profile["allowed_accounts"].items()
+    )
     assert "ads.write" in profile["granted_permissions"]
     assert "mcp.write" not in profile["granted_permissions"]
     approved = set(profile["live_approved_tools"])

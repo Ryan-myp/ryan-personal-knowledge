@@ -616,8 +616,11 @@ class GoogleAdsAPIClient(BasePlatformClient):
     
     def list_campaigns(
         self, campaign_id: str = None, page_size: int = 100,
+        exclude_removed: bool = False,
     ) -> list:
         """获取 Campaign 列表"""
+        if type(exclude_removed) is not bool:
+            raise ValueError("exclude_removed must be a boolean")
         try:
             page_size = max(1, min(int(page_size), 1000))
         except (TypeError, ValueError):
@@ -629,9 +632,14 @@ class GoogleAdsAPIClient(BasePlatformClient):
             "campaign.bidding_strategy, campaign.bidding_strategy_type "
             "FROM campaign"
         )
+        conditions = []
         if campaign_id not in (None, ""):
             campaign_id = self._numeric_id(campaign_id, "campaign_id")
-            query += f" WHERE campaign.id = {campaign_id}"
+            conditions.append(f"campaign.id = {campaign_id}")
+        if exclude_removed:
+            conditions.append("campaign.status != 'REMOVED'")
+        if conditions:
+            query += " WHERE " + " AND ".join(conditions)
         # ``_search_all`` keeps the paging seam for providers that expose a
         # page size, but Google Ads GAQL does not accept ``pageSize``.  Keep
         # the public list contract bounded with GAQL LIMIT so a large account
@@ -992,11 +1000,10 @@ class GoogleAdsAPIClient(BasePlatformClient):
         """Get one Google Experiment through the read-only GAQL surface."""
         experiment_id = self._numeric_id(experiment_id, "experiment_id")
         query = (
-            "SELECT experiment.id, experiment.resource_name, experiment.name, "
+            "SELECT experiment.experiment_id, experiment.resource_name, experiment.name, "
             "experiment.description, experiment.status, experiment.type, "
-            "experiment.start_date, experiment.end_date, experiment.suffix, "
-            "experiment.base_campaign, experiment.experiment_campaign "
-            f"FROM experiment WHERE experiment.id = {experiment_id}"
+            "experiment.start_date, experiment.end_date, experiment.suffix "
+            f"FROM experiment WHERE experiment.experiment_id = {experiment_id}"
         )
         rows = self._search(query)
         payload = self._response_payload(rows)
@@ -2476,10 +2483,28 @@ class GoogleAdsAPIClient(BasePlatformClient):
                 "paths": [self._camel_case(key) for key in normalized],
             },
         })
+        observed = self.get_product_group(ad_group_id, product_group_id)
+        if (
+            "status" in normalized
+            and str(observed.get("status") or "").upper() != normalized["status"]
+        ):
+            raise APIError(
+                "Google Product Group status did not persist; read back the "
+                "criterion before another update"
+            )
+        if (
+            "cpc_bid_micros" in normalized
+            and str(observed.get("cpc_bid_micros")) != str(normalized["cpc_bid_micros"])
+        ):
+            raise APIError(
+                "Google Product Group CPC did not persist; read back the "
+                "criterion before another update"
+            )
         return {
             "success": True,
             "ad_group_id": ad_group_id,
             "product_group_id": product_group_id,
+            "verified": True,
         }
 
     def delete_product_group(self, ad_group_id: str, product_group_id: str) -> dict[str, Any]:
@@ -4045,6 +4070,7 @@ class GoogleAdsAPIClient(BasePlatformClient):
         budget_name = f"Budget for {name}"
         budget_amount_micros = int(daily_budget * 1_000_000)
         budget_data = {
+            'resourceName': budget_resource_name,
             'name': budget_name,
             'amountMicros': budget_amount_micros,
             'deliveryMethod': 'STANDARD',
@@ -4423,26 +4449,27 @@ class GoogleAdsAPIClient(BasePlatformClient):
                 },
             }
 
-        budget_resp = self._mutate('campaignBudgets', {'create': budget_data})
-        budget_resource_name = self._mutation_resource_name(budget_resp)
-        if not budget_resource_name:
-            raise APIError(f"Campaign budget mutate returned no resource name: {budget_resp}")
-        campaign_data['campaignBudget'] = budget_resource_name
-
-        try:
-            campaign_resp = self._mutate('campaigns', {'create': campaign_data})
-        except Exception:
-            # Budget creation and campaign creation are separate mutate calls.
-            # Best-effort cleanup avoids leaving an unreferenced budget behind.
-            try:
-                self._mutate('campaignBudgets', {'remove': budget_resource_name})
-            except Exception:
-                logger.exception("Failed to compensate orphaned campaign budget")
-            raise
-
-        campaign_resource_name = self._mutation_resource_name(campaign_resp)
-        if not campaign_resource_name:
-            raise APIError(f"Campaign mutate returned no resource name: {campaign_resp}")
+        response = self._mutate_google_operations([
+            {"campaignBudgetOperation": {"create": budget_data}},
+            {"campaignOperation": {"create": campaign_data}},
+        ])
+        rows = self._google_mutation_rows(response)
+        if (
+            len(rows) != 2
+            or rows[0].get("result_type") != "campaignBudgetResult"
+            or rows[1].get("result_type") != "campaignResult"
+            or not str(rows[0].get("resourceName") or "").startswith(
+                f"customers/{customer}/campaignBudgets/"
+            )
+            or not str(rows[1].get("resourceName") or "").startswith(
+                f"customers/{customer}/campaigns/"
+            )
+        ):
+            raise APIError(
+                "Google Campaign mutate response is incomplete; reconcile by "
+                "campaign name before retrying"
+            )
+        campaign_resource_name = rows[1]["resourceName"]
         return str(campaign_resource_name.split('/')[-1])
     
     def update_campaign(self, campaign_id: str, updates: dict) -> dict:
@@ -6673,6 +6700,32 @@ class GoogleAdsAPIClient(BasePlatformClient):
         """Execute one Google Ads customer-level mutate operation."""
         return self._mutate_operations(resource, [operation])
 
+    @classmethod
+    def _rest_mutation_value(cls, value: Any) -> Any:
+        if isinstance(value, list):
+            return [cls._rest_mutation_value(item) for item in value]
+        if not isinstance(value, dict):
+            return value
+        result = {}
+        for key, item in value.items():
+            if key == "updateMask" and isinstance(item, dict):
+                paths = item.get("paths")
+                if (
+                    set(item) != {"paths"}
+                    or not isinstance(paths, list)
+                    or not paths
+                    or any(
+                        not isinstance(path, str)
+                        or not re.fullmatch(r"[A-Za-z][A-Za-z0-9_.]*", path)
+                        for path in paths
+                    )
+                ):
+                    raise ValueError("updateMask requires non-empty field paths")
+                result[key] = ",".join(paths)
+            else:
+                result[key] = cls._rest_mutation_value(item)
+        return result
+
     def _mutate_operations(self, resource: str, operations: list[dict]) -> dict:
         """Execute a bounded batch of Google Ads mutate operations."""
         if not isinstance(operations, list) or not operations:
@@ -6686,7 +6739,9 @@ class GoogleAdsAPIClient(BasePlatformClient):
         # so a controlled write does not fail before OAuth refresh is tried.
         # The retry is only for HTTP 401 and never for a generic POST failure.
         response = self.request_raw(
-            'POST', url, data={'operations': operations}, retry_auth_on_401=True,
+            'POST', url,
+            data={'operations': self._rest_mutation_value(operations)},
+            retry_auth_on_401=True,
         )
         status = response.get('status_code', 200)
         if status not in (200, 201, 202):
@@ -6714,7 +6769,7 @@ class GoogleAdsAPIClient(BasePlatformClient):
         response = self.request_raw(
             "POST",
             url,
-            data={"mutateOperations": operations},
+            data={"mutateOperations": self._rest_mutation_value(operations)},
             retry_auth_on_401=True,
         )
         status = response.get("status_code", 200)

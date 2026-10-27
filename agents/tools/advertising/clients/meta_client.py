@@ -1166,7 +1166,7 @@ class MetaAPIClient(BasePlatformClient):
             )
         params = {
             "fields": ",".join(fields) if fields else (
-                "id,name,last_fired_time,creation_time,owner_ad_account"
+                "id,name,last_fired_time"
             )
         }
         return self.require_resource_object(

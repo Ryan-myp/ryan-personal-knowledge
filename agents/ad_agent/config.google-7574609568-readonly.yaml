@@ -1,0 +1,9 @@
+# Isolated Google test-account read verification; never enables provider writes.
+execution_mode: dry_run
+read_only_mode: true
+allow_live_writes: false
+live_approved_tools: []
+allowed_accounts:
+  google-ads: ["7574609568"]
+granted_permissions:
+  - ads.read

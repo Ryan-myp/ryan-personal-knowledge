@@ -6,7 +6,7 @@ read_only_mode: false
 allow_live_writes: true
 
 allowed_accounts:
-  google-ads: ["9055507554"]
+  google-ads: ["9055507554", "7574609568"]
   meta: ["2806375919473667"]
   tiktok: ["7397068114548195329"]
 
