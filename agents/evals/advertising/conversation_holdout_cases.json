@@ -66,5 +66,37 @@
       "forbidden_tools": ["meta_list_campaigns", "google_list_campaigns", "meta_create_campaign"],
       "max_tool_calls": 3
     }
+  },
+  {
+    "id": "holdout-budget-revision",
+    "history": [
+      "Meta campaign 预算必须是100",
+      "Meta campaign 创建状态必须保持 paused",
+      "将 Meta campaign 预算改为200"
+    ],
+    "input": "继续刚才 Meta campaign 的预算要求，只说当前要求，不要查账户",
+    "expected_behavior": "以用户最后一次预算修改为准，不再把旧预算当作有效约束。",
+    "assertions": {
+      "reply_contains": ["200"],
+      "reply_not_contains": ["100"],
+      "forbidden_tools": ["meta_list_accounts", "meta_create_campaign"],
+      "max_tool_calls": 2
+    }
+  },
+  {
+    "id": "holdout-budget-retraction",
+    "history": [
+      "Meta campaign 预算必须是100",
+      "Meta campaign 创建状态必须保持 paused",
+      "取消之前 Meta campaign 的预算约束"
+    ],
+    "input": "继续 Meta campaign 创建状态的要求，只列当前有效约束，不回顾历史，也不要查账户",
+    "expected_behavior": "保留 paused 创建状态，不再引用已撤销的预算约束。",
+    "assertions": {
+      "reply_contains": ["paused"],
+      "reply_not_contains": ["100"],
+      "forbidden_tools": ["meta_list_accounts", "meta_create_campaign"],
+      "max_tool_calls": 2
+    }
   }
 ]

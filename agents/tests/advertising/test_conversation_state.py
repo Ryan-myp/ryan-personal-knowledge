@@ -47,6 +47,61 @@ def test_assistant_claim_and_credentials_cannot_become_authority():
     }) == {"entries": []}
 
 
+def test_revision_supersedes_same_topic_without_erasing_other_constraints():
+    state = update_conversation_state(
+        {}, "Meta campaign 预算必须是100", "turn-1",
+    )
+    state = update_conversation_state(
+        state, "Meta campaign 创建状态必须保持 paused", "turn-2",
+    )
+    state = update_conversation_state(
+        state, "将 Meta campaign 预算改为200", "turn-3",
+    )
+    assert [item["source_turn_id"] for item in state["entries"]] == [
+        "turn-2", "turn-3",
+    ]
+    assert "200" in render_conversation_state(state, "继续 Meta campaign 预算")
+    assert "100" not in str(state)
+    assert "paused" in render_conversation_state(state, "继续 Meta campaign 创建状态")
+
+
+def test_explicit_retraction_removes_only_referenced_topic_and_survives_restore():
+    state = update_conversation_state(
+        {}, "Meta campaign 预算必须是100", "turn-1",
+    )
+    state = update_conversation_state(
+        state, "Meta campaign 创建状态必须保持 paused", "turn-2",
+    )
+    state = update_conversation_state(
+        state, "取消之前 Meta campaign 的预算约束", "turn-3",
+    )
+    assert [item["source_turn_id"] for item in state["entries"]] == ["turn-2"]
+    assert valid_conversation_state(state) == state
+    assert not render_conversation_state(state, "继续 Meta campaign 预算")
+    assert "paused" in render_conversation_state(state, "继续 Meta campaign 创建状态")
+
+
+def test_ambiguous_revision_does_not_remove_unrelated_topics():
+    state = update_conversation_state(
+        {}, "Meta campaign 预算必须是100", "turn-1",
+    )
+    state = update_conversation_state(state, "改为200", "turn-2")
+    assert state["entries"][0]["source_turn_id"] == "turn-1"
+
+
+def test_inline_retraction_does_not_touch_a_second_field():
+    state = update_conversation_state(
+        {}, "Meta campaign 预算必须是100", "turn-1",
+    )
+    state = update_conversation_state(
+        state, "Meta campaign 创建状态必须保持 paused", "turn-2",
+    )
+    state = update_conversation_state(
+        state, "Meta campaign 预算不再要求100", "turn-3",
+    )
+    assert [item["source_turn_id"] for item in state["entries"]] == ["turn-2"]
+
+
 def test_advisory_notes_are_added_to_turn_context_only_for_followup():
     from agents.applications.advertising.integrations.ad_turn_context import (
         AdTurnContext, AdTurnContextService,

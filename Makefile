@@ -1,4 +1,4 @@
-.PHONY: ad-agent-python-version ad-agent-install ad-agent-dependency-check ad-agent-run ad-agent-run-test ad-agent-test ad-agent-compile ad-agent-audit ad-agent-validate ad-agent-knowledge-check ad-agent-reliability-evidence ad-agent-reliability-evidence-mysql ad-agent-check
+.PHONY: ad-agent-python-version ad-agent-install ad-agent-dependency-check ad-agent-run ad-agent-run-test ad-agent-test ad-agent-compile ad-agent-audit ad-agent-validate ad-agent-knowledge-check ad-agent-reliability-evidence ad-agent-reliability-evidence-mysql ad-agent-model-quality ad-agent-check
 .PHONY: ad-agent-service-install ad-agent-service-status ad-agent-service-restart ad-agent-service-stop ad-agent-service-uninstall ad-agent-quality-delta
 
 AD_AGENT_PYTHON_WRAPPER := ./scripts/ad-agent-python
@@ -77,6 +77,10 @@ ad-agent-knowledge-check:
 	@$(AD_AGENT_PYTHON_WRAPPER) scripts/advertising/validate_knowledge_quality.py
 	@$(AD_AGENT_PYTHON_WRAPPER) scripts/advertising/audit_knowledge_base.py
 	@$(AD_AGENT_PYTHON_WRAPPER) scripts/advertising/benchmark_semantic_retrieval.py
+
+ad-agent-model-quality:
+	@test -n "$$AD_AGENT_EVAL_MAX_P95_MS" || (echo "Set AD_AGENT_EVAL_MAX_P95_MS to an approved latency threshold"; exit 2)
+	@$(AD_AGENT_PYTHON_WRAPPER) scripts/advertising/run_conversation_regressions.py --cases agents/evals/advertising/conversation_holdout_cases.json --model-backed --release-gate --min-cases 8 --max-p95-ms "$$AD_AGENT_EVAL_MAX_P95_MS"
 
 ad-agent-reliability-evidence:
 	@$(AD_AGENT_PYTHON_WRAPPER) scripts/advertising/production_reliability_evidence.py

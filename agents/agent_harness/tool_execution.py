@@ -21,6 +21,7 @@ from .core.timeouts import DEFAULT_EXECUTION_TIMEOUT_SECONDS
 from .redaction import redact_for_persistence
 from .reliability import ToolCircuitBreaker
 from .runtime_kernel import TurnRequest
+from .tool_result_projection import model_tool_content
 
 
 TOOL_CANCELLATION_MODES = frozenset({
@@ -400,62 +401,11 @@ class ToolExecutionCoordinator:
         return self._truncate_tool_text(str(value), budget), [path or "$"]
 
     def _query_content(self, value: Any, definition: Any) -> Any:
-        model_value = value
-        data = value.get("data") if isinstance(value, Mapping) else None
-        if (
-            isinstance(data, Mapping)
-            and isinstance(data.get("parameter_selections"), list)
-        ):
-            # Signed, target-specific proofs stay in the Tool result for the
-            # caller; the model only needs the underlying candidate records.
-            model_value = dict(value)
-            model_data = dict(data)
-            model_data.pop("parameter_selections", None)
-            model_value["data"] = model_data
-        collection = self._tool_value(definition, "result_items_key")
-        data = model_value.get("data") if isinstance(model_value, Mapping) else None
-        rows = data.get(collection) if isinstance(data, Mapping) and collection else None
-        if not isinstance(rows, list) or self._tool_is_write(definition):
-            return self._bound_tool_value(model_value)
-        summary = {
-            "collection": collection, "returned_count": len(rows),
-            "context_count": len(rows), "context_truncated": False,
-            "scope": "returned_page",
-        }
-        fields = self._tool_value(definition, "result_summary_fields", ()) or ()
-        facets: dict[str, dict[str, int]] = {}
-        other_counts: dict[str, int] = {}
-        for field in fields[:4]:
-            counts: dict[str, int] = {}
-            other = 0
-            for row in rows:
-                raw = row.get(field) if isinstance(row, Mapping) else None
-                label = str(raw) if isinstance(raw, (str, int)) and not isinstance(raw, bool) else ""
-                if not label or len(label) > 64:
-                    other += 1
-                elif label in counts:
-                    counts[label] += 1
-                elif len(counts) < 16:
-                    counts[label] = 1
-                else:
-                    other += 1
-            if other:
-                other_counts[field] = other
-            facets[field] = counts
-        if facets:
-            summary["facets"] = facets
-        if other_counts:
-            summary["facet_other_counts"] = other_counts
-        content = self._bound_tool_value({
-            **model_value, "data": {**data, "query_summary": summary},
-        })
-        preview = content.get("data") if isinstance(content, Mapping) else None
-        visible_summary = preview.get("query_summary") if isinstance(preview, Mapping) else None
-        if isinstance(visible_summary, dict):
-            visible_rows = preview.get(collection)
-            visible_summary["context_count"] = len(visible_rows) if isinstance(visible_rows, list) else 0
-            visible_summary["context_truncated"] = bool(content.get("output_truncated"))
-        return content
+        return model_tool_content(
+            value, definition,
+            bound_output=self._bound_tool_value,
+            is_write=self._tool_is_write(definition),
+        )
 
     def _retained_tool_value(self, value: Any, definition: Any) -> Any:
         """Keep API evidence under the Tool contract, not the model budget."""

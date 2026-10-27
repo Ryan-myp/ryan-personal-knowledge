@@ -5,6 +5,7 @@ from agents.agent_harness import (
     StaticToolSource,
     ToolBinding,
     ToolCall,
+    TurnRequest,
 )
 
 
@@ -99,6 +100,56 @@ def test_harness_metric_observer_failure_does_not_fail_a_run():
     assert result.runtime_signals["observer_error_types"] == ["RuntimeError"]
     assert result.recovery_required is False
     app.close()
+
+
+def test_context_and_run_event_persistence_emit_bounded_numeric_phases():
+    events = []
+    callbacks = []
+
+    class Context:
+        def build_context(self, _request, _messages):
+            return {"prompt": "advisory"}
+
+    class Store:
+        def start_run(self, **_payload):
+            return True
+
+        def append_event(self, _run_id, event):
+            events.append(dict(event))
+            return True
+
+        def finish_run(self, _run_id, *, status, metadata=None):
+            return True
+
+    app = AgentApplication.create(
+        model=lambda *_args: "done", context_provider=Context(), run_store=Store(),
+        metrics=InMemoryMetrics(),
+    )
+    try:
+        result = app.runtime.run(TurnRequest(
+            user_input="hello", event_callback=callbacks.append,
+        ))
+        assert result.status.value == "succeeded"
+        phases = [
+            event for event in events
+            if event["type"] == "runtime_phase"
+            and event.get("phase") == "context_build"
+        ]
+        assert phases and phases[0]["duration_ms"] >= 0
+        persist_ms = [
+            event["run_store_duration_ms"] for event in callbacks
+            if "run_store_duration_ms" in event
+        ]
+        assert persist_ms and all(
+            type(value) in {int, float} and value >= 0
+            for value in persist_ms
+        )
+        assert "advisory" not in str(persist_ms)
+        durations = app.runtime.metrics.snapshot()["durations"]
+        assert durations["context_build_duration"]["count"] >= 1
+        assert durations["run_event_persistence_duration"]["count"] >= 1
+    finally:
+        app.close()
 
 
 def test_harness_routes_redacted_events_to_trace_and_recovery_to_alert():

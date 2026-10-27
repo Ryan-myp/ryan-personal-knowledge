@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import threading
+import time
 import uuid
 from contextvars import ContextVar
 from dataclasses import replace
@@ -189,17 +190,13 @@ class AgentRuntime:
                     incoming_seq = event_sequence + 1
                     safe_event["seq"] = incoming_seq
                 event_sequence = incoming_seq
-            if self.metrics is not None:
-                try:
-                    self.metrics.observe(safe_event)
-                except Exception as error:
-                    record_observer_error(error)
             if self.trace is not None:
                 try:
                     self.trace.emit(safe_event)
                 except Exception as error:
                     record_observer_error(error)
             if store is not None:
+                started = time.monotonic()
                 try:
                     accepted = store.append_event(
                         str(request.run_id), dict(safe_event),
@@ -211,6 +208,14 @@ class AgentRuntime:
                         )
                 except Exception as error:
                     record_observer_error(error, run_store=True)
+                safe_event["run_store_duration_ms"] = round(
+                    (time.monotonic() - started) * 1000, 3,
+                )
+            if self.metrics is not None:
+                try:
+                    self.metrics.observe(safe_event)
+                except Exception as error:
+                    record_observer_error(error)
             if callable(original_callback):
                 try:
                     original_callback(safe_event)

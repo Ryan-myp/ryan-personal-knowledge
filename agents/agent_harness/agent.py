@@ -999,7 +999,14 @@ class Agent:
             build_context = getattr(self.context_provider, "build_context", None)
             if not callable(build_context):
                 raise TypeError("context_provider must expose build_context()")
-            value = build_context(request, transcript)
+            started = time.monotonic()
+            try:
+                value = build_context(request, transcript)
+            finally:
+                self._emit(
+                    "runtime_phase", request, phase="context_build",
+                    duration_ms=round((time.monotonic() - started) * 1000, 3),
+                )
             if isinstance(value, Mapping):
                 context = dict(request.context or {})
                 context["agent_context"] = dict(value)

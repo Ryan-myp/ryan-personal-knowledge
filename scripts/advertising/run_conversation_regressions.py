@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from dataclasses import dataclass
 from functools import partial
 import json
 import math
@@ -45,12 +46,32 @@ class RegressionCase(BaseModel):
         return value
 
 
+@dataclass(frozen=True)
+class ReleaseGate:
+    min_cases: int
+    max_p95_ms: float
+
+    def __post_init__(self) -> None:
+        if type(self.min_cases) is not int or not 1 <= self.min_cases <= 100:
+            raise ValueError("min_cases must be between 1 and 100")
+        try:
+            limit = float(self.max_p95_ms) if type(self.max_p95_ms) in (int, float) else -1
+        except OverflowError:
+            limit = -1
+        if not math.isfinite(limit) or limit < 0:
+            raise ValueError("max_p95_ms must be a non-negative finite number")
+
+
 _SAFE_TOOL_NAME = re.compile(r"[A-Za-z][A-Za-z0-9_.:-]{0,119}\Z")
 _PHASE_FIELDS = {
     "run_wall": ("phase_metrics", "run_wall_ms"),
     "tool_duration_sum": ("phase_metrics", "tool_duration_ms_sum"),
     "model": ("model_metrics", "duration_ms"),
     "model_prepare": ("model_metrics", "prepare_duration_ms"),
+    "context_build": ("phase_metrics", "phase_duration_ms_sum.context_build"),
+    "run_event_persistence": (
+        "phase_metrics", "phase_duration_ms_sum.run_event_persistence",
+    ),
 }
 
 
@@ -58,12 +79,17 @@ def _safe_phase_timings(response: Mapping[str, Any]) -> dict[str, float]:
     timings = {}
     for label, (group, key) in _PHASE_FIELDS.items():
         source = response.get(group)
-        value = source.get(key) if isinstance(source, Mapping) else None
-        if (
-            isinstance(value, (int, float)) and not isinstance(value, bool)
-            and math.isfinite(value) and value >= 0
-        ):
-            timings[label] = round(float(value), 3)
+        value = source
+        for segment in key.split("."):
+            value = value.get(segment) if isinstance(value, Mapping) else None
+        if type(value) not in (int, float):
+            continue
+        try:
+            duration = float(value)
+        except OverflowError:
+            continue
+        if math.isfinite(duration) and 0 <= duration <= 1_000_000_000:
+            timings[label] = round(duration, 3)
     return timings
 
 
@@ -85,6 +111,7 @@ def run_suite(
     execute: Callable[[RegressionCase], Mapping[str, Any]],
     *,
     mode: str,
+    release_gate: ReleaseGate | None = None,
 ) -> dict[str, Any]:
     results = []
     for case in cases:
@@ -124,13 +151,26 @@ def run_suite(
         result["duration_ms"] for result in results
         if result["status"] in {"passed", "failed"}
     )
+    p95_ms = durations[math.ceil(len(durations) * 0.95) - 1] if durations else None
+    blockers: list[str] = []
+    if release_gate is not None:
+        if mode != "model_backed_offline_providers":
+            blockers.append("model_backed_required")
+        if len(durations) < release_gate.min_cases:
+            blockers.append("insufficient_samples")
+        if totals["passed"] != len(results):
+            blockers.append("case_failures")
+        if p95_ms is None or p95_ms > release_gate.max_p95_ms:
+            blockers.append("latency_p95_exceeded")
     return {
         "schema_version": "agent-regression-report/v1", "mode": mode,
         "provider_e2e": False, "total": len(results), **totals, "cases": results,
         "gate_passed": totals["passed"] == len(results) and bool(results),
         "latency_samples": len(durations),
         "latency_p50_ms": durations[math.ceil(len(durations) * 0.5) - 1] if durations else None,
-        "latency_p95_ms": durations[math.ceil(len(durations) * 0.95) - 1] if durations else None,
+        "latency_p95_ms": p95_ms,
+        "release_ready": release_gate is not None and not blockers,
+        "release_blockers": blockers if release_gate is not None else ["release_gate_not_configured"],
         "phase_p95_ms": {
             label: (
                 sorted(samples)[math.ceil(len(samples) * 0.95) - 1]
@@ -172,7 +212,16 @@ def main() -> int:
     mode.add_argument("--model-backed", action="store_true")
     mode.add_argument("--responses", type=Path)
     parser.add_argument("--output", type=Path)
+    parser.add_argument("--release-gate", action="store_true")
+    parser.add_argument("--min-cases", type=int, default=6)
+    parser.add_argument("--max-p95-ms", type=float)
     args = parser.parse_args()
+    if args.release_gate and (not args.model_backed or args.max_p95_ms is None):
+        parser.error("--release-gate requires --model-backed and --max-p95-ms")
+    release_gate = (
+        ReleaseGate(args.min_cases, args.max_p95_ms)
+        if args.release_gate else None
+    )
     cases = load_cases(args.cases)
     if args.model_backed:
         load_default_local_env()
@@ -183,6 +232,7 @@ def main() -> int:
             cases,
             partial(_model_response, model_adapter=adapter),
             mode="model_backed_offline_providers",
+            release_gate=release_gate,
         )
     else:
         if args.responses.stat().st_size > 4_194_304:
@@ -194,7 +244,8 @@ def main() -> int:
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(rendered + "\n", encoding="utf-8")
     print(rendered)
-    return 0 if report["gate_passed"] else 1
+    passed = report["release_ready"] if release_gate else report["gate_passed"]
+    return 0 if passed else 1
 
 
 if __name__ == "__main__":

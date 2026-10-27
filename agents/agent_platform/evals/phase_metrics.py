@@ -3,11 +3,24 @@
 from __future__ import annotations
 
 import time
+import math
 from threading import Lock
 from typing import Any, Mapping
 
 
 class PhaseMetrics:
+    _PHASES = frozenset({"context_build"})
+
+    @staticmethod
+    def _duration(value: Any) -> float | None:
+        if type(value) not in (int, float):
+            return None
+        try:
+            duration = float(value)
+        except OverflowError:
+            return None
+        return duration if math.isfinite(duration) and 0 <= duration <= 1_000_000_000 else None
+
     def __init__(self, *, max_calls: int = 128) -> None:
         if not 1 <= max_calls <= 1024:
             raise ValueError("max_calls must be between 1 and 1024")
@@ -17,6 +30,9 @@ class PhaseMetrics:
         self._calls: dict[tuple[str, str], float] = {}
         self._run_ms = 0.0
         self._tool_ms = 0.0
+        self._phase_ms = {
+            "context_build": 0.0, "run_event_persistence": 0.0,
+        }
         self._completed_runs = 0
         self._completed_calls = 0
         self._truncated = False
@@ -28,6 +44,9 @@ class PhaseMetrics:
             return
         now = time.monotonic()
         with self._lock:
+            persistence_ms = self._duration(event.get("run_store_duration_ms"))
+            if persistence_ms is not None:
+                self._phase_ms["run_event_persistence"] += persistence_ms
             if kind == "agent_start":
                 if run in self._runs:
                     return
@@ -57,6 +76,11 @@ class PhaseMetrics:
                     if started is not None:
                         self._tool_ms += max(0.0, (now - started) * 1000)
                         self._completed_calls += 1
+            elif kind == "runtime_phase":
+                phase = event.get("phase")
+                duration = self._duration(event.get("duration_ms"))
+                if phase in self._PHASES and duration is not None:
+                    self._phase_ms[phase] += duration
 
     def snapshot(self) -> dict[str, Any]:
         with self._lock:
@@ -67,5 +91,9 @@ class PhaseMetrics:
                 "incomplete_tool_calls": len(self._calls),
                 "run_wall_ms": round(self._run_ms, 3),
                 "tool_duration_ms_sum": round(self._tool_ms, 3),
+                "phase_duration_ms_sum": {
+                    name: round(duration, 3)
+                    for name, duration in self._phase_ms.items()
+                },
                 "truncated": self._truncated,
             }

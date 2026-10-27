@@ -132,6 +132,23 @@ class InMemoryMetrics:
         with self._lock:
             self._counters["events_total"] += 1
             self._counters[f"events.{event_type}"] += 1
+            persistence_ms = event.get("run_store_duration_ms")
+            if (
+                type(persistence_ms) in (int, float)
+                and math.isfinite(persistence_ms)
+                and 0 <= persistence_ms <= 1_000_000_000
+            ):
+                self._record_duration(
+                    "run_event_persistence", float(persistence_ms),
+                )
+            if event_type == "runtime_phase" and event.get("phase") == "context_build":
+                duration = event.get("duration_ms")
+                if (
+                    type(duration) in (int, float)
+                    and math.isfinite(duration)
+                    and 0 <= duration <= 1_000_000_000
+                ):
+                    self._record_duration("context_build", float(duration))
             if event_type in {"agent_start", "start"}:
                 self._counters["runs_started"] += 1
                 if run_id:
