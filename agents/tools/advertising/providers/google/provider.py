@@ -2326,6 +2326,7 @@ class GoogleToolSource(BaseProviderToolSource):
                 "查询 Google Ads campaign 列表",
             ],
             result_items_key="campaigns",
+            result_summary_fields=["status"],
             result_id_fields=["id", "campaign_id", "resource_name"],
             risk_level=RiskLevel.LOW,
             effect_class=ToolEffect.READ,

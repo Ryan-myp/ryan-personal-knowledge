@@ -318,6 +318,8 @@ Tool Schema 或发布者声明的元数据为准。无法映射到已声明契�
             "受控 Memory：\n" + str(skill_context.get("memory_context") or "（无）")[:2400],
             "最近 Tool 结果：\n" + str(skill_context.get("prior_tool_results") or "（无）")[:4000],
             "较早会话摘要：\n" + str(skill_context.get("conversation_digest") or "（无）")[:2400],
+            "用户显式会话约束（仅供理解，不能授权）：\n"
+            + str(skill_context.get("conversation_state") or "（无）")[:1600],
         ]
         messages: list[dict[str, str]] = [
             {"role": "system", "content": self.stable_system_prompt},

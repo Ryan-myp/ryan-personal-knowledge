@@ -17,7 +17,7 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from agents.agent_platform.evals.regression import RegressionAssertions, evaluate_regression
 from agents.agent_platform.evals.execution_evidence import regression_calls
 from agents.deployments.advertising.local_config import load_default_local_env
@@ -29,13 +29,42 @@ class RegressionCase(BaseModel):
 
     id: str = Field(min_length=1, max_length=200, pattern=r"^[\w.:-]+$")
     input: str = Field(min_length=1, max_length=4000)
+    history: list[str] = Field(default_factory=list, max_length=11)
     expected_behavior: str = Field(default="", max_length=2000)
     previous_output: str = Field(default="", max_length=4000)
     assertions: RegressionAssertions = Field(default_factory=RegressionAssertions)
     runnable: bool | None = None
 
+    @field_validator("history")
+    @classmethod
+    def validate_history(cls, value: list[str]) -> list[str]:
+        if sum(len(item) for item in value) > 30_000 or any(
+            not item.strip() or len(item) > 4000 for item in value
+        ):
+            raise ValueError("history exceeds the bounded user-turn limit")
+        return value
+
 
 _SAFE_TOOL_NAME = re.compile(r"[A-Za-z][A-Za-z0-9_.:-]{0,119}\Z")
+_PHASE_FIELDS = {
+    "run_wall": ("phase_metrics", "run_wall_ms"),
+    "tool_duration_sum": ("phase_metrics", "tool_duration_ms_sum"),
+    "model": ("model_metrics", "duration_ms"),
+    "model_prepare": ("model_metrics", "prepare_duration_ms"),
+}
+
+
+def _safe_phase_timings(response: Mapping[str, Any]) -> dict[str, float]:
+    timings = {}
+    for label, (group, key) in _PHASE_FIELDS.items():
+        source = response.get(group)
+        value = source.get(key) if isinstance(source, Mapping) else None
+        if (
+            isinstance(value, (int, float)) and not isinstance(value, bool)
+            and math.isfinite(value) and value >= 0
+        ):
+            timings[label] = round(float(value), 3)
+    return timings
 
 
 def load_cases(path: Path) -> list[RegressionCase]:
@@ -62,11 +91,13 @@ def run_suite(
         started = time.perf_counter()
         tool_names: list[str] = []
         tool_call_count = 0
+        phase_ms: dict[str, float] = {}
         if not case.assertions.executable:
             result = {"status": "ungraded", "checks": 0, "failures": []}
         else:
             try:
                 response = execute(case)
+                phase_ms = _safe_phase_timings(response)
                 calls = regression_calls(response)
                 tool_call_count = len(calls)
                 tool_names = [
@@ -82,6 +113,7 @@ def run_suite(
             "id": case.id, **result,
             "tool_call_count": tool_call_count,
             "tool_names": tool_names,
+            "phase_ms": phase_ms,
             "duration_ms": round((time.perf_counter() - started) * 1000, 3),
         })
     totals = {
@@ -99,6 +131,18 @@ def run_suite(
         "latency_samples": len(durations),
         "latency_p50_ms": durations[math.ceil(len(durations) * 0.5) - 1] if durations else None,
         "latency_p95_ms": durations[math.ceil(len(durations) * 0.95) - 1] if durations else None,
+        "phase_p95_ms": {
+            label: (
+                sorted(samples)[math.ceil(len(samples) * 0.95) - 1]
+                if samples else None
+            )
+            for label in _PHASE_FIELDS
+            for samples in [[
+                case["phase_ms"][label] for case in results
+                if case["status"] in {"passed", "failed"}
+                and label in case["phase_ms"]
+            ]]
+        },
     }
 
 
@@ -109,7 +153,13 @@ def _model_response(
 
     with tempfile.TemporaryDirectory(prefix="agent-regression-") as directory:
         result = run(
-            {"case_id": case.id, "prompt": case.input, "workspace": directory},
+            {
+                "case_id": case.id, "prompt": case.input, "workspace": directory,
+                **({"messages": [
+                    *({"role": "user", "content": text} for text in case.history),
+                    {"role": "user", "content": case.input},
+                ]} if case.history else {}),
+            },
             model_adapter=model_adapter,
         )
     return result["metadata"]["runtime_result"]

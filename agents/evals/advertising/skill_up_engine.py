@@ -174,6 +174,7 @@ def _structured_evidence(runtime_result: Mapping[str, Any]) -> dict[str, Any]:
         "knowledge_context": runtime_result.get("knowledge_context") or {},
         "usage": runtime_result.get("usage") or {},
         "model_metrics": runtime_result.get("model_metrics") or {},
+        "phase_metrics": runtime_result.get("phase_metrics") or {},
     }
     for key in ("needs_input", "needs_confirmation"):
         if key in runtime_result:
@@ -351,8 +352,14 @@ def run(
             runtime.load_managed_skill(str(skills_root), tenant_id="skill-up")
     started = time.monotonic()
     from agents.agent_platform.evals.model_metrics import ModelMetrics
+    from agents.agent_platform.evals.phase_metrics import PhaseMetrics
 
     model_metrics = ModelMetrics()
+    phase_metrics = PhaseMetrics()
+    def record_metrics(event: Mapping[str, Any]) -> None:
+        model_metrics(event)
+        phase_metrics(event)
+
     try:
         runtime_result = {}
         session_id = "skill-up:" + str(session_input.get("case_id") or "case")
@@ -364,13 +371,14 @@ def run(
                 user_id="skill-up-eval",
                 tenant_id="skill-up",
                 principal=principal,
-                event_callback=model_metrics,
+                event_callback=record_metrics,
             )
             reply = str(runtime_result.get("reply") or "")
             if reply:
                 transcript.append({"role": "assistant", "content": reply})
         duration_ms = max(int((time.monotonic() - started) * 1000), 0)
         runtime_result["model_metrics"] = model_metrics.snapshot()
+        runtime_result["phase_metrics"] = phase_metrics.snapshot()
     finally:
         # Evaluation is often run repeatedly by the management API. Release
         # the Runtime-owned lifecycle and in-memory SQLite connection after

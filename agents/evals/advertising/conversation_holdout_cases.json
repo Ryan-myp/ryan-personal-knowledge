@@ -37,5 +37,34 @@
       "forbidden_tools": ["meta_list_accounts", "tiktok_list_accounts"],
       "max_tool_calls": 4
     }
+  },
+  {
+    "id": "holdout-previous-pause-constraint",
+    "history": [
+      "后面的 Meta campaign 创建都必须保持 paused",
+      "先聊一下归因窗口如何设置",
+      "这条暂时不需要账户操作"
+    ],
+    "input": "继续刚才 Meta campaign 的创建要求，先复述已有的状态约束，不要执行创建",
+    "expected_behavior": "能保留先前用户指定的 paused 约束，不执行创建或读账户。",
+    "assertions": {
+      "reply_contains": ["paused"],
+      "forbidden_tools": ["meta_create_campaign", "meta_list_accounts"],
+      "max_tool_calls": 2
+    }
+  },
+  {
+    "id": "holdout-topic-switch-no-stale-account",
+    "history": [
+      "之后 Meta campaign 必须保持 paused",
+      "用 Meta 账户查一下 campaign"
+    ],
+    "input": "换个话题，只讲 Google Ads 的竞价原理，不要查我的账户",
+    "expected_behavior": "不把旧 Meta 任务和账户操作带进新的知识问答。",
+    "assertions": {
+      "reply_nonempty": true,
+      "forbidden_tools": ["meta_list_campaigns", "google_list_campaigns", "meta_create_campaign"],
+      "max_tool_calls": 3
+    }
   }
 ]

@@ -191,6 +191,9 @@ class ToolDefinition:
     # integration result key or identifier spelling from its Tool name.
     result_items_key: Optional[str] = None
     result_id_fields: list[str] = field(default_factory=list)
+    # Publisher-declared categorical fields for complete returned-page counts.
+    # This never implies completeness across remote pages.
+    result_summary_fields: list[str] = field(default_factory=list)
     # A Tool may require ancestor IDs in addition to its immediate parent.
     # Runtime can bind these from matching create Tools in the same batch.
     related_resource_type: Optional[str] = None
@@ -275,6 +278,23 @@ class ToolDefinition:
         self.result_id_fields = list(dict.fromkeys(
             str(item).strip() for item in self.result_id_fields if str(item).strip()
         ))
+        from agents.agent_harness.redaction import is_sensitive_key
+
+        if (
+            not isinstance(self.result_summary_fields, (list, tuple))
+            or len(self.result_summary_fields) > 4
+            or self.is_write_tool and self.result_summary_fields
+            or self.result_summary_fields and not self.result_items_key
+        ):
+            raise ValueError("invalid result summary contract")
+        if any(
+            not isinstance(item, str)
+            or not re.fullmatch(r"[A-Za-z][A-Za-z0-9_]{0,79}", item)
+            or is_sensitive_key(item)
+            for item in self.result_summary_fields
+        ):
+            raise ValueError("invalid result summary field")
+        self.result_summary_fields = list(dict.fromkeys(self.result_summary_fields))
         if self.related_resource_type:
             self.related_resource_type = self._normalize_resource(
                 self.related_resource_type
@@ -366,6 +386,8 @@ class ToolDefinition:
             "integration_api_version": self.integration_api_version,
             "result_items_key": self.result_items_key,
             "result_id_fields": list(self.result_id_fields),
+            **({"result_summary_fields": list(self.result_summary_fields)}
+               if self.result_summary_fields else {}),
             "related_resource_type": self.related_resource_type,
             "related_resource_id_fields": list(self.related_resource_id_fields),
             "cancellation_mode": self.cancellation_mode,

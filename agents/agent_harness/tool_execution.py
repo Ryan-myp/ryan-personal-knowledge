@@ -420,9 +420,34 @@ class ToolExecutionCoordinator:
         summary = {
             "collection": collection, "returned_count": len(rows),
             "context_count": len(rows), "context_truncated": False,
+            "scope": "returned_page",
         }
+        fields = self._tool_value(definition, "result_summary_fields", ()) or ()
+        facets: dict[str, dict[str, int]] = {}
+        other_counts: dict[str, int] = {}
+        for field in fields[:4]:
+            counts: dict[str, int] = {}
+            other = 0
+            for row in rows:
+                raw = row.get(field) if isinstance(row, Mapping) else None
+                label = str(raw) if isinstance(raw, (str, int)) and not isinstance(raw, bool) else ""
+                if not label or len(label) > 64:
+                    other += 1
+                elif label in counts:
+                    counts[label] += 1
+                elif len(counts) < 16:
+                    counts[label] = 1
+                else:
+                    other += 1
+            if other:
+                other_counts[field] = other
+            facets[field] = counts
+        if facets:
+            summary["facets"] = facets
+        if other_counts:
+            summary["facet_other_counts"] = other_counts
         content = self._bound_tool_value({
-            **model_value, "data": {"query_summary": summary, **data},
+            **model_value, "data": {**data, "query_summary": summary},
         })
         preview = content.get("data") if isinstance(content, Mapping) else None
         visible_summary = preview.get("query_summary") if isinstance(preview, Mapping) else None

@@ -64,6 +64,31 @@ def test_runner_reports_bounded_tool_names_for_flaky_model_cases():
     ]
 
 
+def test_runner_summarizes_only_numeric_phase_timings():
+    report = run_suite(
+        [RegressionCase(
+            id="timed", input="hello", assertions={"reply_nonempty": True},
+        )],
+        lambda _case: {
+            "reply": "done", "results": [],
+            "phase_metrics": {
+                "run_wall_ms": 24.5, "tool_duration_ms_sum": 5.0,
+                "private": "should-not-appear",
+            },
+            "model_metrics": {
+                "duration_ms": 10.0, "prepare_duration_ms": 2.0,
+            },
+        },
+        mode="fixture_contract",
+    )
+    assert report["cases"][0]["phase_ms"] == {
+        "run_wall": 24.5, "tool_duration_sum": 5.0,
+        "model": 10.0, "model_prepare": 2.0,
+    }
+    assert report["phase_p95_ms"]["model"] == 10.0
+    assert "should-not-appear" not in str(report)
+
+
 def test_model_mode_loads_local_configuration_once(monkeypatch, tmp_path):
     from scripts.advertising import run_conversation_regressions as runner
 
@@ -110,3 +135,49 @@ def test_checked_in_conversation_benchmark_has_executable_conditions():
     cases = load_cases(root / "agents/evals/advertising/conversation_regression_cases.json")
     assert len(cases) >= 8
     assert all(case.assertions.executable for case in cases)
+
+
+def test_multi_turn_case_uses_isolated_runtime_history(monkeypatch, tmp_path):
+    from scripts.advertising import run_conversation_regressions as runner
+    from agents.evals.advertising import skill_up_engine
+
+    sent = []
+    monkeypatch.setattr(skill_up_engine, "run", lambda payload, **kwargs: (
+        sent.append(payload) or {
+            "metadata": {"runtime_result": {"reply": "done", "results": []}},
+        }
+    ))
+    case = RegressionCase(
+        id="multi", input="继续 Meta campaign",
+        history=["Meta campaign 必须保持 paused", "我们换个话题"],
+        assertions={"reply_nonempty": True},
+    )
+    runner._model_response(case, model_adapter=object())
+    assert sent[0]["messages"] == [
+        {"role": "user", "content": "Meta campaign 必须保持 paused"},
+        {"role": "user", "content": "我们换个话题"},
+        {"role": "user", "content": "继续 Meta campaign"},
+    ]
+    assert sent[0]["workspace"]
+
+
+def test_holdout_contains_multi_turn_cases_and_no_case_can_set_credentials():
+    root = Path(__file__).resolve().parents[3]
+    cases = load_cases(root / "agents/evals/advertising/conversation_holdout_cases.json")
+    assert any(case.history for case in cases)
+    with pytest.raises(ValueError):
+        RegressionCase(
+            id="bad", input="continue",
+            history=["hello"], api_key="untrusted",
+        )
+
+
+def test_history_is_bounded_and_cannot_override_the_current_turn():
+    with pytest.raises(ValueError):
+        RegressionCase(
+            id="bad", input="continue", history=["x"] * 12,
+        )
+    with pytest.raises(ValueError):
+        RegressionCase(
+            id="bad", input="continue", history=["x" * 4001],
+        )

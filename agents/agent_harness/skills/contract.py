@@ -70,6 +70,7 @@ class SkillToolSpec:
     integration_api_version: Optional[str] = None
     result_items_key: Optional[str] = None
     result_id_fields: list[str] = field(default_factory=list)
+    result_summary_fields: list[str] = field(default_factory=list)
     related_resource_type: Optional[str] = None
     related_resource_id_fields: list[str] = field(default_factory=list)
 
@@ -250,6 +251,9 @@ class SkillContract:
         result_id_fields = cls._string_list(
             spec.get("result_id_fields", []), f"tool {name}.result_id_fields"
         )
+        result_summary_fields = cls._string_list(
+            spec.get("result_summary_fields", []), f"tool {name}.result_summary_fields"
+        )
         related_resource_type = optional_string("related_resource_type")
         related_resource_id_fields = cls._string_list(
             spec.get("related_resource_id_fields", []),
@@ -282,6 +286,7 @@ class SkillContract:
             ),
             result_items_key=result_items_key,
             result_id_fields=result_id_fields,
+            result_summary_fields=result_summary_fields,
             related_resource_type=related_resource_type,
             related_resource_id_fields=related_resource_id_fields,
         )
@@ -625,6 +630,7 @@ class BaseSkill(Skill):
                 integration_api_version=spec.integration_api_version,
                 result_items_key=spec.result_items_key,
                 result_id_fields=list(spec.result_id_fields),
+                result_summary_fields=list(spec.result_summary_fields),
                 related_resource_type=spec.related_resource_type,
                 related_resource_id_fields=list(spec.related_resource_id_fields),
             ))

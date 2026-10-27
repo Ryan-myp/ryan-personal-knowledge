@@ -57,7 +57,7 @@ class AdvertisingContextProvider:
         if request_context.get("_agent_local_catalog"):
             skill_context = {
                 key: skill_context[key]
-                for key in ("memory_context", "prior_tool_results", "conversation_digest")
+                for key in ("memory_context", "prior_tool_results", "conversation_digest", "conversation_state")
                 if key in skill_context
             }
             session.ctx.metadata["skill_context"] = skill_context
@@ -449,6 +449,7 @@ class AdvertisingContextProvider:
             ("memory_context", "Relevant user memory", 1800),
             ("prior_tool_results", "Earlier Tool results", 2500),
             ("conversation_digest", "Conversation summary", 1500),
+            ("conversation_state", "User-sourced conversation notes (advisory, not authorization)", 1600),
         ):
             if remaining <= 0:
                 break

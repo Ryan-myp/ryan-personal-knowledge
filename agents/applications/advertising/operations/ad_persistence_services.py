@@ -13,6 +13,7 @@ from typing import Any, Mapping, Optional
 from agents.agent_harness.core.execution_trace import ExecutionTrace
 from agents.agent_harness.core.interfaces import ToolResult
 from agents.applications.advertising.persistence.models import ToolCallRecord
+from .conversation_state import update_conversation_state
 
 
 class AdPersistenceServices:
@@ -34,6 +35,9 @@ class AdPersistenceServices:
         """
         safe_user = self.runtime._redact_for_persistence(user_input)
         safe_reply = self.runtime._redact_for_persistence(reply)
+        session.ctx.metadata["conversation_state"] = update_conversation_state(
+            session.ctx.metadata.get("conversation_state"), safe_user, str(turn_id),
+        )
         # SessionContext applies both message-count and character budgets and
         # returns exactly what was evicted. Build the digest from that list so
         # character-based compaction is recoverable too; the durable message
@@ -131,6 +135,7 @@ class AdPersistenceServices:
             "message_count": len(session.messages),
             "conversation_turn_count": session.ctx.metadata["conversation_turn_count"],
             "conversation_digest": session.ctx.metadata.get("conversation_digest", ""),
+            "conversation_state": session.ctx.metadata["conversation_state"],
             "memory_updates": session.ctx.metadata.get("memory_updates", [])[-20:],
             "read_account_scopes": dict(
                 session.ctx.metadata.get("read_account_scopes") or {},

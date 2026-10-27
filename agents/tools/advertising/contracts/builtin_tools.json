@@ -1,5 +1,5 @@
 {
-  "digest": "a613acdf24b824ba4256f81a32317a7a00e082cca27657bc3049452774050248",
+  "digest": "a1c5c7244b04ec857d6472c5cd09bd11488765ef49f129e3a03f3639338ac624",
   "format_version": 1,
   "platforms": {
     "advertising": {
@@ -3269,7 +3269,7 @@
       ]
     },
     "google-ads": {
-      "digest": "11e8507dbe090bf607eda74ce29180990dcd9f9b2b1bbd7eb208be750fe3c0af",
+      "digest": "3c6c72ed3ee5e460c0a53a3daa34360cd1258a87845f3b27913abe731d4a0917",
       "tool_count": 111,
       "tools": [
         {
@@ -16786,6 +16786,9 @@
             "resource_name"
           ],
           "result_items_key": "campaigns",
+          "result_summary_fields": [
+            "status"
+          ],
           "risk_level": "low",
           "scope_fields": [],
           "scope_required": null,
@@ -20202,7 +20205,7 @@
       ]
     },
     "meta": {
-      "digest": "13929cbf477aed0219e1dea26bfbddcc26d64bd8f4a1dfc45ae19d2bc39071dc",
+      "digest": "ad269ce12b142f147d8b8a6ddc9262fb4a8281d7f38c3ce2a366e3c5c037ab11",
       "tool_count": 82,
       "tools": [
         {
@@ -28485,6 +28488,9 @@
             "campaign_id"
           ],
           "result_items_key": "campaigns",
+          "result_summary_fields": [
+            "status"
+          ],
           "risk_level": "low",
           "scope_fields": [],
           "scope_required": null,
@@ -32153,7 +32159,7 @@
       ]
     },
     "tiktok": {
-      "digest": "99edc33d766b1f861df6dae569247877a53d4ee1fe4441a30d920f05ac8a42f5",
+      "digest": "c3ed615e37b1e4b041d5b223449406eb92394c7dc6c8305c0e8d9c683e6146da",
       "tool_count": 89,
       "tools": [
         {
@@ -43774,6 +43780,9 @@
             "id"
           ],
           "result_items_key": "campaigns",
+          "result_summary_fields": [
+            "status"
+          ],
           "risk_level": "low",
           "scope_fields": [],
           "scope_required": null,

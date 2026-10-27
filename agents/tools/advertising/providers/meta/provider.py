@@ -1452,6 +1452,7 @@ class MetaToolSource(BaseProviderToolSource):
                 "列出 Meta campaign", "查询 Meta campaign 列表",
             ],
             result_items_key="campaigns",
+            result_summary_fields=["status"],
             result_id_fields=["id", "campaign_id"],
             risk_level=RiskLevel.LOW,
             effect_class=ToolEffect.READ,
