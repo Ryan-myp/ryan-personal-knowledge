@@ -7,7 +7,10 @@ from agents.applications.advertising.composition.ad_application_assembly import 
 from agents.tools.advertising.providers.source_factory import create_tool_source
 
 
-def _selection(account, text, scope, read_scopes=None, history=None):
+def _selection(
+    account, text, scope, read_scopes=None, history=None,
+    clarification_followup=False,
+):
     tools = [
         binding.definition
         for namespace in ("google-ads", "meta", "tiktok")
@@ -29,6 +32,7 @@ def _selection(account, text, scope, read_scopes=None, history=None):
             "_agent_tool_selection_context": history or (
                 "查询 campaign 123 的详情", "查询 campaign 123 的详情",
             ),
+            "_agent_clarification_followup": clarification_followup,
         },
     )
     selected = AdApplicationAssembly._tool_selector(runtime, ToolSelector())(request, tools)
@@ -90,6 +94,41 @@ def test_campaign_filter_followup_reuses_verified_google_read_scope():
     assert [tool.name for tool in selected] == ["google_list_campaigns"]
     assert context["_agent_tool_namespaces"] == ["google-ads"]
     assert context["_agent_tool_choice_required"] is True
+
+
+def test_status_check_followup_reuses_verified_google_read_scope():
+    selected, context = _selection(
+        None,
+        "现在可以了吗",
+        {"google-ads": {"google-test"}, "meta": {"meta-test"}},
+        read_scopes={"google-ads": "google-test"},
+        history=(
+            "查询 Google Ads campaign 列表",
+            "按 status != REMOVED 过滤后重新查询",
+        ),
+    )
+
+    assert [tool.name for tool in selected] == ["google_list_campaigns"]
+    assert context["_agent_tool_namespaces"] == ["google-ads"]
+    assert context["_agent_tool_choice_required"] is True
+
+
+def test_clarification_topic_takes_precedence_over_remembered_account_provider():
+    selected, context = _selection(
+        "meta-test",
+        "Sales/PURCHASE + 搜索 Ad Group",
+        {"google-ads": {"google-test"}, "meta": {"meta-test"},
+         "tiktok": {"tiktok-test"}},
+        history=(
+            "讲下 TikTok 怎么广告支持 search keyword",
+            "Campaign、Ad Group、Ad 的 API 字段逐项讲解",
+        ),
+        clarification_followup=True,
+    )
+
+    assert selected
+    assert {tool.namespace for tool in selected} == {"tiktok"}
+    assert context["_agent_tool_namespaces"] == ["tiktok"]
 
 
 def test_meta_child_detail_followup_keeps_account_scope_and_requires_fresh_reads():

@@ -65,6 +65,7 @@ _KNOWLEDGE_EXPLANATION_CUES = (
     "有啥区别", "有何区别", "区别是什么", "对比一下", "what is", "what are", "tell me about",
     "overview", "basics", "fundamentals", "explain", "difference between",
 )
+_EXAMPLE_CUES = ("示例", "例子", "sample", "example")
 _INTENT_REVERSALS = ("but", "instead", "however", "但", "而是", "不过")
 _SCOPE_RELATION = re.compile(r"(?:下(?:面|的)?|之下|里面|\bunder\b|\bwithin\b|\bin\b)")
 _MULTI_TARGET = re.compile(r"(?:以及|同时|并且|和|与|、|\band\b|\balso\b)")
@@ -74,6 +75,16 @@ _CONTEXT_REFERENCE_CUES = (
     "它", "上面", "之前", "刚才", "刚刚", "继续", "再来", "接着",
     "为什么", "为啥", "什么原因", "原因呢", "怎么回事", "why",
     "有模板吗", "有模板", "模板呢", "any template", "any templates",
+)
+_STATUS_CUES = (
+    "可以", "能用", "可用", "正常", "好了", "完成", "修复", "解决",
+    "跑通", "搞定", "ready", "working", "fixed", "resolved", "available",
+)
+_STATUS_REFERENCE_CUES = (
+    "现在", "当前", "这会儿", "这次", "已经", "now", "currently", "yet",
+)
+_STATUS_QUESTION_CUES = (
+    "吗", "么", "没有", "了吗", "了没", "是不是", "?", "？",
 )
 _CONTEXT_FILLER_CUES = (
     "我要", "我想", "帮我", "请帮我", "请问", "麻烦", "一下",
@@ -221,6 +232,73 @@ def _has_unnegated_action_cue(user_input: str, cues: Sequence[str]) -> bool:
     )
 
 
+def _is_status_check_followup(user_input: str) -> bool:
+    """Recognize a short, referential check on the previous task's state."""
+    text = str(user_input or "").casefold().strip()
+    if len(text) > 96 or not any(
+        _contains_cue(text, cue) for cue in _STATUS_CUES
+    ):
+        return False
+    has_reference = any(
+        _contains_cue(text, cue) for cue in _STATUS_REFERENCE_CUES
+    )
+    has_question = any(
+        _contains_cue(text, cue) for cue in _STATUS_QUESTION_CUES
+    )
+    if not (has_reference or has_question):
+        return False
+    residual = text
+    removable = (
+        *_STATUS_CUES, *_STATUS_REFERENCE_CUES, *_STATUS_QUESTION_CUES,
+        *_CONTEXT_FILLER_CUES, "了", "呢", "啊", "吧", "still", "it",
+        "this", "that", "is", "the", "can", "we", "you",
+    )
+    for cue in sorted(removable, key=len, reverse=True):
+        residual = residual.replace(cue.casefold(), " ")
+    residual = re.sub(r"[\s,，。.!！?？:：;；-]+", "", residual)
+    return not _terms(residual)
+
+
+def _status_check_read_context(
+    user_input: str,
+    prior_inputs: Sequence[str],
+    tools: Sequence[Any],
+) -> tuple[str, ...]:
+    """Reuse only a recent read chain anchored to an explicit resource query."""
+    registered_namespaces = set()
+    for tool in tools or ():
+        namespace = normalize_namespace(_tool_field(tool, "namespace", ""))
+        if namespace:
+            registered_namespaces.add(namespace)
+    values = [
+        str(item or "").strip()
+        for item in prior_inputs
+        if str(item or "").strip()
+        and normalize_namespace(str(item).strip()) not in registered_namespaces
+    ]
+    if not _is_status_check_followup(user_input) or not values:
+        return ()
+    if not _is_read_only_request(_request_verbs(values[-1], tools)):
+        return ()
+    anchor_index = next((
+        index for index in range(len(values) - 1, -1, -1)
+        if _is_read_only_request(_request_verbs(values[index], tools))
+        and any(
+            _is_read_tool(tool) and _matches_publisher_target(values[index], tool)
+            for tool in tools or ()
+        )
+    ), None)
+    if anchor_index is None:
+        return ()
+    chain = values[anchor_index:]
+    if any(
+        _has_unnegated_write_cue(_request_verbs(item, tools))
+        for item in chain
+    ):
+        return ()
+    return tuple(chain[-4:])
+
+
 def _has_unnegated_write_cue(user_input: str) -> bool:
     return _has_unnegated_action_cue(user_input, _WRITE_CUES)
 
@@ -230,6 +308,8 @@ def _needs_conversation_context(user_input: str, tools: Sequence[Any]) -> bool:
     text = str(user_input or "").strip()
     if not text:
         return False
+    if _is_status_check_followup(text):
+        return True
     if _is_descendant_detail_followup(text):
         return True
     if _is_read_refinement_request(text):
@@ -324,6 +404,21 @@ def _is_knowledge_explanation_request(
         cue for cue in _WRITE_CUES if cue not in _AMBIGUOUS_OPERATION_CUES
     )
     return not _has_unnegated_action_cue(action_text, strong_write_cues)
+
+
+def _is_educational_example_followup(
+    user_input: str,
+    prior_inputs: Sequence[str],
+    tools: Sequence[Any],
+) -> bool:
+    """Keep a requested example informational within an existing knowledge thread."""
+    text = str(user_input or "").casefold()
+    if not any(_contains_cue(text, cue) for cue in _EXAMPLE_CUES):
+        return False
+    return any(
+        _is_knowledge_explanation_request(previous, tools)
+        for previous in reversed(prior_inputs)
+    )
 
 
 def _is_read_tool(tool: Any) -> bool:
@@ -871,6 +966,7 @@ class ToolSelector:
         limit: int = 16,
         conversation_context: Sequence[str] = (),
         contextual_namespaces: Sequence[str] = (),
+        clarification_followup: bool = False,
     ) -> list[Any]:
         """Rank a bounded Tool subset using only publisher-owned metadata.
 
@@ -909,13 +1005,27 @@ class ToolSelector:
             str(item or "").strip()
             for item in (conversation_context or ())
             if str(item or "").strip()
-        ][-4:]
-        if not _needs_conversation_context(user_input, available_tools):
+        ][-12 if clarification_followup else -4:]
+        status_context = _status_check_read_context(
+            user_input, prior_inputs, available_tools,
+        )
+        if clarification_followup:
+            prior_inputs = _bounded_context_inputs(prior_inputs, max_chars=3600)
+            if _is_educational_example_followup(
+                user_input, prior_inputs, available_tools,
+            ):
+                return _semantic_discovery_tools(available_tools)[:limit]
+        elif _is_status_check_followup(user_input):
+            prior_inputs = list(status_context)
+        elif not _needs_conversation_context(user_input, available_tools):
             prior_inputs = []
-        prior_inputs = _bounded_context_inputs(prior_inputs, max_chars=1200)
+        else:
+            prior_inputs = _bounded_context_inputs(prior_inputs, max_chars=1200)
         if refinement_followup and not prior_inputs:
             return []
-        read_only_request = _is_read_only_request(verb_text)
+        read_only_request = (
+            _is_read_only_request(verb_text) or bool(status_context)
+        )
         descendant_followup = (
             read_only_request and _is_descendant_detail_followup(user_input)
             and not publisher_target_match
@@ -979,7 +1089,10 @@ class ToolSelector:
                 ) else []
             )
         if active_namespaces:
-            if not descendant_followup and not refinement_followup:
+            if (
+                not descendant_followup and not refinement_followup
+                and not status_context
+            ):
                 prior_inputs = []
         else:
             for prior_input in reversed(prior_inputs):
@@ -1045,6 +1158,19 @@ class ToolSelector:
             candidates = explicitly_aliased_catalog
         elif contextual_knowledge and _is_knowledge_followup(text):
             candidates = contextual_knowledge
+        elif status_context:
+            status_anchors = _explicit_resource_list_tools(
+                status_context[0], available_tools,
+            )
+            active_namespace_set = {
+                normalize_namespace(namespace) for namespace in active_namespaces
+            }
+            candidates = [
+                tool for tool in status_anchors
+                if not active_namespace_set
+                or normalize_namespace(_tool_field(tool, "namespace", ""))
+                in active_namespace_set
+            ] or status_anchors
         elif active_namespaces:
             namespace_set = {
                 normalize_namespace(item) for item in active_namespaces
@@ -1244,6 +1370,11 @@ class ToolSelector:
         verb_text = _request_verbs(user_input, selected_tools)
         write_request = _has_unnegated_write_cue(verb_text)
         read_request = not write_request and _is_read_only_request(verb_text)
+        status_context = _status_check_read_context(
+            user_input, conversation_context, selected_tools,
+        )
+        if status_context:
+            return any(_is_read_tool(tool) for tool in selected_tools or ())
         text = str(user_input or "").casefold()
         if _has_explicit_read_action(verb_text) and any(
             _is_read_tool(tool)

@@ -16,6 +16,10 @@ from agents.agent_harness.core.interfaces import (
     ToolEffect,
     ToolSchema,
 )
+from agents.agent_harness.core.conversation_selection import (
+    clarification_context,
+    clarification_origin,
+)
 from agents.agent_harness.core.llm_client import LLMClient
 from agents.agent_harness.core.tool_selection import ToolSelector
 from agents.agent_harness.messages import ModelTurn, ToolCall
@@ -954,6 +958,71 @@ def test_channel_context_from_recent_user_turns_routes_short_followup():
         app.close()
 
 
+def test_status_check_followup_injects_prior_read_tool_and_requires_fresh_execution():
+    selector = ToolSelector()
+
+    def select_tools(request, tools):
+        history = request.context.get("_agent_tool_selection_context", ())
+        selected = selector.select_relevant(
+            request.user_input,
+            tools,
+            conversation_context=history,
+            contextual_namespaces=("google-ads",),
+        )
+        if selector.requires_tool_call(
+            request.user_input, selected, conversation_context=history,
+        ):
+            request.context["_agent_tool_choice_required"] = True
+        return selected
+
+    campaign_list = _definition(
+        "google_list_campaigns",
+        namespace="google-ads",
+        action="list",
+        resource="campaign",
+        description="List Google Ads campaigns",
+        intent_aliases=("Google Ads campaign 列表",),
+    )
+    report = _definition(
+        "google_get_campaign_report",
+        namespace="google-ads",
+        action="get",
+        resource="campaign_report",
+        description="Get Google Ads campaign performance",
+    )
+    app = AgentApplication.create(
+        model=SimpleNamespace(complete=lambda *_args: ModelTurn(content="")),
+        tool_selector=select_tools,
+    )
+    app.register_tool_source(StaticToolSource("google", [
+        ToolBinding(campaign_list, lambda *_args: {"success": True}),
+        ToolBinding(report, lambda *_args: {"success": True}),
+    ]))
+    transcript = [
+        AgentMessage.user(
+            "查询 Google Ads campaign 列表", turn_id="query-turn",
+        ),
+        AgentMessage.user(
+            "按 status != REMOVED 过滤后重新查询", turn_id="filter-turn",
+        ),
+    ]
+    try:
+        request = TurnRequest(
+            "现在可以了吗",
+            turn_id="status-turn",
+            session_id="status-session",
+        )
+        selected, required = app.agent._tools_for_turn(request, transcript)
+
+        assert [tool.name for tool in selected] == ["google_list_campaigns"]
+        assert required is True
+        assert request.context["_harness_visible_tool_names"] == (
+            "google_list_campaigns",
+        )
+    finally:
+        app.close()
+
+
 def test_explicit_write_uses_required_tool_choice_only_for_initial_model_turn():
     class Model:
         def __init__(self):
@@ -1124,6 +1193,199 @@ def test_clarification_only_uses_the_immediately_previous_offered_choice():
             )],
         )
         assert seen[-1] == "深蓝背景"
+    finally:
+        app.close()
+
+
+def test_consecutive_clarifications_preserve_original_request_and_topic_context():
+    history = [
+        AgentMessage.user(
+            "讲下tiktok 怎么广告支持search keyword", turn_id="topic-1",
+        ),
+        AgentMessage.user(
+            "campaign 、 ad group 、ad 等层级详细字段进行讲解",
+            turn_id="topic-2",
+        ),
+        AgentMessage.user(
+            "很不错，要是再有一些创建示例就更好了", turn_id="clarify-1",
+        ),
+        AgentMessage.tool(
+            {
+                "needs_input": True,
+                "data": {"choices": [
+                    "Sales/成交（PURCHASE）+ 搜索 Ad Group（接你之前截图那条）",
+                    "Lead/留资（LEADS）",
+                ]},
+            },
+            tool_call_id="ask-objective", name="agent_request_input",
+            turn_id="clarify-1",
+        ),
+        AgentMessage.user(
+            "Sales/成交（PURCHASE）+ 搜索 Ad Group（接你之前截图那条）",
+            turn_id="clarify-2",
+        ),
+        AgentMessage.tool(
+            {
+                "needs_input": True,
+                "data": {"choices": [
+                    "Sales/PURCHASE + 搜索 Ad Group",
+                    "Lead/LEADS + 搜索 Ad Group",
+                ]},
+            },
+            tool_call_id="ask-again", name="agent_request_input",
+            turn_id="clarify-2",
+        ),
+        AgentMessage.assistant("请选择一个目标。", turn_id="clarify-2"),
+    ]
+
+    choice = "Sales/PURCHASE + 搜索 Ad Group"
+
+    assert clarification_origin(choice, "selection-turn", history) == (
+        "很不错，要是再有一些创建示例就更好了"
+    )
+    assert clarification_context(choice, "selection-turn", history) == (
+        "讲下tiktok 怎么广告支持search keyword",
+        "campaign 、 ad group 、ad 等层级详细字段进行讲解",
+    )
+
+
+def test_educational_example_choice_cannot_route_to_stale_account_provider():
+    knowledge = ToolDefinition(
+        name="agent_knowledge_search", skill="knowledge",
+        namespace="agent_platform", description="Search advertising knowledge",
+        input_schema=ToolSchema(properties={"query": {"type": "string"}}),
+        action="search", resource_type="knowledge",
+        intent_types=["knowledge_search"], intent_aliases=["搜索知识库"],
+        effect_class=ToolEffect.READ, traits=["knowledge", "semantic_discovery"],
+    )
+    meta_get_ad = _definition(
+        "meta_get_ad", namespace="meta", action="get", resource="ad",
+        description="Get one Meta ad by identifier",
+        properties={"ad_id": {"type": "string"}},
+    )
+    tiktok_create_ad = _definition(
+        "tiktok_create_ad", namespace="tiktok", action="create",
+        resource="ad", description="Create a TikTok ad",
+    )
+    selector = ToolSelector()
+
+    selected = selector.select_relevant(
+        "很不错，要是再有一些创建示例就更好了\n"
+        "Sales/PURCHASE + 搜索 Ad Group",
+        [knowledge, meta_get_ad, tiktok_create_ad],
+        conversation_context=(
+            "讲下tiktok 怎么广告支持search keyword",
+            "campaign 、 ad group 、ad 等层级详细字段进行讲解",
+        ),
+        contextual_namespaces=("meta",),
+        clarification_followup=True,
+    )
+
+    assert [tool.name for tool in selected] == ["agent_knowledge_search"]
+
+
+def test_agent_selection_restores_topic_for_multi_step_example_clarification():
+    selector = ToolSelector()
+    knowledge = ToolDefinition(
+        name="agent_knowledge_search", skill="knowledge",
+        namespace="agent_platform", description="Search advertising knowledge",
+        input_schema=ToolSchema(properties={"query": {"type": "string"}}),
+        action="search", resource_type="knowledge",
+        intent_types=["knowledge_search"], intent_aliases=["搜索知识库"],
+        effect_class=ToolEffect.READ, traits=["knowledge", "semantic_discovery"],
+    )
+    meta_get_ad = _definition(
+        "meta_get_ad", namespace="meta", action="get", resource="ad",
+        description="Get one Meta ad by identifier",
+        properties={"ad_id": {"type": "string"}},
+    )
+    tiktok_create_ad = _definition(
+        "tiktok_create_ad", namespace="tiktok", action="create",
+        resource="ad", description="Create a TikTok ad",
+    )
+
+    def select_tools(request, tools):
+        return selector.select_relevant(
+            request.user_input,
+            tools,
+            conversation_context=request.context.get(
+                "_agent_tool_selection_context", (),
+            ),
+            contextual_namespaces=("meta",),
+            clarification_followup=bool(
+                request.context.get("_agent_clarification_followup")
+            ),
+        )
+
+    app = AgentApplication.create(
+        model=SimpleNamespace(complete=lambda *_args: ModelTurn(content="")),
+        tool_selector=select_tools,
+    )
+    app.register_tool_source(StaticToolSource("test", [
+        ToolBinding(knowledge, lambda *_args: {"success": True}),
+        ToolBinding(meta_get_ad, lambda *_args: {"success": True}),
+        ToolBinding(tiktok_create_ad, lambda *_args: {"success": True}),
+    ]))
+    transcript = [
+        AgentMessage.user(
+            "讲下tiktok 怎么广告支持search keyword", turn_id="topic-1",
+        ),
+        AgentMessage.user(
+            "campaign 、 ad group 、ad 等层级详细字段进行讲解",
+            turn_id="topic-2",
+        ),
+        AgentMessage.user(
+            "很不错，要是再有一些创建示例就更好了", turn_id="clarify-1",
+        ),
+        AgentMessage.tool(
+            {"needs_input": True, "data": {"choices": [
+                "Sales/成交（PURCHASE）+ 搜索 Ad Group（接你之前截图那条）",
+                "Lead/留资（LEADS）",
+            ]}},
+            tool_call_id="ask-objective", name="agent_request_input",
+            turn_id="clarify-1",
+        ),
+        AgentMessage.user(
+            "Sales/成交（PURCHASE）+ 搜索 Ad Group（接你之前截图那条）",
+            turn_id="clarify-2",
+        ),
+        AgentMessage.tool(
+            {"needs_input": True, "data": {"choices": [
+                "Sales/PURCHASE + 搜索 Ad Group",
+                "Lead/LEADS + 搜索 Ad Group",
+            ]}},
+            tool_call_id="ask-again", name="agent_request_input",
+            turn_id="clarify-2",
+        ),
+        AgentMessage.assistant("请选择一个目标。", turn_id="clarify-2"),
+    ]
+    try:
+        request = TurnRequest(
+            "Sales/PURCHASE + 搜索 Ad Group",
+            turn_id="selection-turn",
+            session_id="selection-session",
+        )
+        tools, _required = app.agent._tools_for_turn(request, transcript)
+
+        assert [tool.name for tool in tools] == ["agent_knowledge_search"]
+        bounded = app.agent._add_recalled_context(
+            request,
+            None,
+            transcript,
+            [
+                AgentMessage.system("System prompt"),
+                AgentMessage.user(
+                    request.user_input, turn_id=request.turn_id,
+                ),
+            ],
+            tools,
+        )
+        recall_messages = [
+            message for message in bounded
+            if message.metadata.get("context_type") == "conversation_recall"
+        ]
+        assert len(recall_messages) == 1
+        assert "讲下tiktok 怎么广告支持search keyword" in recall_messages[0].content
     finally:
         app.close()
 

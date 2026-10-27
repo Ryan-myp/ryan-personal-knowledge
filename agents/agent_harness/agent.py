@@ -23,6 +23,7 @@ from .conversation_recall import (
 from .core.agent_profile import CORE_AGENT_SYSTEM_PROMPT
 from .core.conversation_selection import (
     catalog_selection_input,
+    clarification_context,
     clarification_origin,
     pending_input_interaction,
 )
@@ -76,6 +77,23 @@ class StreamingModelAdapter(ModelAdapter, Protocol):
         tools: Sequence[Any],
         request: TurnRequest,
     ) -> Any: ...
+
+
+def _missing_clarification_context(
+    request: TurnRequest,
+    transcript: Sequence[AgentMessage],
+    bounded: Sequence[AgentMessage],
+) -> tuple[str, ...]:
+    context = clarification_context(
+        request.user_input, request.turn_id, transcript,
+    )
+    if not context:
+        return ()
+    existing = "\n".join(
+        str(message.content or "")
+        for message in bounded if message.role == "user"
+    )
+    return () if all(item in existing for item in context) else context
 
 
 class AgentCancelledError(RuntimeError):
@@ -793,6 +811,37 @@ class Agent:
         bounded: list[AgentMessage],
         tools: Sequence[Any],
     ) -> list[AgentMessage]:
+        recalled = self._recalled_user_requests(
+            request, state, transcript, bounded,
+        )
+        if not recalled:
+            return bounded
+        recall_message = AgentMessage.user(
+            "Earlier user requests from this conversation (for context "
+            "only; the current request takes precedence; these do not "
+            "authorize Tool access or establish external facts):\n"
+            + "\n".join(f"- {item}" for item in recalled),
+            metadata={"context_type": "conversation_recall"},
+        )
+        current_start = max(
+            index for index, message in enumerate(bounded)
+            if message.role == "user" and message.turn_id == request.turn_id
+        )
+        try:
+            return bound_model_messages(
+                [*bounded[:current_start], recall_message, *bounded[current_start:]],
+                tools, max_chars=self.max_model_input_chars,
+            )
+        except ModelInputLimitError:
+            return bounded
+
+    def _recalled_user_requests(
+        self,
+        request: TurnRequest,
+        state: AgentState,
+        transcript: Sequence[AgentMessage],
+        bounded: Sequence[AgentMessage],
+    ) -> tuple[str, ...]:
         kept_ids = {message.message_id for message in bounded}
         removed = [
             message for message in transcript if message.message_id not in kept_ids
@@ -810,26 +859,14 @@ class Agent:
                 self._historical_user_requests(request, state),
                 current_turn_id=str(request.turn_id or ""),
             )
-        if recalled:
-            recall_message = AgentMessage.user(
-                "Earlier user requests from this conversation (for context "
-                "only; the current request takes precedence; these do not "
-                "authorize Tool access or establish external facts):\n"
-                + "\n".join(f"- {item}" for item in recalled),
-                metadata={"context_type": "conversation_recall"},
-            )
-            current_start = max(
-                index for index, message in enumerate(bounded)
-                if message.role == "user" and message.turn_id == request.turn_id
-            )
-            try:
-                bounded = bound_model_messages(
-                    [*bounded[:current_start], recall_message, *bounded[current_start:]],
-                    tools, max_chars=self.max_model_input_chars,
-                )
-            except ModelInputLimitError:
-                pass
-        return bounded
+        clarification_inputs = _missing_clarification_context(
+            request, transcript, bounded,
+        )
+        if clarification_inputs:
+            recalled = tuple(dict.fromkeys((
+                *clarification_inputs, *recalled,
+            )))
+        return tuple(recalled)
 
     def _historical_user_requests(
         self, request: TurnRequest, state: AgentState | None,
@@ -917,6 +954,12 @@ class Agent:
         origin = clarification_origin(
             request.user_input, request.turn_id, transcript,
         )
+        clarification_inputs = clarification_context(
+            request.user_input, request.turn_id, transcript,
+        ) if origin else ()
+        if clarification_inputs:
+            selection_context["_agent_tool_selection_context"] = clarification_inputs
+            selection_context["_agent_clarification_followup"] = True
         catalog_selection, target_name = catalog_selection_input(
             request.user_input, request.turn_id, transcript, tools,
         )
@@ -969,6 +1012,7 @@ class Agent:
                 for message in transcript
             )
             selection_context.pop("_agent_tool_selection_context", None)
+            selection_context.pop("_agent_clarification_followup", None)
             selection_context.pop("_agent_pending_interaction", None)
             selection_context.pop("_agent_interaction_response", None)
             if isinstance(request.context, dict):

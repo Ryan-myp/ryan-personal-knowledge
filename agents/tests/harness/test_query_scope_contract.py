@@ -12,6 +12,7 @@ def test_query_contract_forbids_unrequested_child_queries_and_rounded_counts():
     assert "Do not fetch child resources" in prompt
     assert "explicitly requests descendants" in prompt
     assert "Do not ask the user to resend the same request" in prompt
+    assert "say only that it was not selected this turn" in prompt
     assert "Do not round counts" in prompt
     assert "not supplied for this turn" in prompt
 
@@ -164,6 +165,50 @@ def test_campaign_filter_followup_reuses_the_previous_read_without_web_search():
             conversation_context=(previous_input,),
             contextual_namespaces=("google-ads",),
         ) == []
+
+
+def test_status_check_followup_reuses_the_latest_actionable_campaign_query():
+    tools = [
+        binding.definition
+        for provider in ("google-ads", "meta", "tiktok")
+        for binding in create_tool_source(provider).list_bindings()
+    ]
+    selector = ToolSelector()
+    history = (
+        "查询 Google Ads campaign 列表",
+        "按 status != REMOVED 过滤后重新查询",
+    )
+
+    selected = selector.select_relevant(
+        "现在可以了吗", tools,
+        conversation_context=history,
+        contextual_namespaces=("google-ads",),
+    )
+
+    assert [tool.name for tool in selected] == ["google_list_campaigns"]
+    assert selector.requires_tool_call(
+        "现在可以了吗", selected, conversation_context=history,
+    )
+
+
+def test_status_check_followup_does_not_replay_a_knowledge_or_write_request():
+    tools = [
+        binding.definition
+        for provider in ("google-ads", "meta", "tiktok")
+        for binding in create_tool_source(provider).list_bindings()
+    ]
+    selector = ToolSelector()
+
+    assert selector.select_relevant(
+        "现在可以了吗", tools,
+        conversation_context=("讲讲 Google campaign 的状态",),
+        contextual_namespaces=("google-ads",),
+    ) == []
+    assert selector.select_relevant(
+        "现在可以了吗", tools,
+        conversation_context=("创建 Google campaign",),
+        contextual_namespaces=("google-ads",),
+    ) == []
 
 
 def test_list_filter_followup_stays_in_the_prior_provider_namespace():

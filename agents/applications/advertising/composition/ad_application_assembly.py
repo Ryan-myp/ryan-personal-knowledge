@@ -776,15 +776,27 @@ class AdApplicationAssembly:
                     for item in observations[-4:]
                     if isinstance(item, Mapping) and item.get("user_request")
                 ] if isinstance(observations, list) else []
-                if prior_requests:
+                if prior_requests and not request_context.get(
+                    "_agent_clarification_followup"
+                ):
                     conversation_context = (*conversation_context, *prior_requests)
                 contextual_namespaces = (
                     AdApplicationAssembly._multi_account_context_namespaces(
                         runtime, selector, request, tools,
                     )
                 )
-                account_namespace = AdApplicationAssembly._authorized_account_namespace(
-                    runtime, request, tools,
+                clarification_followup = bool(
+                    request_context.get("_agent_clarification_followup")
+                )
+                has_conversation_namespace = clarification_followup and any(
+                    selector.detect_namespaces(source, tools)
+                    for source in (request.user_input, *conversation_context)
+                )
+                account_namespace = (
+                    None if has_conversation_namespace else
+                    AdApplicationAssembly._authorized_account_namespace(
+                        runtime, request, tools,
+                    )
                 )
                 if account_namespace:
                     conversation_context = (*conversation_context, account_namespace)
@@ -814,6 +826,7 @@ class AdApplicationAssembly:
                         limit=MAX_RELEVANT_TOOLS_PER_TURN,
                         conversation_context=conversation_context,
                         contextual_namespaces=contextual_namespaces,
+                        clarification_followup=clarification_followup,
                     )
                 )
                 selected = AdApplicationAssembly._scope_account_directory(

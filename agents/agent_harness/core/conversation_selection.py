@@ -7,6 +7,8 @@ import re
 from collections.abc import Mapping, Sequence
 from typing import Any
 
+from agents.agent_harness.redaction import redact_for_persistence
+
 
 def _tool_message_content(message: Any) -> Mapping[str, Any] | None:
     content = getattr(message, "content", None)
@@ -18,43 +20,153 @@ def _tool_message_content(message: Any) -> Mapping[str, Any] | None:
     return content if isinstance(content, Mapping) else None
 
 
+def _offered_choices(message: Any) -> list[str] | None:
+    content = _tool_message_content(message)
+    metadata = getattr(message, "metadata", {}) or {}
+    metadata_needs_input = (
+        isinstance(metadata, Mapping) and metadata.get("needs_input") is True
+    )
+    if content is None and not metadata_needs_input:
+        return None
+    if (
+        content is not None
+        and content.get("needs_input") is not True
+        and not metadata_needs_input
+    ):
+        return None
+    data = content.get("data") if content is not None else None
+    choices = data.get("choices") if isinstance(data, Mapping) else None
+    if not isinstance(choices, list):
+        return []
+    return [
+        item.strip() for item in choices[:32]
+        if isinstance(item, str) and item.strip()
+    ]
+
+
+def _matching_offer_index(
+    choice: str,
+    transcript: Sequence[Any],
+    before_index: int,
+) -> int | None:
+    for index in range(min(before_index, len(transcript)) - 1, -1, -1):
+        message = transcript[index]
+        if getattr(message, "role", "") != "tool":
+            continue
+        choices = _offered_choices(message)
+        if choices is None:
+            continue
+        return index if choice in choices else None
+    return None
+
+
+def _source_user_index(offer_index: int, transcript: Sequence[Any]) -> int | None:
+    turn_id = str(getattr(transcript[offer_index], "turn_id", "") or "")
+    if not turn_id:
+        return None
+    for index in range(offer_index - 1, -1, -1):
+        message = transcript[index]
+        if (
+            getattr(message, "role", "") == "user"
+            and str(getattr(message, "turn_id", "") or "") == turn_id
+        ):
+            return index
+    return None
+
+
+def _clarification_chain(
+    choice: str,
+    turn_id: str,
+    transcript: Sequence[Any],
+) -> tuple[int, str] | None:
+    """Find the root user turn for a bounded chain of offered choices."""
+    choice = str(choice or "").strip()
+    if not choice or len(choice) > 256:
+        return None
+    messages = list(transcript)
+    current_turn_index = next(
+        (
+            index for index in range(len(messages) - 1, -1, -1)
+            if turn_id and getattr(messages[index], "turn_id", "") == turn_id
+        ),
+        len(messages),
+    )
+    candidate = choice
+    before_index = current_turn_index
+    first_offer = True
+    for _depth in range(8):
+        offer_index = _matching_offer_index(candidate, messages, before_index)
+        if offer_index is None:
+            return None
+        source_index = _source_user_index(offer_index, messages)
+        if source_index is None:
+            return None
+        if first_offer:
+            latest_user_index = next(
+                (
+                    index for index in range(before_index - 1, -1, -1)
+                    if getattr(messages[index], "role", "") == "user"
+                ),
+                None,
+            )
+            if latest_user_index != source_index:
+                return None
+            first_offer = False
+        source = str(getattr(messages[source_index], "content", "") or "").strip()
+        if not source or len(source) > 1200:
+            return None
+        if len(source) > 256:
+            return source_index, source[:1200]
+        previous_offer = _matching_offer_index(source, messages, source_index)
+        if previous_offer is None:
+            return source_index, source
+        candidate = source
+        before_index = source_index
+    return None
+
+
 def clarification_origin(
     choice: str,
     turn_id: str,
     transcript: Sequence[Any],
 ) -> str:
-    """Recover the original request only when the user chose a shown option."""
-    choice = str(choice or "").strip()
-    if not choice or len(choice) > 256:
-        return ""
-    offered_turn = ""
-    for message in reversed(transcript):
-        if turn_id and getattr(message, "turn_id", "") == turn_id:
-            continue
-        role = getattr(message, "role", "")
-        if role == "user":
-            return (
-                str(getattr(message, "content", "") or "").strip()[:1200]
-                if offered_turn and offered_turn == getattr(message, "turn_id", "")
-                else ""
-            )
-        if role != "tool" or offered_turn:
-            continue
-        content = _tool_message_content(message)
-        if content is None or content.get("needs_input") is not True:
-            continue
-        data = content.get("data")
-        choices = data.get("choices") if isinstance(data, Mapping) else None
-        if not isinstance(choices, list):
-            return ""
-        if any(
-            isinstance(item, str) and item.strip() == choice
-            for item in choices[:32]
-        ):
-            offered_turn = str(getattr(message, "turn_id", "") or "")
-        else:
-            return ""
-    return ""
+    """Recover the root request when a user selects a shown option."""
+    result = _clarification_chain(choice, turn_id, transcript)
+    return result[1] if result else ""
+
+
+def clarification_context(
+    choice: str,
+    turn_id: str,
+    transcript: Sequence[Any],
+    *,
+    max_messages: int = 12,
+    max_chars: int = 3600,
+) -> tuple[str, ...]:
+    """Return bounded user context preceding the root of a choice chain."""
+    if max_messages <= 0 or max_chars <= 0:
+        return ()
+    root = _clarification_chain(choice, turn_id, transcript)
+    if root is None:
+        return ()
+    root_index, _origin = root
+    prior = [
+        str(getattr(message, "content", "") or "").strip()
+        for message in transcript[:root_index]
+        if getattr(message, "role", "") == "user"
+        and str(getattr(message, "content", "") or "").strip()
+    ][-max_messages:]
+    selected: list[str] = []
+    remaining = max_chars
+    for value in reversed(prior):
+        if remaining <= 0:
+            break
+        safe = str(redact_for_persistence(value)).strip()
+        bounded = safe[-remaining:]
+        if bounded:
+            selected.append(bounded)
+            remaining -= len(bounded)
+    return tuple(reversed(selected))
 
 
 def _pending_tool_record(message: Any) -> dict[str, Any] | None:
