@@ -136,6 +136,9 @@ class AdPersistenceServices:
             "conversation_turn_count": session.ctx.metadata["conversation_turn_count"],
             "conversation_digest": session.ctx.metadata.get("conversation_digest", ""),
             "conversation_state": session.ctx.metadata["conversation_state"],
+            "conversation_task_state": session.ctx.metadata.get(
+                "conversation_task_state", {"observations": []},
+            ),
             "memory_updates": session.ctx.metadata.get("memory_updates", [])[-20:],
             "read_account_scopes": dict(
                 session.ctx.metadata.get("read_account_scopes") or {},

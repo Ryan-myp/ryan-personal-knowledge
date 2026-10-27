@@ -14,6 +14,9 @@ from .ad_run_memory import AdvertisingRunMemoryRecorder
 from .ad_run_projection import AdvertisingRunProjection
 from .ad_run_media import media_gallery_from_results
 from agents.tools.advertising.shared.domain.conversation import visible_run_reply
+from agents.applications.advertising.operations.conversation_task_state import (
+    update_conversation_task_state,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -237,7 +240,19 @@ class AdvertisingRunService:
         )
         payload["reply"] = runtime.redact_for_persistence(visible_run_reply(payload))
         session = runtime.sessions.get(effective_session_id)
+        session_metadata = getattr(getattr(session, "ctx", None), "metadata", None)
         if session is not None:
+            if isinstance(session_metadata, dict):
+                session_metadata["conversation_task_state"] = (
+                    update_conversation_task_state(
+                        session_metadata.get("conversation_task_state"),
+                        completed.get("last_results") or (),
+                        registry=runtime.registry,
+                        run_id=str(payload.get("run_id") or ""),
+                        turn_id=str(payload.get("turn_id") or ""),
+                        user_request=user_input,
+                    )
+                )
             raw_ui = payload.get("ui")
             persisted_ui = dict(raw_ui) if isinstance(raw_ui, dict) else {}
             if payload.get("confirmation_payload"):

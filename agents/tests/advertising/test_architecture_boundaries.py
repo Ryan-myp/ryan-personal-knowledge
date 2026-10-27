@@ -65,6 +65,7 @@ def test_advertising_application_modules_have_single_layer_ownership():
             "ad_conversation_feedback_services.py", "ad_conversation_services.py",
             "ad_conversation_knowledge_services.py",
             "conversation_state.py",
+            "conversation_task_state.py",
             "ad_persistence_services.py",
             "ad_session_services.py", "ad_task_operational_services.py",
             "ad_task_services.py", "ad_workflow_provider_reconciliation.py",

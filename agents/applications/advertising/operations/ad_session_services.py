@@ -10,6 +10,7 @@ from typing import Any, Optional
 from agents.agent_harness.core.interfaces import ToolContext, ToolResult
 from .session_context import SessionContext
 from .conversation_state import valid_conversation_state
+from .conversation_task_state import valid_conversation_task_state
 
 logger = logging.getLogger(__name__)
 
@@ -84,6 +85,9 @@ class AdSessionServices:
                 ctx.metadata["conversation_digest"] = stored_digest[:2400]
             ctx.metadata["conversation_state"] = valid_conversation_state(
                 persisted_metadata.get("conversation_state")
+            )
+            ctx.metadata["conversation_task_state"] = valid_conversation_task_state(
+                persisted_metadata.get("conversation_task_state")
             )
             ctx.metadata["conversation_turn_count"] = int(
                 persisted_metadata.get("conversation_turn_count", 0) or 0

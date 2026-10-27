@@ -11,6 +11,9 @@ from agents.agent_platform.data.knowledge_context import render_knowledge_contex
 from agents.applications.advertising.operations.conversation_state import (
     render_conversation_state,
 )
+from agents.applications.advertising.operations.conversation_task_state import (
+    render_conversation_task_state,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +39,7 @@ class AdTurnContextService:
         "prior_tool_results": 4000,
         "conversation_digest": 2400,
         "conversation_state": 1600,
+        "conversation_task_state": 2400,
     }
     _MAX_MEMORY_RECORDS = 5
     _AGGREGATE_CONTEXT_LIMIT = 20_000
@@ -47,6 +51,7 @@ class AdTurnContextService:
         "expert_knowledge",
         "tool_prompt",
         "conversation_state",
+        "conversation_task_state",
     )
 
     @staticmethod
@@ -299,17 +304,25 @@ class AdTurnContextService:
             ),
             budget["conversation_state"],
         )
+        task_state, task_state_truncated = cls._bounded_text(
+            render_conversation_task_state(
+                session.ctx.metadata.get("conversation_task_state"),
+            ),
+            budget["conversation_task_state"],
+        )
         skill_context["prior_tool_results"] = prior_results
         skill_context["memory"] = memory
         skill_context["memory_context"] = memory_context
         skill_context["conversation_digest"] = digest
         skill_context["conversation_state"] = notes
+        skill_context["conversation_task_state"] = task_state
         truncated.update({
             "prior_tool_results": prior_truncated,
             "memory": memory_truncated,
             "memory_context": memory_context_truncated,
             "conversation_digest": digest_truncated,
             "conversation_state": notes_truncated,
+            "conversation_task_state": task_state_truncated,
         })
         aggregate_used = cls._enforce_aggregate_budget(skill_context, truncated)
         skill_context["context_budget"] = {

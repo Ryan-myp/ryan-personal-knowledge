@@ -109,7 +109,13 @@ def main() -> int:
         sys.path.insert(0, str(home))
         from engines.enhanced_analyzer import EnhancedAnalyzer
         from engines.spec_parser import SpecParser
-        spec = SpecParser().auto_generate(ROOT)
+        spec_parser = SpecParser()
+        repository_spec = ROOT / ".qguard" / "project.yaml"
+        spec = (
+            spec_parser.load(repository_spec)
+            if repository_spec.is_file()
+            else spec_parser.auto_generate(ROOT)
+        )
         result = analyze_delta(ROOT, EnhancedAnalyzer(spec), spec.security.ignore_patterns)
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0 if result["gate_passed"] else 1

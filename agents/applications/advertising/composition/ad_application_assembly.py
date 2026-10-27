@@ -753,6 +753,31 @@ class AdApplicationAssembly:
                 conversation_context = tuple(
                     request_context.get("_agent_tool_selection_context", ()) or ()
                 )
+                sessions = getattr(runtime, "sessions", None)
+                get_session = getattr(sessions, "get", None)
+                session_id = str(getattr(request, "session_id", "") or "")
+                session = (
+                    get_session(session_id)
+                    if callable(get_session) and session_id else None
+                )
+                metadata = getattr(
+                    getattr(session, "ctx", None), "metadata", {},
+                )
+                task_state = (
+                    metadata.get("conversation_task_state", {})
+                    if isinstance(metadata, Mapping) else {}
+                )
+                observations = (
+                    task_state.get("observations", [])
+                    if isinstance(task_state, Mapping) else []
+                )
+                prior_requests = [
+                    str(item.get("user_request") or "").strip()
+                    for item in observations[-4:]
+                    if isinstance(item, Mapping) and item.get("user_request")
+                ] if isinstance(observations, list) else []
+                if prior_requests:
+                    conversation_context = (*conversation_context, *prior_requests)
                 contextual_namespaces = (
                     AdApplicationAssembly._multi_account_context_namespaces(
                         runtime, selector, request, tools,

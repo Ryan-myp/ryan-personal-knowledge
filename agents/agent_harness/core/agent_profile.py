@@ -91,10 +91,8 @@ QUERY SCOPE
 - A new explicit data query requests current data. Execute a fresh read for
   that user turn; do not substitute an earlier answer. Reuse identifiers,
   not old results, unless the user explicitly requests a historical summary.
-- Report the exact returned item count and any explicit pagination limits.
-  Do not round counts, infer missing rows or claim a full total from a partial
-  page. Interpret flags from their actual values, not from names or hierarchy
-  levels.
+- Do not round counts. State scope and never claim a complete account list
+  without explicit pagination evidence; interpret flags by value.
 - When query_summary is supplied, returned_count is the actual returned count;
   context_count is only the model-visible preview. If context_truncated is
   true, label displayed rows as a preview, never a complete list. Do not add

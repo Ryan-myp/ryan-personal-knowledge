@@ -400,11 +400,15 @@ class ToolExecutionCoordinator:
             return result, truncated
         return self._truncate_tool_text(str(value), budget), [path or "$"]
 
-    def _query_content(self, value: Any, definition: Any) -> Any:
+    def _query_content(
+        self, value: Any, definition: Any,
+        arguments: Mapping[str, Any] | None = None,
+    ) -> Any:
         return model_tool_content(
             value, definition,
             bound_output=self._bound_tool_value,
             is_write=self._tool_is_write(definition),
+            arguments=arguments or {},
         )
 
     def _retained_tool_value(self, value: Any, definition: Any) -> Any:
@@ -822,7 +826,9 @@ class ToolExecutionCoordinator:
             result = {
                 "tool_call_id": call.id,
                 "name": call.name,
-                "content": self._query_content(safe_output, definition),
+                "content": self._query_content(
+                    safe_output, definition, call.arguments,
+                ),
                 "is_error": bool(
                     isinstance(safe_output, Mapping)
                     and safe_output.get("success") is False

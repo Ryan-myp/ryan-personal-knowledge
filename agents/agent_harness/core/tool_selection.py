@@ -1472,11 +1472,26 @@ class PromptRenderer:
         if not selection.selected_tools:
             return "暂无可用工具"
         scope = ", ".join(selection.namespaces) or "未指定"
-        lines = [f"## 可用工具（namespace: {scope}）"]
+        lines = [
+            f"## 可用工具（namespace: {scope}）",
+            "单资源请求优先使用最具体的一个 Tool；只有用户明确要求多个资源，"
+            "或结果明确提示分页/缺少依赖时，才继续调用其他 Tool。",
+        ]
         for index, tool in enumerate(selection.selected_tools, 1):
             lines.append(
                 f"{index}. **{tool.name}** ({tool.risk_level.value})"
             )
+            effect = getattr(tool.effect_class, "value", tool.effect_class)
+            metadata = [
+                f"操作={tool.action or '未声明'}",
+                f"资源={tool.resource_type or '未声明'}",
+                f"父级={tool.parent_resource_type or '无'}",
+                f"effect={effect or '未声明'}",
+            ]
+            intents = [str(value) for value in (tool.intent_types or ())[:4]]
+            if intents:
+                metadata.append(f"intent={','.join(intents)}")
+            lines.append("   契约元数据: " + "; ".join(metadata))
             description = str(tool.description or "")
             if len(description) > self.max_description_chars:
                 description = description[: self.max_description_chars] + "..."

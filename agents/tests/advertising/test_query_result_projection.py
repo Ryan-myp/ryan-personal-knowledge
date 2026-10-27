@@ -4,6 +4,7 @@ import json
 from agents.agent_harness import AgentApplication, StaticToolSource, ToolBinding
 from agents.agent_harness.messages import ModelTurn, ToolCall
 from agents.applications.advertising.run.ad_run_projection import AdvertisingRunProjection
+from agents.agent_harness.tool_result_projection import model_tool_content
 
 
 def test_long_query_has_exact_cardinality_and_bounded_model_context():
@@ -107,3 +108,40 @@ def test_retained_query_evidence_still_obeys_the_tool_byte_limit():
         assert len(json.dumps(data, ensure_ascii=False).encode("utf-8")) <= 512
     finally:
         app.close()
+
+
+def test_query_completeness_respects_provider_pagination_evidence():
+    definition = SimpleNamespace(
+        result_items_key="records",
+        result_summary_fields=["status"],
+        input_schema={"properties": {"limit": {"type": "integer"}}},
+    )
+    complete = model_tool_content(
+        {"success": True, "data": {
+            "records": [{"status": "PAUSED"}, {"status": "ACTIVE"}],
+            "has_more": False,
+            "query_summary": {"returned_count": 2, "total_count": 2},
+        }},
+        definition,
+        bound_output=lambda value: value,
+        is_write=False,
+        arguments={"limit": 2},
+    )
+    complete_summary = complete["data"]["query_summary"]
+    assert complete_summary["returned_count"] == 2
+    assert complete_summary["total_count"] == 2
+    assert complete_summary["completeness"] == "page_complete"
+    assert complete_summary["may_be_truncated"] is False
+
+    truncated = model_tool_content(
+        {"success": True, "data": {
+            "records": [{"status": "PAUSED"}],
+            "query_context": {"may_be_truncated": True},
+        }},
+        definition,
+        bound_output=lambda value: value,
+        is_write=False,
+        arguments={},
+    )
+    assert truncated["data"]["query_summary"]["completeness"] == "possibly_truncated"
+    assert truncated["data"]["query_summary"]["may_be_truncated"] is True

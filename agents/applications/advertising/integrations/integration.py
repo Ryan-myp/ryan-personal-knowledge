@@ -31,6 +31,24 @@ class _ContextTrace:
 class AdvertisingContextProvider:
     """Adapt advertising advisory context to the generic Harness port."""
 
+    _ADVISORY_CONTEXT_FIELDS = (
+        ("expert_knowledge", "Skill guidance", 5000),
+        ("publisher_context", "Creation blueprints and templates", 3500),
+        ("memory_context", "Relevant user memory", 1800),
+        ("prior_tool_results", "Earlier Tool results", 2500),
+        (
+            "conversation_task_state",
+            "Recent live resource observations (context only, no authorization)",
+            2400,
+        ),
+        ("conversation_digest", "Conversation summary", 1500),
+        (
+            "conversation_state",
+            "User-sourced conversation notes (advisory, not authorization)",
+            1600,
+        ),
+    )
+
     def __init__(self, owner: Any) -> None:
         self.owner = owner
         self._service = AdTurnContextService()
@@ -57,7 +75,10 @@ class AdvertisingContextProvider:
         if request_context.get("_agent_local_catalog"):
             skill_context = {
                 key: skill_context[key]
-                for key in ("memory_context", "prior_tool_results", "conversation_digest", "conversation_state")
+                for key in (
+                    "memory_context", "prior_tool_results", "conversation_digest",
+                    "conversation_state", "conversation_task_state",
+                )
                 if key in skill_context
             }
             session.ctx.metadata["skill_context"] = skill_context
@@ -423,6 +444,53 @@ class AdvertisingContextProvider:
                 )
 
     @staticmethod
+    def _append_retrieved_knowledge(
+        parts: list[str],
+        skill_context: Mapping[str, Any],
+        evidence: dict[str, Any],
+        remaining: int,
+    ) -> int:
+        knowledge = skill_context.get("knowledge")
+        if not isinstance(knowledge, list):
+            return remaining
+        header = "Retrieved knowledge:\n"
+        rendered = render_knowledge_context(
+            knowledge, max_chars=max(0, min(4000, remaining - len(header))),
+        )
+        if not rendered.documents:
+            return remaining
+        parts.append(header + rendered.text)
+        evidence["documents"] = list(rendered.documents)
+        evidence["prompt_chars"] = len(rendered.text)
+        return remaining - len(header) - len(rendered.text)
+
+    @staticmethod
+    def _append_context_value(
+        parts: list[str],
+        skill_context: Mapping[str, Any],
+        *,
+        key: str,
+        label: str,
+        limit: int,
+        remaining: int,
+    ) -> int:
+        value = skill_context.get(key)
+        if remaining <= 0 or value in (None, "", [], {}):
+            return remaining
+        if isinstance(value, (dict, list)):
+            try:
+                value = json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+            except (TypeError, ValueError):
+                return remaining
+        header = f"{label}:\n"
+        available = min(limit, remaining - len(header))
+        if available <= 0:
+            return remaining
+        block = header + str(value)[:available]
+        parts.append(block)
+        return remaining - len(block)
+
+    @staticmethod
     def _append_advisory_context(
         parts: list[str],
         skill_context: Mapping[str, Any],
@@ -432,44 +500,14 @@ class AdvertisingContextProvider:
             "source": "automatic_rag", "documents": [], "prompt_chars": 0,
             "claims_answer_grounded": False,
         }
-        knowledge = skill_context.get("knowledge")
-        if isinstance(knowledge, list):
-            header = "Retrieved knowledge:\n"
-            rendered = render_knowledge_context(
-                knowledge, max_chars=max(0, min(4000, remaining - len(header))),
+        remaining = AdvertisingContextProvider._append_retrieved_knowledge(
+            parts, skill_context, evidence, remaining,
+        )
+        for key, label, limit in AdvertisingContextProvider._ADVISORY_CONTEXT_FIELDS:
+            remaining = AdvertisingContextProvider._append_context_value(
+                parts, skill_context, key=key, label=label,
+                limit=limit, remaining=remaining,
             )
-            if rendered.documents:
-                parts.append(header + rendered.text)
-                remaining -= len(header) + len(rendered.text)
-                evidence["documents"] = list(rendered.documents)
-                evidence["prompt_chars"] = len(rendered.text)
-        for key, label, limit in (
-            ("expert_knowledge", "Skill guidance", 5000),
-            ("publisher_context", "Creation blueprints and templates", 3500),
-            ("memory_context", "Relevant user memory", 1800),
-            ("prior_tool_results", "Earlier Tool results", 2500),
-            ("conversation_digest", "Conversation summary", 1500),
-            ("conversation_state", "User-sourced conversation notes (advisory, not authorization)", 1600),
-        ):
-            if remaining <= 0:
-                break
-            value = skill_context.get(key)
-            if value in (None, "", [], {}):
-                continue
-            if isinstance(value, (dict, list)):
-                try:
-                    value = json.dumps(
-                        value, ensure_ascii=False, separators=(",", ":"),
-                    )
-                except (TypeError, ValueError):
-                    continue
-            header = f"{label}:\n"
-            available = min(limit, remaining - len(header))
-            if available <= 0:
-                continue
-            block = header + str(value)[:available]
-            parts.append(block)
-            remaining -= len(block)
         return evidence
 
 

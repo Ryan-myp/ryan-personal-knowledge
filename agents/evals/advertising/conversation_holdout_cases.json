@@ -98,5 +98,57 @@
       "forbidden_tools": ["meta_list_accounts", "meta_create_campaign"],
       "max_tool_calls": 2
     }
+  },
+  {
+    "id": "holdout-report-filter-followup",
+    "history": [
+      "查一下 Meta Campaign 昨天的 spend 报表，沿用当前已选择的账户",
+      "需要按 Campaign 汇总，不要查询公开网页"
+    ],
+    "input": "再按状态筛选，只看 PAUSED 的 Campaign",
+    "expected_behavior": "延续报表任务和 Meta 范围，不改成 Campaign 列表查询或网页搜索。",
+    "assertions": {
+      "required_tools": ["meta_get_campaign_report"],
+      "forbidden_tools": ["meta_list_campaigns", "agent_web_search", "agent_knowledge_search"],
+      "max_tool_calls": 2
+    }
+  },
+  {
+    "id": "holdout-account-list-is-not-web-search",
+    "input": "List the Google Ads accounts available in my connected test workspace, including account IDs and names; do not search the web.",
+    "expected_behavior": "查询已连接的 Google Ads 账户目录，不使用公开网页搜索。",
+    "assertions": {
+      "required_tools": ["google_list_customer_clients"],
+      "forbidden_tools": ["agent_web_search", "agent_knowledge_search", "google_list_campaigns"],
+      "max_tool_calls": 2
+    }
+  },
+  {
+    "id": "holdout-filter-refines-current-campaign-query",
+    "history": [
+      "查询 TikTok Campaign 列表",
+      "只显示 Campaign ID、名称和状态"
+    ],
+    "input": "再筛选一下，排除已删除状态",
+    "expected_behavior": "沿用 TikTok Campaign 列表范围，仅重新查询一次，不调用账户发现或网页搜索。",
+    "assertions": {
+      "required_tools": ["tiktok_list_campaigns"],
+      "forbidden_tools": ["tiktok_list_accounts", "agent_web_search", "agent_knowledge_search"],
+      "max_tool_calls": 1
+    }
+  },
+  {
+    "id": "holdout-topic-switch-does-not-reuse-provider-scope",
+    "history": [
+      "查询 Meta campaign 列表",
+      "把返回结果按状态分组"
+    ],
+    "input": "换一个主题，只从知识库解释 Google Ads 的智能出价原理，不读任何账户",
+    "expected_behavior": "切换到知识问答，不复用 Meta 账户或 Campaign 查询上下文。",
+    "assertions": {
+      "required_tools": ["agent_knowledge_search"],
+      "forbidden_tools": ["meta_list_campaigns", "google_list_campaigns", "agent_web_search"],
+      "max_tool_calls": 3
+    }
   }
 ]

@@ -47,7 +47,18 @@ class AdvertisingRunProjection:
             }
             complete_data = item.get("data")
             if isinstance(complete_data, Mapping):
-                result["data"] = dict(complete_data)
+                projected_data = dict(complete_data)
+                model_data = result.get("data")
+                query_summary = (
+                    model_data.get("query_summary")
+                    if isinstance(model_data, Mapping) else None
+                )
+                if (
+                    isinstance(query_summary, Mapping)
+                    and "query_summary" not in projected_data
+                ):
+                    projected_data["query_summary"] = dict(query_summary)
+                result["data"] = projected_data
                 if result.pop("output_truncated", False):
                     result["model_context_truncated"] = True
                     result["model_context_truncated_fields"] = result.pop(
