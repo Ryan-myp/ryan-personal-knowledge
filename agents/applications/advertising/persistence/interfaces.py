@@ -125,6 +125,9 @@ class PersistenceBackend(KnowledgeStorePort, Protocol):
     def list_conversation_messages(
         self, session_id: str, limit: int = 200,
     ) -> list[Any]: ...
+    def list_recent_user_messages(
+        self, session_id: str, limit: int = 128,
+    ) -> list[dict[str, str]]: ...
     def list_conversation_message_page(
         self, session_id: str, limit: int = 10,
         before_message_id: Optional[str] = None,

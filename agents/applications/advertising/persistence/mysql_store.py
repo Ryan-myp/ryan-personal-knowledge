@@ -252,6 +252,18 @@ class MySQLStore(AdAgentStore):
             for row in reversed(rows)
         ]
 
+    def list_recent_user_messages(
+        self, session_id: str, limit: int = 128,
+    ) -> list[dict[str, str]]:
+        rows = self._get_conn().execute(
+            """SELECT message_id, turn_id, SUBSTR(content, 1, 1200) AS content
+               FROM conversation_messages
+               WHERE session_id = ? AND role = 'user'
+               ORDER BY created_at DESC, message_id DESC LIMIT ?""",
+            (str(session_id), min(max(1, int(limit)), 128)),
+        ).fetchall()
+        return [dict(row) for row in reversed(rows)]
+
     def list_conversation_message_page(
         self,
         session_id: str,

@@ -92,6 +92,32 @@ class AgentStatePersistence:
             self._restore_messages(state, loaded)
         state.hydrated = True
 
+    def load_user_history(self, request: TurnRequest) -> tuple[AgentMessage, ...]:
+        loader = getattr(self.transcript_store, "load_user_history", None)
+        if not callable(loader) or not request.session_id:
+            return ()
+        try:
+            loaded = self._store_operation(
+                loader, "user history load failed", str(request.session_id),
+                tenant_id=str(request.tenant_id or "default"),
+                user_id=str(request.user_id or "anonymous"),
+                limit=128,
+            )
+            messages = tuple(
+                message for value in loaded[:128]
+                if (message := self.message_from_payload(value)) is not None
+                and message.role == "user"
+                and message.turn_id != request.turn_id
+            )
+            self._emit("conversation_recall_loaded", request, count=len(messages))
+            return messages
+        except Exception as error:
+            self._emit(
+                "conversation_recall_error", request,
+                error_type=type(error.__cause__ or error).__name__,
+            )
+            return ()
+
     def append_message(
         self,
         state: AgentState,

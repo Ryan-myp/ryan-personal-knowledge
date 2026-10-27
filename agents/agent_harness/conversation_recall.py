@@ -13,7 +13,21 @@ _STOPWORDS = frozenset({
     "above", "again", "and", "continue", "from", "please", "that",
     "the", "this", "with", "一下", "上面", "之前", "继续", "这个",
     "那些", "现在", "帮我", "我们", "怎么", "看看", "查询",
+    "广告", "分析", "数据", "问题", "计划", "内容", "投放",
 })
+_FOLLOWUP = re.compile(
+    r"继续|接着|之前|刚才|上面|前面|上述|那个|这个|再来|"
+    r"\b(?:continue|earlier|previous|above|again|follow[ -]?up)\b",
+    re.IGNORECASE,
+)
+
+
+def is_contextual_followup(text: str) -> bool:
+    return bool(_FOLLOWUP.search(str(text or "")))
+
+
+def has_recall_terms(text: str) -> bool:
+    return bool(_terms(text))
 
 
 def _terms(text: str) -> set[str]:
@@ -33,6 +47,8 @@ def relevant_user_requests(
     max_chars: int = 900,
 ) -> tuple[str, ...]:
     """Return relevant older requests; no provider output, authority or new facts."""
+    if not is_contextual_followup(current):
+        return ()
     query = _terms(current)
     if not query or limit <= 0 or max_chars <= 0:
         return ()
@@ -45,9 +61,13 @@ def relevant_user_requests(
         content = str(message.content or "").strip()
         if not content:
             continue
-        overlap = query & _terms(content)
-        if overlap:
-            ranked.append((len(overlap), index, content))
+        overlap = query & _terms(content[:1000] + " " + content[-1000:])
+        score = sum(
+            2 if token.isascii() and len(token) >= 4 else 1
+            for token in overlap
+        )
+        if score >= 2:
+            ranked.append((score, index, content))
     ranked.sort(key=lambda row: (row[0], row[1]), reverse=True)
     selected: list[str] = []
     remaining = max_chars

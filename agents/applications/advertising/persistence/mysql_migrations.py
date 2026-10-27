@@ -436,6 +436,15 @@ def migrate_26(conn):
     )
 
 
+def migrate_27(conn):
+    conn.executescript(_mysql_schema(
+        """
+        CREATE INDEX IF NOT EXISTS idx_conversation_user_history
+            ON conversation_messages(session_id, role, created_at);
+        """
+    ))
+
+
 MIGRATIONS = {
     1: migrate_1,
     2: migrate_2,
@@ -460,6 +469,7 @@ MIGRATIONS = {
     24: migrate_24,
     25: migrate_25,
     26: migrate_26,
+    27: migrate_27,
 }
 NOOP_VERSIONS = frozenset({4, 6, 8})
 

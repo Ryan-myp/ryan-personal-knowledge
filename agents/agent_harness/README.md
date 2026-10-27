@@ -85,6 +85,17 @@ retries, provider fallback for retryable failures, timeout signalling, streaming
 deltas and cumulative token budgets. Persistence, lease, idempotency and audit
 failures are returned as `recovery_required` with structured runtime signals.
 
+For topical follow-ups, the Harness first matches relevant old user requests
+from its working window. A store may additionally implement the optional
+`UserHistoryStore.load_user_history` port when that window no longer contains
+the earlier request. The advertising adapter checks session ownership and
+returns at most 128 user messages of 1200 characters each, without Tool results
+or assistant claims. One Run performs at most one archived lookup; topicless
+continuations and explicit new topics do not trigger it. Matching excerpts
+are advisory user context, never identity, account authority or Tool evidence.
+Archive failures emit an error type without text and leave the normal Run
+available. Deleting the session removes its archived context.
+
 `max_model_input_chars` bounds prepared messages plus Tool schemas (default
 256000 serialized characters). The model window evicts complete older user
 turns, never slices the current request, Tool arguments or system instructions,

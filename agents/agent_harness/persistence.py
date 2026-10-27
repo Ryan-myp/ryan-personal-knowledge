@@ -59,4 +59,12 @@ class TranscriptStore(Protocol):
     ) -> None: ...
 
 
-__all__ = ["IdempotencyStore", "TranscriptStore"]
+class UserHistoryStore(Protocol):
+    """Optional, bounded user-only history lookup; never returns Tool results."""
+
+    def load_user_history(
+        self, session_id: str, *, tenant_id: str, user_id: str, limit: int,
+    ) -> Sequence[AgentMessage]: ...
+
+
+__all__ = ["IdempotencyStore", "TranscriptStore", "UserHistoryStore"]

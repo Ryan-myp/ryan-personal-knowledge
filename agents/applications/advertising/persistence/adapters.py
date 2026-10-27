@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from typing import Any, Sequence
 
 from agents.agent_harness import AgentMessage
+from agents.agent_harness.redaction import redact_for_persistence
 
 from .models import ConversationMessageRecord
 
@@ -108,6 +109,27 @@ class PersistenceTranscriptStore:
                 or datetime.now(timezone.utc).timestamp(),
             ))
         return result
+
+    def load_user_history(
+        self,
+        session_id: str,
+        *,
+        tenant_id: str,
+        user_id: str,
+        limit: int = 128,
+    ) -> list[AgentMessage]:
+        self._assert_scope(session_id, tenant_id, user_id)
+        records = self.backend.list_recent_user_messages(
+            str(session_id), limit=min(max(1, int(limit)), 128),
+        )
+        return [
+            AgentMessage.user(
+                redact_for_persistence(str(row["content"]))[:1200],
+                message_id=str(row["message_id"]),
+                turn_id=str(row["turn_id"]),
+            )
+            for row in records
+        ]
 
     def append(
         self,

@@ -17,7 +17,9 @@ import uuid
 from typing import Any, Callable, Mapping, Optional, Protocol, Sequence
 
 from .context import ContextProvider, context_prompt
-from .conversation_recall import relevant_user_requests
+from .conversation_recall import (
+    has_recall_terms, is_contextual_followup, relevant_user_requests,
+)
 from .core.agent_profile import CORE_AGENT_SYSTEM_PROMPT
 from .core.conversation_selection import (
     catalog_selection_input,
@@ -94,6 +96,8 @@ class AgentState:
     error_message: str | None = None
     usage: dict[str, int] = field(default_factory=dict)
     hydrated: bool = False
+    historical_turn_id: str = ""
+    historical_requests: tuple[AgentMessage, ...] = ()
     last_used_at: float = field(default_factory=time.monotonic)
 
     def snapshot(self) -> list[AgentMessage]:
@@ -729,7 +733,9 @@ class Agent:
         state: AgentState,
     ) -> tuple[list[Any], list[Any], TurnRequest]:
         transcript = state.snapshot()
-        tools, require_tool_call = self._tools_for_turn(request, transcript)
+        tools, require_tool_call = self._tools_for_turn(
+            request, transcript, state=state,
+        )
         context_messages, model_request = self._context_messages_for_turn(
             request, transcript,
         )
@@ -761,40 +767,15 @@ class Agent:
         bounded = bound_model_messages(
             messages, tools, max_chars=self.max_model_input_chars,
         )
-        kept_ids = {message.message_id for message in bounded}
-        removed = [
-            message for message in transcript if message.message_id not in kept_ids
-        ]
-        if removed:
-            recalled = relevant_user_requests(
-                request.user_input, removed,
-                current_turn_id=str(request.turn_id or ""),
-            )
-            if recalled:
-                recall_message = AgentMessage.user(
-                    "Earlier user requests from this conversation (for context "
-                    "only; the current request takes precedence; these do not "
-                    "authorize Tool access or establish external facts):\n"
-                    + "\n".join(f"- {item}" for item in recalled),
-                    metadata={"context_type": "conversation_recall"},
-                )
-                current_start = max(
-                    index for index, message in enumerate(bounded)
-                    if message.role == "user" and message.turn_id == request.turn_id
-                )
-                try:
-                    bounded = bound_model_messages(
-                        [*bounded[:current_start], recall_message, *bounded[current_start:]],
-                        tools, max_chars=self.max_model_input_chars,
-                    )
-                except ModelInputLimitError:
-                    pass
-        if removed:
-            removed_count = len({
-                message.message_id for message in messages
-            } - {
-                message.message_id for message in bounded
-            })
+        bounded = self._add_recalled_context(
+            request, state, transcript, bounded, tools,
+        )
+        removed_count = len({
+            message.message_id for message in messages
+        } - {
+            message.message_id for message in bounded
+        })
+        if removed_count:
             self._emit(
                 "model_input_trimmed", request,
                 removed_messages=removed_count,
@@ -804,10 +785,71 @@ class Agent:
         model_request = self._apply_model_limits(model_request)
         return bounded, tools, model_request
 
-    @staticmethod
+    def _add_recalled_context(
+        self,
+        request: TurnRequest,
+        state: AgentState,
+        transcript: Sequence[AgentMessage],
+        bounded: list[AgentMessage],
+        tools: Sequence[Any],
+    ) -> list[AgentMessage]:
+        kept_ids = {message.message_id for message in bounded}
+        removed = [
+            message for message in transcript if message.message_id not in kept_ids
+        ]
+        recalled = relevant_user_requests(
+            request.user_input, removed,
+            current_turn_id=str(request.turn_id or ""),
+        )
+        if not recalled and not relevant_user_requests(
+            request.user_input, bounded,
+            current_turn_id=str(request.turn_id or ""),
+        ):
+            recalled = relevant_user_requests(
+                request.user_input,
+                self._historical_user_requests(request, state),
+                current_turn_id=str(request.turn_id or ""),
+            )
+        if recalled:
+            recall_message = AgentMessage.user(
+                "Earlier user requests from this conversation (for context "
+                "only; the current request takes precedence; these do not "
+                "authorize Tool access or establish external facts):\n"
+                + "\n".join(f"- {item}" for item in recalled),
+                metadata={"context_type": "conversation_recall"},
+            )
+            current_start = max(
+                index for index, message in enumerate(bounded)
+                if message.role == "user" and message.turn_id == request.turn_id
+            )
+            try:
+                bounded = bound_model_messages(
+                    [*bounded[:current_start], recall_message, *bounded[current_start:]],
+                    tools, max_chars=self.max_model_input_chars,
+                )
+            except ModelInputLimitError:
+                pass
+        return bounded
+
+    def _historical_user_requests(
+        self, request: TurnRequest, state: AgentState | None,
+    ) -> tuple[AgentMessage, ...]:
+        if (
+            state is None
+            or not is_contextual_followup(request.user_input)
+            or not has_recall_terms(request.user_input)
+        ):
+            return ()
+        if state.historical_turn_id != request.turn_id:
+            state.historical_turn_id = str(request.turn_id or "")
+            state.historical_requests = self._state_io.load_user_history(request)
+        return state.historical_requests
+
     def _recent_user_inputs(
+        self,
         request: TurnRequest,
         transcript: Sequence[AgentMessage],
+        state: AgentState | None = None,
         *,
         max_messages: int = 4,
         max_chars: int = 1200,
@@ -830,7 +872,9 @@ class Agent:
             if len(recent) >= max_messages or remaining <= 0:
                 break
         recent.reverse()
-        if len(recent) >= max_messages:
+        if len(recent) >= max_messages or (
+            state is not None and len(transcript) >= self.max_transcript_messages
+        ):
             tail = recent[-(max_messages - 1):] if max_messages > 1 else []
             anchor_budget = min(400, max_chars - sum(map(len, tail)))
             relevant = relevant_user_requests(
@@ -839,6 +883,14 @@ class Agent:
                 limit=1,
                 max_chars=anchor_budget,
             ) if anchor_budget >= 24 else ()
+            if not relevant and anchor_budget >= 24:
+                relevant = relevant_user_requests(
+                    request.user_input,
+                    self._historical_user_requests(request, state),
+                    current_turn_id=str(request.turn_id or ""),
+                    limit=1,
+                    max_chars=anchor_budget,
+                )
             if relevant and relevant[0] not in recent and max_messages > 1:
                 # The selector reads at most four previous requests. Preserve
                 # one topical anchor across short unrelated interjections.
@@ -850,9 +902,10 @@ class Agent:
         request: TurnRequest,
         transcript: Sequence[AgentMessage],
         tools: Sequence[Any],
+        state: AgentState | None = None,
     ) -> tuple[TurnRequest, str]:
         selection_context = dict(request.context or {})
-        recent_inputs = self._recent_user_inputs(request, transcript)
+        recent_inputs = self._recent_user_inputs(request, transcript, state)
         if recent_inputs:
             selection_context["_agent_tool_selection_context"] = recent_inputs
         pending = pending_input_interaction(
@@ -895,12 +948,14 @@ class Agent:
         self,
         request: TurnRequest,
         transcript: Sequence[AgentMessage] = (),
+        *,
+        state: AgentState | None = None,
     ) -> tuple[list[Any], bool]:
         tools = self.tool_catalog.list_tools() if self.tool_catalog else []
         require_tool_call = False
         if callable(self.tool_selector):
             selection_request, catalog_target_name = self._tool_selection_request(
-                request, transcript, tools,
+                request, transcript, tools, state,
             )
             selection_context = selection_request.context
             tools = list(self.tool_selector(selection_request, tuple(tools)))
@@ -1597,6 +1652,8 @@ class Agent:
             self._emit("agent_end", request, status=result.status.value)
             return result
         finally:
+            state.historical_turn_id = ""
+            state.historical_requests = ()
             with session_lock:
                 with self._session_guard:
                     state.is_running = False

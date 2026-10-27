@@ -2306,6 +2306,11 @@ class AdAgentStore:
     ) -> List[ConversationMessageRecord]:
         return self._sessions.list_conversation_messages(session_id, limit)
 
+    def list_recent_user_messages(
+        self, session_id: str, limit: int = 128,
+    ) -> list[dict[str, str]]:
+        return self._sessions.list_recent_user_messages(session_id, limit)
+
     def list_conversation_message_page(
         self,
         session_id: str,

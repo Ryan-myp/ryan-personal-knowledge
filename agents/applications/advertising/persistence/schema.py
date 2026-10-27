@@ -1,6 +1,6 @@
 """Canonical persistence schema shared by SQL backend adapters."""
 
-SCHEMA_VERSION = 26
+SCHEMA_VERSION = 27
 DATABASE_SCHEMA = """
     CREATE TABLE IF NOT EXISTS schema_migrations (
         version INTEGER PRIMARY KEY,
@@ -227,6 +227,8 @@ DATABASE_SCHEMA = """
         ON conversation_messages(session_id, created_at);
     CREATE INDEX IF NOT EXISTS idx_conversation_messages_turn_history
         ON conversation_messages(session_id, turn_id, created_at, message_id);
+    CREATE INDEX IF NOT EXISTS idx_conversation_user_history
+        ON conversation_messages(session_id, role, created_at);
     CREATE INDEX IF NOT EXISTS idx_knowledge_documents_scope
         ON knowledge_documents(tenant_id, status, updated_at DESC);
     CREATE UNIQUE INDEX IF NOT EXISTS uq_knowledge_documents_version
