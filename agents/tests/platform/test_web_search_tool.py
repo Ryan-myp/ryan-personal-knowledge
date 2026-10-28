@@ -492,6 +492,30 @@ def test_current_weather_query_selects_and_requires_web_search():
     assert not selector.requires_tool_call("深圳今天天气支持吗", selected)
 
 
+def test_web_search_followup_keeps_prior_subject_and_requires_a_fresh_lookup():
+    source = web_search_tool_source(
+        configuration_provider=_brave_configuration,
+        required_permission="ads.read",
+    )
+    tool = source.list_bindings()[0].definition
+    selector = ToolSelector()
+    followup = "你在网页上搜索一下"
+    context = ("Meta 有没有 Bid Multiplier？",)
+
+    selected = selector.select_relevant(
+        followup,
+        [tool],
+        conversation_context=context,
+    )
+
+    assert [item.name for item in selected] == ["agent_web_search"]
+    assert selector.requires_tool_call(
+        followup,
+        selected,
+        conversation_context=context,
+    )
+
+
 def test_open_source_lookup_prefers_web_search_over_google_ads_namespace():
     source = web_search_tool_source(
         configuration_provider=_brave_configuration,

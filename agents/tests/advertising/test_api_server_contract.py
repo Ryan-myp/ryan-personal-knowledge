@@ -2394,6 +2394,26 @@ def test_mermaid_inline_preview_has_readable_width_and_non_overlapping_zoom_cont
     assert "position: static" in styles
 
 
+def test_chat_svg_previews_are_sanitized_and_connected_to_agent_messages():
+    markdown = (
+        api_server.STATIC_PATH / "js" / "chat-markdown.js"
+    ).read_text(encoding="utf-8")
+    messages = (
+        api_server.STATIC_PATH / "js" / "chat-messages.js"
+    ).read_text(encoding="utf-8")
+    styles = (
+        api_server.STATIC_PATH / "css" / "chat-markdown.css"
+    ).read_text(encoding="utf-8")
+
+    assert "function sanitizeSvgSource(source)" in markdown
+    assert "USE_PROFILES: { svg: true }" in markdown
+    assert "FORBID_TAGS" in markdown and "foreignObject" in markdown
+    assert "removeUnsafeSvgReferences(sanitized)" in markdown
+    assert "renderSvgImages(" in messages
+    assert ".svg-image-preview-artwork svg" in styles
+    assert ".svg-image-source-details" in styles
+
+
 def test_chat_messages_embed_supported_facebook_video_links_in_replayed_history():
     messages = (
         api_server.STATIC_PATH / "js" / "chat-messages.js"

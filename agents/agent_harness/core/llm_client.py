@@ -804,6 +804,45 @@ class LLMClient:
         state: _CompletionState,
         request: Any,
     ) -> bool:
+        required_choice = getattr(request, "initial_tool_choice", None)
+        if (
+            not parsed.calls
+            and state.active_tools
+            and self._requires_tool_choice(required_choice)
+            and parsed.protocol_action not in {
+                "gateway_error",
+                "retry",
+                "retry_gateway",
+                "protocol_error",
+            }
+        ):
+            if state.attempt == 0:
+                state.attempt_messages = self._required_tool_choice_repair_messages(
+                    state.provider_messages,
+                )
+                if required_choice == "required" and len(state.active_tools) == 1:
+                    tool_name = str(
+                        self._tool_value(state.active_tools[0], "name", "") or ""
+                    )
+                    state.kwargs["tool_choice"] = {
+                        "type": "function",
+                        "function": {"name": tool_name},
+                    }
+                state.attempt += 1
+                logger.warning(
+                    "LLM returned no Tool call for a required Tool turn; "
+                    "retrying with the registered Tool contract"
+                )
+                return True
+
+            parsed.content = self._required_tool_choice_failure_message(request)
+            parsed.protocol_action = "normal"
+            logger.warning(
+                "LLM returned no Tool call after required Tool retry; "
+                "discarding unverified prose"
+            )
+            return False
+
         if parsed.protocol_action in {"retry", "retry_gateway"}:
             state.gateway_invalid_user_id |= (
                 parsed.protocol_action == "retry_gateway"
@@ -1147,6 +1186,57 @@ class LLMClient:
         else:
             repaired.insert(last_user_index, correction)
         return repaired
+
+    @staticmethod
+    def _requires_tool_choice(choice: Any) -> bool:
+        return choice == "required" or (
+            isinstance(choice, Mapping)
+            and choice.get("type") == "function"
+        )
+
+    @staticmethod
+    def _required_tool_choice_repair_messages(
+        messages: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """Retry a forced Tool turn without accepting a prose substitute."""
+        repaired = [dict(item) for item in messages]
+        correction = {
+            "role": "system",
+            "content": (
+                "The previous response did not call a Tool, but this turn has "
+                "a required Tool choice and registered Tool definitions are "
+                "available. Use the supplied Tool schema now, carrying forward "
+                "relevant identifiers and topic details from the conversation. "
+                "Do not claim a Tool is unregistered or unavailable when it is "
+                "listed. Do not replace the requested live lookup or action "
+                "with pretrained knowledge."
+            ),
+        }
+        last_user_index = next(
+            (
+                index for index in range(len(repaired) - 1, -1, -1)
+                if repaired[index].get("role") == "user"
+            ),
+            None,
+        )
+        if last_user_index is None:
+            repaired.append(correction)
+        else:
+            repaired.insert(last_user_index, correction)
+        return repaired
+
+    @staticmethod
+    def _required_tool_choice_failure_message(request: Any) -> str:
+        user_input = str(getattr(request, "user_input", "") or "")
+        if re.search(r"[\u3400-\u9fff]", user_input):
+            return (
+                "这轮没有成功调用请求所需的工具，因此没有执行查询或操作。"
+                "请重试。"
+            )
+        return (
+            "The required tool call did not succeed, so no query or action was "
+            "performed. Please retry."
+        )
 
     @staticmethod
     def _empty_response_repair_messages(

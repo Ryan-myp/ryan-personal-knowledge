@@ -191,6 +191,7 @@
 
             if (uiOptions?.insertBefore) container.insertBefore(msg, uiOptions.insertBefore);
             else container.appendChild(msg);
+            void renderSvgImages(msg.querySelector('.message-content-text'));
             if (type === 'agent') {
                 void renderMermaidDiagrams(
                     msg.querySelector('.message-content-text'),

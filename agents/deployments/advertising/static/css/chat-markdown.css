@@ -7,9 +7,17 @@ body .message .message-content-text {
 .message.agent:has(.mermaid-diagram) {
     align-self: stretch;
 }
+.message.agent:has(.svg-image-preview) {
+    align-self: stretch;
+}
 .message.agent:has(.mermaid-diagram) .message-content,
 .message.agent:has(.mermaid-diagram) .message-body,
 .message.agent:has(.mermaid-diagram) .message-content-text {
+    width: 100%;
+}
+.message.agent:has(.svg-image-preview) .message-content,
+.message.agent:has(.svg-image-preview) .message-body,
+.message.agent:has(.svg-image-preview) .message-content-text {
     width: 100%;
 }
 
@@ -56,6 +64,64 @@ body .message .message-content-text > :last-child { margin-bottom: 0; }
 }
 .message-content-text pre.mermaid-render-fallback[data-render-failure="restricted"]::before {
     content: "流程图超出安全限制，已保留原始源码";
+}
+.message-content-text pre.svg-render-fallback::before {
+    display: block;
+    margin-bottom: 8px;
+    color: var(--text-muted);
+    content: "SVG 图片暂时无法安全渲染，以下为原始源码";
+    font-family: inherit;
+    font-size: 12px;
+    line-height: 1.5;
+    white-space: normal;
+}
+.message-content-text pre.svg-render-fallback[data-render-failure="restricted"]::before {
+    content: "SVG 图片超出安全限制，已保留原始源码";
+}
+.svg-image-preview {
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 100%;
+    margin: 12px 0;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg-secondary);
+}
+.svg-image-preview-artwork {
+    max-width: 100%;
+    max-height: min(70vh, 720px);
+    overflow: auto;
+    padding: 12px;
+}
+.svg-image-preview-artwork svg {
+    display: block;
+    width: auto;
+    max-width: 100%;
+    height: auto;
+    max-height: min(70vh, 720px);
+    margin-inline: auto;
+}
+.svg-image-source-details {
+    border-top: 1px solid var(--border);
+    color: var(--text-secondary);
+    font-size: 12px;
+}
+.svg-image-source-details summary {
+    padding: 8px 12px;
+    cursor: pointer;
+    user-select: none;
+}
+.svg-image-source-details summary:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+}
+.svg-image-source-details pre {
+    max-height: 320px;
+    margin: 0;
+    overflow: auto;
+    border-top: 1px solid var(--border);
+    border-radius: 0;
 }
 .mermaid-diagram {
     position: relative;

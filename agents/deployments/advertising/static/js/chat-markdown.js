@@ -1,8 +1,31 @@
 const chatMarkdownRenderer = new marked.Renderer();
 const chatMarkdownTable = chatMarkdownRenderer.table;
 const chatMarkdownCode = chatMarkdownRenderer.code;
+const chatMarkdownParagraph = chatMarkdownRenderer.paragraph;
+
+function svgSourceRoot(source) {
+    let candidate = String(source || '').trim();
+    candidate = candidate.replace(/^<\?xml\s+[^?]*\?>\s*/i, '');
+    candidate = candidate.replace(/^(?:<!--[\s\S]*?-->\s*)+/, '');
+    if (!candidate || /^<!DOCTYPE\b|^<!ENTITY\b/i.test(candidate)) return '';
+
+    const hasSingleRoot = /^<svg\b[\s\S]*<\/svg\s*>$/i.test(candidate)
+        || /^<svg\b[^>]*\/\s*>$/i.test(candidate);
+    const rootTagCount = (candidate.match(/<\/?svg\b/gi) || []).length;
+    return hasSingleRoot && rootTagCount <= 2 ? candidate : '';
+}
+
+function svgSourceBlock(source) {
+    return `<pre class="svg-image-source"><code class="language-svg">${escapeHtml(source)}</code></pre>`;
+}
 
 chatMarkdownRenderer.html = ({ text }) => escapeHtml(text);
+chatMarkdownRenderer.paragraph = function (token) {
+    const source = svgSourceRoot(token.text);
+    return source
+        ? svgSourceBlock(source)
+        : chatMarkdownParagraph.call(this, token);
+};
 chatMarkdownRenderer.table = function (token) {
     const table = chatMarkdownTable.call(this, token)
         .replace('<table>', '<table class="data-table">');
@@ -11,6 +34,9 @@ chatMarkdownRenderer.table = function (token) {
 chatMarkdownRenderer.code = function (token) {
     const html = chatMarkdownCode.call(this, token);
     const language = String(token.lang || '').trim().split(/\s+/, 1)[0].toLowerCase();
+    if (language === 'svg' || svgSourceRoot(token.text)) {
+        return html.replace('<pre>', '<pre class="svg-image-source">');
+    }
     return language === 'mermaid'
         ? html.replace('<pre>', '<pre class="mermaid-source">')
         : html;
@@ -65,6 +91,122 @@ let mermaidLoadPromise = null;
 let mermaidInitializedApi = null;
 let mermaidRenderSequence = 0;
 let mermaidViewer = null;
+const MAX_SVG_SOURCE_LENGTH = 32000;
+const MAX_SVG_IMAGES_PER_MESSAGE = 8;
+
+function removeUnsafeSvgReferences(svg) {
+    return String(svg || '').replace(
+        /\s([a-z_:][\w:.-]*)\s*=\s*(["'])([\s\S]*?)\2/gi,
+        (attribute, name, _quote, value) => {
+            const normalizedName = name.toLowerCase();
+            if (normalizedName === 'style' || /^on/i.test(normalizedName)) return '';
+            if (normalizedName === 'href' || normalizedName === 'xlink:href') {
+                return /^#[\w:.-]+$/.test(value.trim()) ? attribute : '';
+            }
+            if (!/url\s*\(/i.test(value)) return attribute;
+
+            const references = Array.from(
+                value.matchAll(/url\(\s*(?:"([^"]*)"|'([^']*)'|([^)]*?))\s*\)/gi),
+            );
+            const allReferencesAreLocal = references.length > 0
+                && references.every(reference => {
+                    const target = String(reference[1] ?? reference[2] ?? reference[3] ?? '').trim();
+                    return /^#[\w:.-]+$/.test(target);
+                })
+                && !/url\s*\([^)]*$/i.test(value);
+            return allReferencesAreLocal ? attribute : '';
+        },
+    );
+}
+
+function sanitizeSvgSource(source) {
+    const root = svgSourceRoot(source);
+    if (!root || root.length > MAX_SVG_SOURCE_LENGTH) return '';
+    const sanitized = DOMPurify.sanitize(root, {
+        USE_PROFILES: { svg: true },
+        FORBID_TAGS: [
+            'script', 'foreignObject', 'image', 'a', 'use', 'style',
+            'animate', 'animateMotion', 'animateTransform', 'set',
+        ],
+        FORBID_ATTR: ['style'],
+        ALLOW_DATA_ATTR: false,
+    });
+    const safeSvg = removeUnsafeSvgReferences(sanitized).trim();
+    return /<svg(?:\s|\/?>)/i.test(safeSvg)
+        && (/<\/svg\s*>/i.test(safeSvg) || /<svg\b[^>]*\/\s*>/i.test(safeSvg))
+        ? safeSvg
+        : '';
+}
+
+function keepSvgSource(code, message, failureKind = 'syntax') {
+    const pre = code?.parentElement;
+    pre?.classList?.add('svg-render-fallback');
+    pre?.setAttribute?.('data-render-failure', failureKind);
+    if (message) pre?.setAttribute?.('title', message);
+}
+
+function createSvgSourceDisclosure(source) {
+    const details = document.createElement('details');
+    details.className = 'svg-image-source-details';
+    const summary = document.createElement('summary');
+    summary.textContent = '查看 SVG 源码';
+    const pre = document.createElement('pre');
+    const code = document.createElement('code');
+    code.className = 'language-svg';
+    code.textContent = source;
+    pre.appendChild(code);
+    details.appendChild(summary);
+    details.appendChild(pre);
+    return details;
+}
+
+async function renderSvgImages(root) {
+    if (!root?.querySelectorAll) return 0;
+    const codeBlocks = Array.from(
+        root.querySelectorAll('pre.svg-image-source > code'),
+    );
+    if (!codeBlocks.length) return 0;
+
+    let renderedCount = 0;
+    for (const code of codeBlocks.slice(0, MAX_SVG_IMAGES_PER_MESSAGE)) {
+        const pre = code.parentElement;
+        if (!pre?.replaceWith) continue;
+        const source = String(code.textContent || '').trim();
+        if (!source || source.length > MAX_SVG_SOURCE_LENGTH) {
+            keepSvgSource(code, 'SVG 内容超出安全限制，已保留源码。', 'restricted');
+            continue;
+        }
+
+        try {
+            const svg = sanitizeSvgSource(source);
+            if (!svg) throw new Error('SVG source was invalid or unsafe');
+
+            const preview = document.createElement('div');
+            preview.className = 'svg-image-preview';
+            preview.setAttribute('role', 'group');
+            preview.setAttribute('aria-label', 'SVG 图片预览');
+            const artwork = document.createElement('div');
+            artwork.className = 'svg-image-preview-artwork';
+            artwork.innerHTML = svg;
+            preview.appendChild(artwork);
+            preview.appendChild(createSvgSourceDisclosure(source));
+            pre.replaceWith(preview);
+            renderedCount += 1;
+        } catch (_error) {
+            keepSvgSource(
+                code,
+                'SVG 图片无法安全渲染，已保留原始源码。',
+                'syntax',
+            );
+            console.warn('SVG preview rendering failed; original source was kept.');
+        }
+    }
+
+    codeBlocks.slice(MAX_SVG_IMAGES_PER_MESSAGE).forEach(code => {
+        keepSvgSource(code, '单条消息中的 SVG 图片数量超出限制，已保留源码。', 'restricted');
+    });
+    return renderedCount;
+}
 
 function createMermaidViewerButton(className, label, text, onClick) {
     const button = document.createElement('button');

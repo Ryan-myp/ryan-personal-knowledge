@@ -201,19 +201,154 @@ def test_llm_client_implements_generic_harness_model_tool_call_contract():
     assert result.usage["output_tokens"] == 7
 
 
-def test_llm_client_honors_required_initial_tool_choice():
+@pytest.mark.parametrize(
+    ("user_input", "expected_message", "unavailable_claim"),
+    [
+        (
+            "Create from the selected blueprint.",
+            "required tool call did not succeed",
+            "not registered",
+        ),
+        (
+            "请搜索 Meta 的 Bid Multiplier。",
+            "没有成功调用请求所需的工具",
+            "未注册",
+        ),
+    ],
+)
+def test_llm_client_does_not_accept_plain_text_for_required_tool_choice(
+    user_input,
+    expected_message,
+    unavailable_claim,
+):
     client, completions = _client(SimpleNamespace(content="", tool_calls=[]))
 
-    client.complete(
-        [AgentMessage.user("Create from the selected blueprint.")],
+    result = client.complete(
+        [AgentMessage.user(user_input)],
         [_tool()],
         TurnRequest(
-            user_input="Create from the selected blueprint.",
+            user_input=user_input,
             initial_tool_choice="required",
         ),
     )
 
     assert completions.requests[0]["tool_choice"] == "required"
+    assert completions.requests[1]["tool_choice"] == {
+        "type": "function",
+        "function": {"name": "lookup_record"},
+    }
+    assert not result.tool_calls
+    assert expected_message in result.content
+    assert unavailable_claim not in result.content
+    assert "请补充必要信息" not in result.content
+
+
+def test_llm_client_retries_a_required_tool_call_instead_of_claiming_missing_tool():
+    rejected = SimpleNamespace(
+        content="当前没有注册 lookup_record，无法执行。",
+        tool_calls=[],
+    )
+    accepted = SimpleNamespace(
+        content="",
+        tool_calls=[SimpleNamespace(
+            id="lookup-call",
+            function=SimpleNamespace(
+                name="lookup_record",
+                arguments='{"record_id":"r-17"}',
+            ),
+        )],
+    )
+    completions = _QueuedCompletions(*(
+        SimpleNamespace(
+            choices=[SimpleNamespace(message=message, finish_reason="stop")],
+            usage=SimpleNamespace(prompt_tokens=2, completion_tokens=1),
+        )
+        for message in (rejected, accepted)
+    ))
+    client = LLMClient(model="test-model", api_key="test-only")
+    client._client = SimpleNamespace(
+        chat=SimpleNamespace(completions=completions),
+    )
+
+    result = client.complete(
+        [AgentMessage.user("Find record r-17.")],
+        [_tool()],
+        TurnRequest(
+            user_input="Find record r-17.",
+            initial_tool_choice="required",
+        ),
+    )
+
+    assert [call.name for call in result.tool_calls] == ["lookup_record"]
+    assert result.tool_calls[0].arguments == {"record_id": "r-17"}
+    assert len(completions.requests) == 2
+    retry = completions.requests[1]
+    assert retry["tool_choice"] == {
+        "type": "function",
+        "function": {"name": "lookup_record"},
+    }
+    assert any(
+        "previous response did not call a Tool" in str(item.get("content", ""))
+        for item in retry["messages"]
+    )
+
+
+def test_llm_client_stream_retries_when_required_tool_turn_returns_only_text():
+    first_attempt = [SimpleNamespace(choices=[SimpleNamespace(
+        delta=SimpleNamespace(
+            content="agent_web_search is not registered, so I cannot search.",
+            tool_calls=[],
+        ),
+        finish_reason="stop",
+    )])]
+    second_attempt = [SimpleNamespace(choices=[SimpleNamespace(
+        delta=SimpleNamespace(
+            content="",
+            tool_calls=[SimpleNamespace(
+                index=0,
+                id="web-search-call",
+                function=SimpleNamespace(
+                    name="lookup_record",
+                    arguments='{"record_id":"r-17"}',
+                ),
+            )],
+        ),
+        finish_reason="tool_calls",
+    )])]
+
+    class _QueuedStreamingCompletions:
+        def __init__(self):
+            self.responses = [first_attempt, second_attempt]
+            self.requests = []
+
+        def create(self, **kwargs):
+            self.requests.append(kwargs)
+            index = min(len(self.requests) - 1, len(self.responses) - 1)
+            return iter(self.responses[index])
+
+    completions = _QueuedStreamingCompletions()
+    client = LLMClient(model="test-model", api_key="test-only")
+    client._client = SimpleNamespace(
+        chat=SimpleNamespace(completions=completions),
+    )
+
+    events = list(client.stream(
+        [AgentMessage.user("Search the web for record r-17.")],
+        [_tool()],
+        TurnRequest(
+            user_input="Search the web for record r-17.",
+            initial_tool_choice="required",
+        ),
+    ))
+
+    turns = [event for event in events if isinstance(event, ModelTurn)]
+    assert len(turns) == 1
+    assert [call.name for call in turns[0].tool_calls] == ["lookup_record"]
+    assert turns[0].tool_calls[0].arguments == {"record_id": "r-17"}
+    assert [request["tool_choice"] for request in completions.requests] == [
+        "required",
+        {"type": "function", "function": {"name": "lookup_record"}},
+    ]
 
 
 def test_llm_tool_schema_omits_system_managed_hidden_fields():

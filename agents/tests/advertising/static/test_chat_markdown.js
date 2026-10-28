@@ -101,6 +101,7 @@ const context = {
         '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
     })[character]),
 };
+const defaultDomPurify = context.DOMPurify;
 vm.runInNewContext(fs.readFileSync(path.join(scripts, 'chat-markdown.js'), 'utf8'), context, {
     filename: path.join(scripts, 'chat-markdown.js'),
 });
@@ -118,6 +119,24 @@ test('fenced code preserves line breaks and literal markdown', () => {
     const html = context.formatContent('```text\n## literal heading\n**literal bold**\nbudget = 50\n```');
     assert.match(html, /<pre><code[^>]*>## literal heading\n\*\*literal bold\*\*\nbudget = 50\n<\/code><\/pre>/);
     assert.doesNotMatch(html, /<h2>|<strong>/);
+});
+
+test('SVG code fences remain marked for safe inline preview rendering', () => {
+    const source = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><circle cx="5" cy="5" r="4"/></svg>';
+    const html = context.formatContent(`\`\`\`svg\n${source}\n\`\`\``);
+
+    assert.match(html, /<pre class="svg-image-source"><code class="language-svg">/);
+    assert.match(html, /&lt;svg xmlns=/);
+    assert.doesNotMatch(html, /<svg\b/);
+});
+
+test('standalone SVG markup in a Markdown HTML block becomes a marked source block', () => {
+    const source = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><path d="M0 0L10 10"/></svg>';
+    const html = context.formatContent(source);
+
+    assert.match(html, /<pre class="svg-image-source"><code class="language-svg">/);
+    assert.match(html, /&lt;svg xmlns=/);
+    assert.doesNotMatch(html, /<svg\b/);
 });
 
 test('escaped newlines in prose render as Markdown line breaks', () => {
@@ -220,6 +239,112 @@ test('Mermaid flowcharts render with strict settings and sanitized SVG', async (
     assert.ok(svgSanitizerOptions.ADD_TAGS.includes('foreignObject'));
     assert.equal(svgSanitizerOptions.HTML_INTEGRATION_POINTS.foreignobject, true);
     delete context.window;
+    delete context.document;
+});
+
+test('SVG code blocks render an accessible preview after DOMPurify sanitization', async () => {
+    const source = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><path d="M0 0L10 10" onload="alert(1)" style="fill:url(https://example.test/x.svg#paint)"/><script>alert(1)</script></svg>';
+    const sanitized = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><path d="M0 0L10 10"/></svg>';
+    let sanitizerInput = '';
+    let sanitizerOptions = null;
+    context.DOMPurify = {
+        sanitize(html, options) {
+            sanitizerInput = html;
+            sanitizerOptions = options;
+            sanitizerCalls.push({ html, options });
+            return sanitized;
+        },
+    };
+    context.document = {
+        createElement(tagName) { return new MockElement(tagName); },
+    };
+    const pre = {
+        classList: { add(name) { this[name] = true; } },
+        setAttribute(name, value) { this[name] = value; },
+        replaceWith(element) { this.replacedWith = element; },
+    };
+    const code = {
+        className: 'language-svg',
+        textContent: source,
+        parentElement: pre,
+    };
+    const root = {
+        querySelectorAll(selector) {
+            return selector === 'pre.svg-image-source > code' ? [code] : [];
+        },
+    };
+
+    const count = await context.renderSvgImages(root);
+
+    assert.equal(count, 1);
+    assert.equal(sanitizerInput, source);
+    assert.equal(sanitizerOptions.USE_PROFILES.svg, true);
+    assert.equal(sanitizerOptions.USE_PROFILES.svgFilters, undefined);
+    assert.ok(sanitizerOptions.FORBID_TAGS.includes('script'));
+    assert.ok(sanitizerOptions.FORBID_TAGS.includes('foreignObject'));
+    assert.ok(sanitizerOptions.FORBID_ATTR.includes('style'));
+    assert.equal(pre.replacedWith.className, 'svg-image-preview');
+    assert.equal(pre.replacedWith.attributes.role, 'group');
+    const artwork = pre.replacedWith.children.find(
+        child => child.className === 'svg-image-preview-artwork',
+    );
+    assert.equal(artwork.innerHTML, sanitized);
+    const sourceDetails = pre.replacedWith.children.find(
+        child => child.className === 'svg-image-source-details',
+    );
+    assert.ok(sourceDetails, 'the original source remains available in a disclosure');
+    assert.equal(sourceDetails.children[1].children[0].textContent, source);
+    context.DOMPurify = defaultDomPurify;
+    delete context.document;
+});
+
+test('SVG preview rejects external references and preserves invalid source', async () => {
+    const source = '<svg xmlns="http://www.w3.org/2000/svg"><path onload="alert(1)" style="fill:red" fill="url(https://example.test/a.svg#paint)" href="https://example.test/remote.svg"/></svg>';
+    context.DOMPurify = {
+        sanitize(html, options) {
+            sanitizerCalls.push({ html, options });
+            return html;
+        },
+    };
+    context.document = { createElement: tagName => new MockElement(tagName) };
+    const pre = {
+        attributes: {},
+        classList: { add(name) { this[name] = true; } },
+        setAttribute(name, value) { this.attributes[name] = value; },
+        replaceWith(element) { this.replacedWith = element; },
+    };
+    const code = { className: 'language-svg', textContent: source, parentElement: pre };
+    const root = {
+        querySelectorAll: selector => selector === 'pre.svg-image-source > code' ? [code] : [],
+    };
+
+    const count = await context.renderSvgImages(root);
+
+    assert.equal(count, 1);
+    const preview = pre.replacedWith.children[0].innerHTML;
+    assert.doesNotMatch(preview, /https:\/\/example\.test/);
+    assert.doesNotMatch(preview, /href=/i);
+    assert.doesNotMatch(preview, /onload=|style=/i);
+
+    const invalidPre = {
+        attributes: {},
+        classList: { add(name) { this[name] = true; } },
+        setAttribute(name, value) { this.attributes[name] = value; },
+        replaceWith() { assert.fail('invalid SVG source must remain visible'); },
+    };
+    const invalidCode = {
+        className: 'language-svg',
+        textContent: '<svg><path></svg> trailing text',
+        parentElement: invalidPre,
+    };
+    const invalidCount = await context.renderSvgImages({
+        querySelectorAll: selector => selector === 'pre.svg-image-source > code'
+            ? [invalidCode]
+            : [],
+    });
+    assert.equal(invalidCount, 0);
+    assert.equal(invalidPre.attributes['data-render-failure'], 'syntax');
+    context.DOMPurify = defaultDomPurify;
     delete context.document;
 });
 
