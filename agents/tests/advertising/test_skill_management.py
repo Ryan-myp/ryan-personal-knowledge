@@ -40,6 +40,8 @@ def test_builtin_skill_catalog_lists_standard_packages_as_read_only():
         "ad-growth-operations", "growth-strategy", "seo-growth",
         "generative-search-visibility",
         "competitor-research", "influencer-partnerships",
+        "referral-growth", "lifecycle-retention", "content-distribution",
+        "offer-economics",
     }
     assert all(item["source"] == "builtin" and item["editable"] is False for item in items)
     detail = catalog.get_version("google-ads-api-expert", "2.0.3")
@@ -80,6 +82,18 @@ def test_builtin_skill_catalog_lists_standard_packages_as_read_only():
     influencer = catalog.get_version("influencer-partnerships", "1.0.0")
     assert influencer["location"] == "practices/influencer-partnerships"
     assert "references/creator-evaluation.md" in influencer["files"]
+    referral_growth = catalog.get_version("referral-growth", "1.0.0")
+    assert referral_growth["location"] == "practices/referral-growth"
+    assert "references/referral-unit-economics.md" in referral_growth["files"]
+    lifecycle = catalog.get_version("lifecycle-retention", "1.0.0")
+    assert lifecycle["location"] == "practices/lifecycle-retention"
+    assert "references/lifecycle-measurement.md" in lifecycle["files"]
+    content_distribution = catalog.get_version("content-distribution", "1.0.0")
+    assert content_distribution["location"] == "practices/content-distribution"
+    assert "references/content-portfolio.md" in content_distribution["files"]
+    offer_economics = catalog.get_version("offer-economics", "1.0.0")
+    assert offer_economics["location"] == "practices/offer-economics"
+    assert "references/offer-unit-economics.md" in offer_economics["files"]
     copywriting = catalog.get_version("ad-copywriting", "1.0.1")
     assert copywriting["location"] == "practices/ad-copywriting"
     assert "references/ad-copy-brief.md" in copywriting["files"]
@@ -380,6 +394,12 @@ def test_app_growth_and_recurring_loop_skills_are_context_only():
             assert f"[skill guidance: {name}]" in context
             assert reference in context
             assert boundary in context
+
+        ad_management_context = runtime.tool_selector._triggered_skill_context(
+            "查询 Google Ads campaign 列表以及每个 campaign 的预算"
+        )
+        for name, _request, _reference, _boundary in cases:
+            assert f"[skill guidance: {name}]" not in ad_management_context
     finally:
         runtime.close(wait=True)
 
@@ -576,6 +596,50 @@ def test_builtin_measurement_skills_are_advisory_and_select_relevant_references(
                 "检查 conversion tracking QA，排查事件丢失、重复上报、GA4/平台回传差异和 PII",
                 "references/conversion-qa-runbook.md",
                 "不配置或执行外部 tracking",
+            ),
+        )
+
+        for name, request, reference, boundary in cases:
+            skill = runtime.skill_loader.get(name)
+            assert skill is not None, name
+            assert skill.get_tools() == [], name
+
+            context = runtime.tool_selector._triggered_skill_context(request)
+
+            assert f"[skill guidance: {name}]" in context
+            assert reference in context
+            assert boundary in context
+    finally:
+        runtime.close(wait=True)
+
+
+def test_builtin_growth_skills_are_advisory_and_select_relevant_references():
+    runtime = AdvertisingComposition(require_llm=False, offline_mode=True)
+    try:
+        cases = (
+            (
+                "referral-growth",
+                "设计老客户邀请新客户的 referral program，并核算奖励成本和增量 CAC",
+                "references/referral-unit-economics.md",
+                "不触发奖励、支付、外联",
+            ),
+            (
+                "lifecycle-retention",
+                "用户注册后 activation rate 低、次月 retention 下滑，设计 onboarding 和 win-back 实验",
+                "references/lifecycle-measurement.md",
+                "不发送消息、不修改用户记录",
+            ),
+            (
+                "content-distribution",
+                "规划下季度 content strategy，安排主题集群和 organic social 内容复用",
+                "references/content-portfolio.md",
+                "不自动发布或安排内容",
+            ),
+            (
+                "offer-economics",
+                "评估这个电商广告折扣 offer 的毛利成本和 break-even CAC",
+                "references/offer-unit-economics.md",
+                "不修改广告预算、商品价格、网站、优惠码或平台促销",
             ),
         )
 

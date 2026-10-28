@@ -75,6 +75,10 @@ SKILL.md，而由对应 Tool Source 在 Registry 中注册。
 | `aso` 2.0.2 | `practices/app-growth`：商店页与广告主张匹配、经官方只读 Tool 查询公开 iOS 商店元数据、页面审查和安装后 cohort 诊断 | 商店抓取、App Store Connect/Google Play Console 私有数据或修改、把公开评分当作广告/下载/留存表现 |
 | `competitor-profiling`、`competitors` | `practices/competitor-research`：公开来源证据分级、竞品定位/方案比较、按日期核对动态事实和机会假设 | 登录/付费墙绕过、私有 API、臆测竞品缺失功能/业绩、自动制作或发布比较页 |
 | `influencer-marketing` | `practices/influencer-partnerships`：创作者受众匹配、合作模型、内容权益/披露、上线前测量和复盘 | 自动外联、签约/付款、无授权的白名单/发布、把粉丝数或 EMV 当成增量收入 |
+| `referrals`、`marketing-loops` | `practices/referral-growth`：老带新、联盟计划、推荐漏斗、单位经济、反作弊和增量实验 | 奖励支付、客户导入、外联、联盟账户操作和把归因当作因果增量 |
+| `onboarding`、`churn-prevention`、`emails` | `practices/lifecycle-retention`：激活、留存、复购、召回、生命周期触达契约和 cohort 评估 | CRM/邮件/推送执行、用户级行为数据或未经验证的流失预测 |
+| `content-strategy`、`social` | `practices/content-distribution`：内容主题组合、自然分发、跨渠道改写和业务衡量 | 自动发布/排期、登录态社媒监听、复制平台脚本与动态规格 |
+| `pricing`、`offers` | `practices/offer-economics`：优惠设计、价格呈现、贡献毛利、盈亏平衡和促销实验 | 改价/发券、虚假稀缺或效果承诺、无来源的利润/转化基准 |
 | `marketing-loops` 1.4.0 | `practices/ad-growth-operations`：检查频率与动作条件分离、循环契约、跨运行去重需求、失败停止和人工审批 | 将通用定时任务包装成第二套 Runtime、自动调预算/暂停/轮换或跨运行状态能力 |
 | Marketplace `copywriting`、`paid-ads`、`ad-creative`、`marketing-psychology` | `practices/ad-copywriting` 的广告文案 brief、主张证据、变体设计与伦理说服约束 | 虚构产品主张/社会证明、操纵性紧迫感、未经验证的平台规格和素材发布 |
 | Marketplace `page-cro`、`copywriting`、`paid-ads` | `practices/paid-landing-page-review` 的付费流量消息匹配、页面证据审查与可验证测试 | 未授权网页抓取、分析系统接入、页面修改及无来源的转化提升承诺 |
@@ -120,6 +124,13 @@ Property 发现、metadata 和聚合报告；`marketing:search-console` 提供�
 去重 QA；更新归因、SEO/GEO 与增长循环对 GA4/GSC 的数据边界。新增 `competitor-research` 与
 `influencer-partnerships` 两个 advisory Skills，依赖已注册的公开搜索/抓取能力和用户提供资料；
 它们不增加外联、签约、支付、素材授权或发布 Tool。
+
+2026-10-28 补齐推荐、留存、内容分发与优惠经济性：把本机 `referrals`、`onboarding`、
+`churn-prevention`、`emails`、`content-strategy`、`social`、`pricing` 和 `offers` 方法重新
+整理为 `referral-growth`、`lifecycle-retention`、`content-distribution` 与 `offer-economics`。
+新增内容只提供 advisory 工作流；用户可以用已授权的广告聚合报表或上传的 CSV/XLSX 提供证据。
+当前没有 CRM、邮件、推荐结算、社媒发布或促销执行连接器；本机上游技能包未附独立许可证文件，
+项目只保留来源归属并以中文重新撰写方法，没有复制原文、脚本、评测或素材。
 
 ## 跨渠道 Campaign 管理
 
