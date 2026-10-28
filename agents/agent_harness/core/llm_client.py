@@ -383,12 +383,7 @@ class LLMClient:
             return ModelTurn(
                 content=parsed.content,
                 tool_calls=parsed.calls,
-                stop_reason=(
-                    "tool_call" if parsed.calls
-                    else str(
-                        getattr(parsed.choice, "finish_reason", None) or "stop"
-                    )
-                ),
+                stop_reason=self._normalized_stop_reason(parsed),
                 usage=state.usage_totals,
             )
 
@@ -427,12 +422,7 @@ class LLMClient:
             turn = ModelTurn(
                 content=parsed.content,
                 tool_calls=parsed.calls,
-                stop_reason=(
-                    "tool_call" if parsed.calls
-                    else str(
-                        getattr(parsed.choice, "finish_reason", None) or "stop"
-                    )
-                ),
+                stop_reason=self._normalized_stop_reason(parsed),
                 usage=state.usage_totals,
             )
             yield turn
@@ -505,7 +495,14 @@ class LLMClient:
         initial_tool_choice = getattr(request, "initial_tool_choice", None)
         if provider_tools:
             kwargs["tools"] = provider_tools
-            kwargs["tool_choice"] = initial_tool_choice or "auto"
+            one_tool_choice = (
+                self._named_tool_choice(active_tools[0])
+                if initial_tool_choice == "required" and len(active_tools) == 1
+                else None
+            )
+            kwargs["tool_choice"] = (
+                one_tool_choice or initial_tool_choice or "auto"
+            )
         elif initial_tool_choice == "required":
             raise LLMStructuredOutputError(
                 "A Tool call was required, but no Tools are available"
@@ -821,13 +818,9 @@ class LLMClient:
                     state.provider_messages,
                 )
                 if required_choice == "required" and len(state.active_tools) == 1:
-                    tool_name = str(
-                        self._tool_value(state.active_tools[0], "name", "") or ""
+                    state.kwargs["tool_choice"] = self._named_tool_choice(
+                        state.active_tools[0],
                     )
-                    state.kwargs["tool_choice"] = {
-                        "type": "function",
-                        "function": {"name": tool_name},
-                    }
                 state.attempt += 1
                 logger.warning(
                     "LLM returned no Tool call for a required Tool turn; "
@@ -836,7 +829,7 @@ class LLMClient:
                 return True
 
             parsed.content = self._required_tool_choice_failure_message(request)
-            parsed.protocol_action = "normal"
+            parsed.protocol_action = "required_tool_failed"
             logger.warning(
                 "LLM returned no Tool call after required Tool retry; "
                 "discarding unverified prose"
@@ -1193,6 +1186,22 @@ class LLMClient:
             isinstance(choice, Mapping)
             and choice.get("type") == "function"
         )
+
+    @classmethod
+    def _named_tool_choice(cls, tool: Any) -> dict[str, Any]:
+        name = str(cls._tool_value(tool, "name", "") or "")
+        return {"type": "function", "function": {"name": name}}
+
+    @staticmethod
+    def _normalized_stop_reason(parsed: _ParsedCompletion) -> str:
+        if parsed.protocol_action == "required_tool_failed":
+            return "required_tool_failed"
+        if parsed.calls:
+            return "tool_call"
+        reason = str(getattr(parsed.choice, "finish_reason", None) or "stop")
+        if reason.casefold() in {"tool_calls", "function_call"}:
+            return "stop"
+        return reason
 
     @staticmethod
     def _required_tool_choice_repair_messages(

@@ -1505,6 +1505,8 @@ class Agent:
                         if isinstance(item.get("runtime_signals"), Mapping)
                         for key, value in item["runtime_signals"].items()
                     }
+                    if model_turn.stop_reason == "required_tool_failed":
+                        runtime_signals["required_tool_call_failed"] = True
                     if not checkpoint_ok:
                         runtime_signals["checkpoint_error"] = True
                     terminal_status = (
@@ -1514,7 +1516,11 @@ class Agent:
                         if tool_cancelled
                         else RunStatus.FAILED
                         if tool_budget_exceeded
-                        or model_turn.stop_reason in {"error", "policy_blocked"}
+                        or model_turn.stop_reason in {
+                            "error",
+                            "policy_blocked",
+                            "required_tool_failed",
+                        }
                         or non_retriable_tool_failure
                         or any(
                             isinstance(item.get("runtime_signals"), Mapping)

@@ -167,6 +167,31 @@ def test_initial_tool_choice_applies_only_to_first_model_turn():
     assert model.choices == ["required", None]
 
 
+def test_agent_marks_a_missing_required_tool_call_as_failed():
+    class MissingToolCallModel:
+        def complete(self, _messages, _tools, _request):
+            return ModelTurn(
+                content="The required tool call did not succeed.",
+                stop_reason="required_tool_failed",
+            )
+
+    catalog = InMemoryToolCatalog()
+    catalog.register_source(StaticToolSource(
+        "lookup",
+        [ToolBinding({"name": "lookup_record"}, EchoTool())],
+    ))
+    agent = Agent(model=MissingToolCallModel(), tool_catalog=catalog)
+
+    result = agent.run(TurnRequest(
+        user_input="Look up record r-17.",
+        initial_tool_choice="required",
+    ))
+
+    assert result.status.value == "failed"
+    assert result.reply == "The required tool call did not succeed."
+    assert result.runtime_signals["required_tool_call_failed"] is True
+
+
 def test_agent_loop_can_block_tool_and_cancel_before_next_model_turn():
     events = []
     model = ScriptedModel()

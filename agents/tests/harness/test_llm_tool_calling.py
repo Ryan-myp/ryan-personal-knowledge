@@ -232,12 +232,17 @@ def test_llm_client_does_not_accept_plain_text_for_required_tool_choice(
         ),
     )
 
-    assert completions.requests[0]["tool_choice"] == "required"
+    expected_choice = {
+        "type": "function",
+        "function": {"name": "lookup_record"},
+    }
+    assert completions.requests[0]["tool_choice"] == expected_choice
     assert completions.requests[1]["tool_choice"] == {
         "type": "function",
         "function": {"name": "lookup_record"},
     }
     assert not result.tool_calls
+    assert result.stop_reason == "required_tool_failed"
     assert expected_message in result.content
     assert unavailable_claim not in result.content
     assert "请补充必要信息" not in result.content
@@ -346,9 +351,63 @@ def test_llm_client_stream_retries_when_required_tool_turn_returns_only_text():
     assert [call.name for call in turns[0].tool_calls] == ["lookup_record"]
     assert turns[0].tool_calls[0].arguments == {"record_id": "r-17"}
     assert [request["tool_choice"] for request in completions.requests] == [
-        "required",
+        {"type": "function", "function": {"name": "lookup_record"}},
         {"type": "function", "function": {"name": "lookup_record"}},
     ]
+
+
+def test_llm_client_stream_normalizes_tool_calls_finish_without_a_tool_call():
+    class _QueuedStreamingCompletions:
+        def __init__(self):
+            self.responses = [
+                [SimpleNamespace(choices=[SimpleNamespace(
+                    delta=SimpleNamespace(content="I cannot search.", tool_calls=[]),
+                    finish_reason="tool_calls",
+                )])],
+                [SimpleNamespace(choices=[SimpleNamespace(
+                    delta=SimpleNamespace(content="Still no call.", tool_calls=[]),
+                    finish_reason="tool_calls",
+                )])],
+            ]
+            self.requests = []
+
+        def create(self, **kwargs):
+            self.requests.append(kwargs)
+            index = min(len(self.requests) - 1, len(self.responses) - 1)
+            return iter(self.responses[index])
+
+    completions = _QueuedStreamingCompletions()
+    client = LLMClient(model="test-model", api_key="test-only")
+    client._client = SimpleNamespace(
+        chat=SimpleNamespace(completions=completions),
+    )
+
+    events = list(client.stream(
+        [AgentMessage.user("Search for record r-17.")],
+        [_tool()],
+        TurnRequest(
+            user_input="Search for record r-17.",
+            initial_tool_choice="required",
+        ),
+    ))
+
+    turns = [event for event in events if isinstance(event, ModelTurn)]
+    assert len(turns) == 1
+    assert turns[0].stop_reason == "required_tool_failed"
+    assert turns[0].tool_calls == ()
+    assert len(completions.requests) == 2
+
+
+def test_required_tool_choice_stays_required_when_multiple_tools_are_selected():
+    client, completions = _client(SimpleNamespace(content="", tool_calls=[]))
+
+    client.complete(
+        [AgentMessage.user("Look up a record.")],
+        [_tool("lookup_record"), _tool("lookup_related_record")],
+        TurnRequest(user_input="Look up a record.", initial_tool_choice="required"),
+    )
+
+    assert completions.requests[0]["tool_choice"] == "required"
 
 
 def test_llm_tool_schema_omits_system_managed_hidden_fields():
@@ -1169,7 +1228,10 @@ def test_llm_client_preserves_explicit_tool_choice_during_protocol_repair():
 
     assert len(completions.requests) == 2
     assert all(
-        request["tool_choice"] == "required"
+        request["tool_choice"] == {
+            "type": "function",
+            "function": {"name": "lookup_record"},
+        }
         for request in completions.requests
     )
 
