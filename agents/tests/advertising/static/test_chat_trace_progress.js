@@ -61,13 +61,15 @@ test('model lifecycle events become safe, readable trace stages', () => {
         model_call_id: 'model-call-1',
         provider: 'configured-model',
         attempt: 1,
+        tool_count: 2,
+        tool_choice_required: false,
     });
     const trace = vm.runInNewContext('traceState', context);
     const stage = trace.nodes.find(node => node.id.startsWith('stage:model:'));
     assert.ok(stage);
     assert.equal(stage.title, '模型分析');
     assert.equal(stage.state, 'running');
-    assert.match(stage.subtitle, /理解请求/);
+    assert.match(stage.subtitle, /本次模型请求已提供 2 个匹配 Tool/);
     assert.equal(elements.get('traceSubtitle').textContent.includes('模型分析'), true);
 
     context.applyExecutionEvent({

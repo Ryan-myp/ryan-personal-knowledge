@@ -63,6 +63,8 @@ class StreamExecutionSummaries:
         self.has_tool_result = False
         self._last_summary = ""
         self._tool_labels: dict[str, str] = {}
+        self._available_tool_count: int | None = None
+        self._tool_choice_required = False
 
     def _text(self, chinese: str, english: str) -> str:
         return chinese if self.language == "zh" else english
@@ -71,6 +73,10 @@ class StreamExecutionSummaries:
         kind = str(event.get("type") or event.get("event_type") or "")
         name = str(event.get("tool_name") or "")[:120]
         if kind == "model_start":
+            self._available_tool_count = self._non_negative_int(
+                event.get("tool_count")
+            )
+            self._tool_choice_required = bool(event.get("tool_choice_required"))
             return self._publish(self._model_start_summary())
         if kind == "model_end":
             return self._publish(self._model_end_summary(event))
@@ -92,6 +98,32 @@ class StreamExecutionSummaries:
         }
 
     def _model_start_summary(self) -> str:
+        tool_count = self._available_tool_count
+        if tool_count is not None:
+            if tool_count == 0:
+                if self.has_tool_result:
+                    return self._text(
+                        "上一步 Tool 的实际结果已返回；本次模型请求没有匹配到新的可用 Tool，正在核对并整理结果。",
+                        "The previous Tool returned a result; no new matching "
+                        "Tools are available for this model request, so I’m "
+                        "checking and organizing the returned information.",
+                    )
+                return self._text(
+                    "本次模型请求没有匹配到可用 Tool；正在基于已有对话与上下文处理。",
+                    "No matching Tools are available for this model call; "
+                    "processing will use the conversation and existing context.",
+                )
+            if self._tool_choice_required:
+                return self._text(
+                    f"本轮匹配到 {tool_count} 个可用 Tool，系统要求模型至少调用一个；正在处理请求。",
+                    f"{tool_count} matching Tools are available, and the system "
+                    "requires the model to call at least one; processing the request.",
+                )
+            return self._text(
+                f"本轮已向模型提供 {tool_count} 个匹配 Tool，是否调用由当前请求决定。",
+                f"{tool_count} matching Tools were provided to the model; "
+                "whether to call them depends on this request.",
+            )
         if self.has_tool_result:
             return self._text(
                 "已收到工具结果，正在核对结果范围与来源，再整理答复。",
@@ -112,6 +144,30 @@ class StreamExecutionSummaries:
                 f"Selected {tool_count} Tool call(s) to gather evidence; "
                 "next I’ll run them and verify their results.",
             )
+        if self._tool_choice_required:
+            return self._text(
+                "系统要求模型调用工具，但本次没有返回 Tool 调用；当前模型调用未执行新的工具操作。",
+                "The system required a Tool call, but the model returned none; "
+                "this model call did not execute a new Tool operation.",
+            )
+        if self._available_tool_count:
+            return self._text(
+                f"本轮提供了 {self._available_tool_count} 个匹配 Tool，模型判断本次无需调用；正在整理答复。",
+                f"The model had {self._available_tool_count} matching Tools "
+                "available and determined none were needed; organizing the answer.",
+            )
+        if self._available_tool_count == 0:
+            if self.has_tool_result:
+                return self._text(
+                    "本次模型请求没有匹配到新的可用 Tool；正在结合先前 Tool 实际结果整理答复。",
+                    "No new matching Tools were available for this model "
+                    "request; organizing the answer from earlier Tool results.",
+                )
+            return self._text(
+                "本次模型请求没有匹配到可用 Tool；当前答复基于已有对话与上下文整理，未进行外部查询。",
+                "No matching Tools were available for this call; the answer "
+                "uses the conversation and existing context, without an external lookup.",
+            )
         if event.get("has_content") is True:
             return self._text(
                 "当前问题已完成分析，正在把要点整理成答复。",
@@ -122,6 +178,10 @@ class StreamExecutionSummaries:
             "当前模型调用尚未形成答复，正在继续处理。",
             "This model call did not produce an answer yet; processing will continue.",
         )
+
+    @staticmethod
+    def _non_negative_int(value: Any) -> int | None:
+        return value if type(value) is int and value >= 0 else None
 
     def _tool_start_summary(self, name: str) -> str:
         label = self._registered_tool_label(name)

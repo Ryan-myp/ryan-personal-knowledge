@@ -455,6 +455,10 @@ class ModelExecutionCoordinator:
                     len(str(message.content or "")) for message in invocation.messages
                 ),
                 tool_count=len(invocation.tools),
+                tool_choice_required=(
+                    bool(invocation.tools)
+                    and invocation.model_request.initial_tool_choice == "required"
+                ),
                 input_chars=invocation.input_chars,
                 prepare_duration_ms=(
                     invocation.prepare_duration_ms
@@ -487,6 +491,11 @@ class ModelExecutionCoordinator:
                 provider=provider_name,
                 provider_index=invocation.provider_index,
                 usage=dict(model_turn.usage),
+                tool_count=len(invocation.tools),
+                tool_choice_required=(
+                    bool(invocation.tools)
+                    and invocation.model_request.initial_tool_choice == "required"
+                ),
                 tool_call_count=len(model_turn.tool_calls or ()),
                 has_content=bool(str(model_turn.content or "").strip()),
                 duration_ms=round(

@@ -101,6 +101,70 @@ def test_model_completion_summary_reports_the_observed_next_step():
     assert "执行并核验实际结果" in event["content"]
 
 
+@pytest.mark.parametrize(
+    ("tool_count", "required", "expected"),
+    [
+        (2, False, "已向模型提供 2 个匹配 Tool"),
+        (2, True, "系统要求模型至少调用一个"),
+        (0, False, "本次模型请求没有匹配到可用 Tool"),
+    ],
+)
+def test_model_progress_distinguishes_available_tools_from_actual_calls(
+    tool_count, required, expected,
+):
+    progress = StreamExecutionSummaries("zh")
+    event = progress.for_event({
+        "type": "model_start",
+        "tool_count": tool_count,
+        "tool_choice_required": required,
+    })
+    assert expected in event["content"]
+
+    if tool_count:
+        completed = progress.for_event({
+            "type": "model_end",
+            "tool_call_count": 0,
+            "has_content": True,
+        })
+        if required:
+            assert "要求模型调用工具，但本次没有返回 Tool 调用" in completed["content"]
+        else:
+            assert "模型判断本次无需调用" in completed["content"]
+    else:
+        completed = progress.for_event({
+            "type": "model_end",
+            "tool_call_count": 0,
+            "has_content": True,
+        })
+        assert "没有匹配到可用 Tool" in completed["content"]
+
+
+def test_no_tool_summary_does_not_erase_a_result_returned_earlier_in_the_run():
+    progress = StreamExecutionSummaries("zh")
+    progress.for_event({
+        "type": "tool_execution_end",
+        "tool_name": "campaign_lookup",
+        "result": {"success": True, "data": {"query_summary": {"returned_count": 1}}},
+    })
+
+    started = progress.for_event({"type": "model_start", "tool_count": 0})
+    completed = progress.for_event({
+        "type": "model_end", "tool_call_count": 0, "has_content": True,
+    })
+
+    assert "没有匹配到新的可用 Tool" in started["content"]
+    assert "先前 Tool 实际结果" in completed["content"]
+    assert "未查询外部数据" not in completed["content"]
+
+
+def test_english_model_progress_reports_available_tool_count():
+    progress = StreamExecutionSummaries("en")
+    event = progress.for_event({
+        "type": "model_start", "tool_count": 3, "tool_choice_required": False,
+    })
+    assert "3 matching Tools" in event["content"]
+
+
 def test_chinese_summary_keeps_fallback_explanation_in_chinese():
     definition = SimpleNamespace(
         intent_aliases=["list campaigns"],

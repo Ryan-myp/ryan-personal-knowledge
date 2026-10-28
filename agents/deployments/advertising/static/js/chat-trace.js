@@ -428,6 +428,16 @@
                     raw.provider_index ?? 0, raw.attempt ?? 1,
                 ].join(':');
                 const failure = type === 'model_error';
+                const toolCount = Number(raw.tool_count);
+                const hasToolCount = raw.tool_count !== undefined
+                    && Number.isInteger(toolCount) && toolCount >= 0;
+                const toolSummary = !hasToolCount
+                    ? ''
+                    : toolCount === 0
+                        ? '本次模型请求没有匹配到可用 Tool'
+                        : raw.tool_choice_required
+                            ? `本次模型请求匹配到 ${toolCount} 个 Tool，要求模型至少调用一个`
+                            : `本次模型请求已提供 ${toolCount} 个匹配 Tool`;
                 return {
                     ...raw,
                     type: type === 'model_start' ? 'stage_started' : 'stage_status',
@@ -440,9 +450,15 @@
                             ? '模型请求暂未完成，正在检查重试或备用方案'
                             : '模型请求未完成，正在整理可说明的失败原因')
                         : type === 'model_start'
-                            ? '正在理解请求、检查上下文并判断下一步'
+                            ? [toolSummary, '正在结合请求分析下一步'].filter(Boolean).join('；')
                             : Number(raw.tool_call_count) > 0
                                 ? `已判断需要调用 ${Number(raw.tool_call_count)} 个工具，接下来执行并核验结果`
+                                : raw.tool_choice_required
+                                    ? '系统要求调用工具，但模型未返回 Tool 调用'
+                                    : hasToolCount && toolCount > 0
+                                        ? `本次模型请求已提供 ${toolCount} 个匹配 Tool，模型没有选择调用`
+                                        : hasToolCount
+                                            ? '本次模型请求没有匹配到可用 Tool'
                                 : raw.has_content
                                     ? '已完成请求分析，正在整理答复'
                                     : '当前分析完成，正在继续处理',

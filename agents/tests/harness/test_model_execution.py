@@ -177,8 +177,39 @@ def test_observer_receives_model_lifecycle_without_streaming_response_tokens():
         ]
         model_end = next(event for event in events if event["type"] == "model_end")
         assert model_end["tool_call_count"] == 0
+        assert model_end["tool_count"] == 0
+        assert model_end["tool_choice_required"] is False
         assert model_end["has_content"] is True
         assert all(event["type"] != "model_delta" for event in events)
+    finally:
+        app.close()
+
+
+def test_model_lifecycle_reports_the_tools_presented_and_required_choice():
+    from agents.agent_harness import (
+        AgentApplication, ModelTurn, StaticToolSource, ToolBinding, TurnRequest,
+    )
+
+    events = []
+    app = AgentApplication.create(
+        model=lambda *_args: ModelTurn(content="done"),
+        tool_execution="sequential",
+    )
+    app.register_tool_source(StaticToolSource(
+        "selection-test",
+        [ToolBinding({"name": "lookup"}, lambda *_args: {"success": True})],
+    ))
+    try:
+        result = app.runtime.run(TurnRequest(
+            user_input="check",
+            initial_tool_choice="required",
+            event_callback=events.append,
+        ))
+
+        assert result.reply == "done"
+        started = next(event for event in events if event["type"] == "model_start")
+        assert started["tool_count"] == 1
+        assert started["tool_choice_required"] is True
     finally:
         app.close()
 
