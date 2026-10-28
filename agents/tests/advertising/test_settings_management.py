@@ -144,6 +144,52 @@ def test_provider_credentials_update_runtime_without_returning_secrets(tmp_path)
     assert b"private-meta-token" not in vault.path.read_bytes()
 
 
+def test_ga4_and_search_console_oauth_credentials_are_separate_and_encrypted(
+    tmp_path,
+):
+    service, runtime, vault, _clients = make_service(
+        tmp_path,
+        base_credentials={"google": {"refresh_token": "ads-refresh-token"}},
+    )
+
+    ga4_result = service.update_provider_credentials("ga4", {
+        "client_id": "ga4-client-id",
+        "client_secret": "ga4-client-secret",
+        "refresh_token": "ga4-refresh-token",
+    })
+    gsc_result = service.update_provider_credentials("search_console", {
+        "client_id": "gsc-client-id",
+        "client_secret": "gsc-client-secret",
+        "refresh_token": "gsc-refresh-token",
+    })
+
+    assert runtime.credentials["google"]["refresh_token"] == "ads-refresh-token"
+    assert service.provider_credentials_for("ga4")["refresh_token"] == "ga4-refresh-token"
+    assert service.provider_credentials_for("search_console")["refresh_token"] == "gsc-refresh-token"
+    assert ga4_result["providers"]["ga4"]["fields"] == {
+        "client_id": True,
+        "client_secret": True,
+        "refresh_token": True,
+    }
+    assert gsc_result["providers"]["search_console"]["fields"] == {
+        "client_id": True,
+        "client_secret": True,
+        "refresh_token": True,
+    }
+    assert "ga4-refresh-token" not in repr(ga4_result)
+    assert "gsc-refresh-token" not in repr(gsc_result)
+    vault_bytes = vault.path.read_bytes()
+    assert b"ga4-refresh-token" not in vault_bytes
+    assert b"gsc-refresh-token" not in vault_bytes
+
+
+def test_analytics_provider_rejects_unknown_credential_fields(tmp_path):
+    service, _runtime, _vault, _clients = make_service(tmp_path)
+
+    with pytest.raises(ValueError, match="unsupported credential field"):
+        service.update_provider_credentials("ga4", {"developer_token": "not-allowed"})
+
+
 def test_clearing_a_provider_field_removes_the_legacy_value_too(tmp_path):
     service, runtime, _vault, _clients = make_service(
         tmp_path,

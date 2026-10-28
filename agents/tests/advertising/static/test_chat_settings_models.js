@@ -62,6 +62,7 @@ for (const id of [
     'agentModelBaseUrl',
     'agentModelHint',
     'agentModelApiKey',
+    'agentProviderFields',
 ]) {
     elements.set(id, new Element('div', id));
 }
@@ -182,7 +183,49 @@ test('available-model catalog only shows media purposes not already configured',
     );
 });
 
+test('settings renders separate OAuth credential fields for GA4', () => {
+    vm.runInContext(`
+        agentSettingsState.provider = 'ga4';
+        agentSettingsState.snapshot = {
+            providers: {
+                ga4: { fields: { client_id: true, client_secret: false, refresh_token: false } }
+            }
+        };
+        renderAgentProviderFields();
+    `, context);
+
+    const rows = elements.get('agentProviderFields').children;
+    assert.equal(rows.length, 3);
+    assert.equal(rows[0].children[0].textContent, 'OAuth Client ID');
+    assert.equal(rows[0].children[1].textContent, '已配置');
+    assert.equal(rows[1].children[0].textContent, 'OAuth Client Secret');
+    assert.equal(rows[2].children[0].textContent, 'OAuth Refresh Token');
+});
+
+test('provider settings UI exposes separate GA4 and Search Console tabs', () => {
+    const templatePath = path.resolve(
+        __dirname,
+        '../../../deployments/advertising/templates/chat.html',
+    );
+    const template = fs.readFileSync(templatePath, 'utf8');
+    assert.match(template, /data-provider="ga4"[^>]*>Google Analytics 4/);
+    assert.match(template, /data-provider="search_console"[^>]*>Search Console/);
+});
+
 test('choosing image generation locks the free model and official endpoint', () => {
+    vm.runInContext(`
+        agentSettingsState.snapshot = {
+            media_model_catalog: {
+                image_generation: {
+                    model: 'agnes-image-2.5-flash',
+                    name: 'Agnes Image 2.5 Flash',
+                    availability: 'free',
+                    base_url: 'https://apihub.agnes-ai.cn/v1'
+                }
+            },
+            models: { profiles: [] }
+        };
+    `, context);
     vm.runInContext("configureMediaModel('image_generation')", context);
 
     assert.equal(

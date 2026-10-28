@@ -1,7 +1,7 @@
 ---
 name: measurement-attribution
 description: "解释广告平台、分析系统与业务结果之间的转化差异，并选择合适的归因或增量测量方法"
-version: "1.0.2"
+version: "1.1.0"
 namespace: advertising
 triggers:
   - [attribution, 归因模型, 广告归因, 平台转化对不上, conversions disagree, conversion discrepancy, 渠道贡献]
@@ -34,8 +34,9 @@ triggers:
 
 ## 执行边界
 
-- 只使用当前 Run 中获准且来源明确的只读结果及用户提供材料。
-- 不读取凭证或 PII，不连接 GA4、CRM、MMP 或广告平台外部集成，不执行数据导入、身份拼接或预算调整。
+- 只使用当前 Run 中获准且来源明确的只读结果及用户提供材料。当前可使用 GA4 Tool 的 Property discovery、metadata 与聚合报告，以及广告平台实际返回的只读数据；应保留其来源、字段、时间范围和权限上下文。
+- GA4 聚合结果不等于 CRM、订单、财务或 MMP 的业务事实，也不能证明事件发出、去重或归因成功。CRM、MMP 和财务数据尚无本 Skill 可用的通用连接器时，应标为待提供证据。
+- 不读取凭证或用户级 PII，不执行数据导入、身份拼接或预算调整。
 - 查询与写入能力以当前注册 Tool 为准；任何写操作仍须通过统一 Runtime 门禁。
 
 ## 输出要求

@@ -145,6 +145,10 @@ class AgentSettingsService:
             "refresh_token",
         }),
         "tiktok": frozenset({"access_token", "app_key", "app_secret", "bc_id"}),
+        "ga4": frozenset({"client_id", "client_secret", "refresh_token"}),
+        "search_console": frozenset({
+            "client_id", "client_secret", "refresh_token",
+        }),
     }
     ENVIRONMENT_PROFILE_ID = "__environment__"
     MAX_SECRET_LENGTH = 8192
@@ -205,6 +209,14 @@ class AgentSettingsService:
 
     def effective_provider_credentials(self) -> dict[str, Any]:
         return self._effective_provider_credentials(self.vault.read())
+
+    def provider_credentials_for(self, provider: str) -> dict[str, Any]:
+        """Return one private provider credential profile to a fixed Tool Source."""
+        provider = str(provider or "").strip().lower()
+        if provider not in self.PROVIDER_FIELDS:
+            raise ValueError("unsupported provider")
+        credentials = self.effective_provider_credentials().get(provider, {})
+        return copy.deepcopy(credentials) if isinstance(credentials, dict) else {}
 
     def _effective_provider_credentials(
         self,
@@ -456,7 +468,7 @@ class AgentSettingsService:
     ) -> dict[str, Any]:
         provider = str(provider or "").strip().lower()
         if provider not in self.PROVIDER_FIELDS:
-            raise ValueError("unsupported advertising provider")
+            raise ValueError("unsupported provider")
         if not isinstance(fields, Mapping):
             raise ValueError("credential fields must be an object")
         clear = set(clear_fields or [])

@@ -28,6 +28,7 @@ live_approved_tools: []
 # with AD_AGENT_ENABLE_LIVE=1 and live_approved_tools before any live write.
 granted_permissions:
   - ads.read
+  - analytics.read
   - ads.plan
   - creative.generate
   # Skill management is a control-plane capability and does not grant any

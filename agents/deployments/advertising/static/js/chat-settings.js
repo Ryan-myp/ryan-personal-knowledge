@@ -23,6 +23,16 @@
                 ['access_token', 'Access Token'],
                 ['bc_id', 'Business Center ID'],
             ],
+            ga4: [
+                ['client_id', 'OAuth Client ID'],
+                ['client_secret', 'OAuth Client Secret'],
+                ['refresh_token', 'OAuth Refresh Token'],
+            ],
+            search_console: [
+                ['client_id', 'OAuth Client ID'],
+                ['client_secret', 'OAuth Client Secret'],
+                ['refresh_token', 'OAuth Refresh Token'],
+            ],
         };
 
         async function settingsRequest(url, options = {}) {
@@ -411,6 +421,14 @@
             const fields = providerCredentialFields[provider] || [];
             const configured = agentSettingsState.snapshot?.providers?.[provider]?.fields || {};
             container.replaceChildren();
+            const hint = document.getElementById('providerCredentialsHint');
+            if (hint) {
+                const hints = {
+                    ga4: '使用具有 GA4 属性只读权限的 Google OAuth Refresh Token（scope: https://www.googleapis.com/auth/analytics.readonly）。Google Ads 的 Refresh Token 不能保证包含此权限。',
+                    search_console: '使用具有 Search Console 站点只读权限的 Google OAuth Refresh Token（scope: https://www.googleapis.com/auth/webmasters.readonly）。Google Ads 的 Refresh Token 不能保证包含此权限。',
+                };
+                hint.textContent = hints[provider] || '';
+            }
             for (const [field, label] of fields) {
                 const row = document.createElement('div');
                 row.className = 'service-provider-field';
@@ -462,7 +480,7 @@
                 if (clear?.checked) clearFields.push(field);
                 else if (value) fields[field] = value;
             }
-            setAgentSettingsStatus('保存渠道凭证中…');
+            setAgentSettingsStatus('保存凭证中…');
             try {
                 agentSettingsState.snapshot = await settingsRequest(
                     `/settings/providers/${encodeURIComponent(agentSettingsState.provider)}`,
@@ -472,9 +490,9 @@
                     },
                 );
                 renderAgentProviderFields();
-                setAgentSettingsStatus('渠道凭证已保存。');
+                setAgentSettingsStatus('凭证已保存。');
             } catch (error) {
-                setAgentSettingsStatus(error.message || '渠道凭证保存失败。', true);
+                setAgentSettingsStatus(error.message || '凭证保存失败。', true);
             }
         }
 

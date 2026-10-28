@@ -39,6 +39,7 @@ def test_builtin_skill_catalog_lists_standard_packages_as_read_only():
         "knowledge-explainer", "web-research", "data-visualization", "app-growth",
         "ad-growth-operations", "growth-strategy", "seo-growth",
         "generative-search-visibility",
+        "competitor-research", "influencer-partnerships",
     }
     assert all(item["source"] == "builtin" and item["editable"] is False for item in items)
     detail = catalog.get_version("google-ads-api-expert", "2.0.3")
@@ -63,13 +64,22 @@ def test_builtin_skill_catalog_lists_standard_packages_as_read_only():
     experimentation = catalog.get_version("experimentation-design", "1.0.1")
     assert experimentation["location"] == "practices/experimentation-design"
     assert "references/test-design.md" in experimentation["files"]
-    attribution = catalog.get_version("measurement-attribution", "1.0.2")
+    attribution = catalog.get_version("measurement-attribution", "1.1.0")
     assert attribution["location"] == "practices/measurement-attribution"
     assert "references/attribution-and-incrementality.md" in attribution["files"]
-    instrumentation = catalog.get_version("measurement-instrumentation", "1.1.0")
+    instrumentation = catalog.get_version("measurement-instrumentation", "1.2.0")
     assert instrumentation["location"] == "practices/measurement-instrumentation"
     assert "references/event-measurement-contract.md" in instrumentation["files"]
     assert "references/conversion-qa-runbook.md" in instrumentation["files"]
+    growth_operations = catalog.get_version("ad-growth-operations", "1.1.0")
+    assert growth_operations["location"] == "practices/ad-growth-operations"
+    assert "references/loop-contract.md" in growth_operations["files"]
+    competitor_research = catalog.get_version("competitor-research", "1.0.0")
+    assert competitor_research["location"] == "practices/competitor-research"
+    assert "references/evidence-scorecard.md" in competitor_research["files"]
+    influencer = catalog.get_version("influencer-partnerships", "1.0.0")
+    assert influencer["location"] == "practices/influencer-partnerships"
+    assert "references/creator-evaluation.md" in influencer["files"]
     copywriting = catalog.get_version("ad-copywriting", "1.0.1")
     assert copywriting["location"] == "practices/ad-copywriting"
     assert "references/ad-copy-brief.md" in copywriting["files"]
@@ -88,16 +98,13 @@ def test_builtin_skill_catalog_lists_standard_packages_as_read_only():
     assert app_growth["location"] == "practices/app-growth"
     assert "references/store-listing-review.md" in app_growth["files"]
     assert "references/store-market-research.md" in app_growth["files"]
-    growth_operations = catalog.get_version("ad-growth-operations", "1.0.1")
-    assert growth_operations["location"] == "practices/ad-growth-operations"
-    assert "references/loop-contract.md" in growth_operations["files"]
     growth_strategy = catalog.get_version("growth-strategy", "1.0.0")
     assert growth_strategy["location"] == "practices/growth-strategy"
     assert "references/channel-portfolio.md" in growth_strategy["files"]
     seo_growth = catalog.get_version("seo-growth", "1.0.0")
     assert seo_growth["location"] == "practices/seo-growth"
     assert "references/organic-search-audit.md" in seo_growth["files"]
-    geo_visibility = catalog.get_version("generative-search-visibility", "1.0.0")
+    geo_visibility = catalog.get_version("generative-search-visibility", "1.1.0")
     assert geo_visibility["location"] == "practices/generative-search-visibility"
     assert "references/visibility-measurement.md" in geo_visibility["files"]
 

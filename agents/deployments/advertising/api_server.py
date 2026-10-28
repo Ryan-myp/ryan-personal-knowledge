@@ -70,6 +70,10 @@ from agents.deployments.advertising.api.context import ApiContext
 from agents.deployments.advertising.api.chat_media import ChatMediaStore
 from agents.deployments.advertising.api.chat_documents import open_chat_document_table
 from agents.tools.data_analysis.chat_table import chat_table_tool_source
+from agents.tools.marketing_analytics import (
+    google_analytics_tool_source,
+    search_console_tool_source,
+)
 from agents.deployments.advertising.api.routes.chat import create_chat_router
 from agents.deployments.advertising.api.routes.catalog import create_catalog_router
 from agents.deployments.advertising.api.routes.knowledge import create_knowledge_router
@@ -299,6 +303,7 @@ def _init_runtime():
                     [
                         "ads.read", "ads.plan", "knowledge.read", "knowledge.write",
                         "mcp.read", "mcp.manage", "creative.generate",
+                        "analytics.read",
                     ],
                 ) or []
             ),
@@ -508,6 +513,35 @@ def _init_runtime():
             runtime._register_builtin_plugin(
                 public_source.source_id,
                 public_source,
+                (PluginKind.TOOL_SOURCE.value,),
+                description=description,
+            )
+
+        analytics_sources = (
+            (
+                google_analytics_tool_source(
+                    configuration_provider=lambda: (
+                        active_settings_service.provider_credentials_for("ga4")
+                    ),
+                ),
+                "Built-in read-only Google Analytics 4 property and report Tools",
+            ),
+            (
+                search_console_tool_source(
+                    configuration_provider=lambda: (
+                        active_settings_service.provider_credentials_for(
+                            "search_console"
+                        )
+                    ),
+                ),
+                "Built-in read-only Google Search Console site and search report Tools",
+            ),
+        )
+        for analytics_source, description in analytics_sources:
+            runtime.register_tool_source(analytics_source)
+            runtime._register_builtin_plugin(
+                analytics_source.source_id,
+                analytics_source,
                 (PluginKind.TOOL_SOURCE.value,),
                 description=description,
             )

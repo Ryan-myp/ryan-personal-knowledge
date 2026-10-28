@@ -242,7 +242,7 @@
             <div class="monitoring-console-body service-settings-body">
                 <div class="service-settings-tabs" role="tablist" aria-label="设置分类">
                     <button class="service-settings-tab active" id="settingsModelsTab" type="button" role="tab" aria-selected="true" onclick="selectAgentSettingsTab('models')">模型</button>
-                    <button class="service-settings-tab" id="settingsProvidersTab" type="button" role="tab" aria-selected="false" onclick="selectAgentSettingsTab('providers')">渠道密钥</button>
+                    <button class="service-settings-tab" id="settingsProvidersTab" type="button" role="tab" aria-selected="false" onclick="selectAgentSettingsTab('providers')">渠道与数据源</button>
                     <button class="service-settings-tab" id="settingsWebSearchTab" type="button" role="tab" aria-selected="false" onclick="selectAgentSettingsTab('web-search')">网页搜索</button>
                 </div>
                 <div class="service-settings-status" id="agentSettingsStatus" role="status" aria-live="polite"></div>
@@ -270,16 +270,19 @@
                     </div>
                 </section>
                 <section class="service-settings-panel" id="settingsProvidersPanel" role="tabpanel" aria-labelledby="settingsProvidersTab" hidden>
-                    <div class="service-provider-tabs" role="tablist" aria-label="广告渠道">
+                    <div class="service-provider-tabs" role="tablist" aria-label="渠道与分析数据源">
                         <button class="service-provider-tab active" type="button" data-provider="google" onclick="selectSettingsProvider('google')">Google Ads</button>
                         <button class="service-provider-tab" type="button" data-provider="meta" onclick="selectSettingsProvider('meta')">Meta</button>
                         <button class="service-provider-tab" type="button" data-provider="tiktok" onclick="selectSettingsProvider('tiktok')">TikTok</button>
+                        <button class="service-provider-tab" type="button" data-provider="ga4" onclick="selectSettingsProvider('ga4')">Google Analytics 4</button>
+                        <button class="service-provider-tab" type="button" data-provider="search_console" onclick="selectSettingsProvider('search_console')">Search Console</button>
                     </div>
                     <form class="service-settings-form service-provider-form" id="agentProviderForm" onsubmit="saveAgentProviderCredentials(event)">
                         <div class="service-provider-fields" id="agentProviderFields"></div>
+                        <div class="service-settings-transport-note" id="providerCredentialsHint"></div>
                         <div class="service-settings-transport-note">远程访问时需 HTTPS；本机访问可使用回环地址。</div>
                         <div class="service-settings-form-actions">
-                            <button class="btn btn-primary" type="submit">保存渠道密钥</button>
+                            <button class="btn btn-primary" type="submit">保存凭证</button>
                         </div>
                     </form>
                 </section>

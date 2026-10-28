@@ -2,7 +2,7 @@
 name: generative-search-visibility
 description: "评估品牌与内容在生成式搜索/AI 答案中的可发现性、提及、引用与推荐流量，区分 GEO 假设和可验证证据"
 metadata:
-  version: "1.0.0"
+  version: "1.1.0"
   namespace: advertising
   triggers:
     - [GEO, 生成式引擎优化, AI 搜索, AI搜索, AI 搜索可见度, AI答案引用, AI 答案引用, ChatGPT 搜索, ChatGPT Search, 品牌被引用, 大模型搜索可见度, generative engine optimization, generative search visibility, AI citations]
@@ -28,8 +28,7 @@ metadata:
    执行时间和地区。记录每次回答是否提及品牌、是否引用自有 URL、引用上下文是否准确、竞争来源、
    无引用/无法回答情况及答案链接。保存允许使用的结果证据，不把模型输出当作事实核验来源。
 5. **结合业务结果。** 若有授权分析数据，单独追踪来自 AI 搜索的 referral、落地页、转化和质量；
-   将系统可见性、点击、会话和业务结果分开。Search Console 表现数据不是所有 AI 答案引用的统一
-   报表，也不能代替其他系统的观测。
+   将系统可见性、点击、会话和业务结果分开。Search Console 的 query/page 表现数据不代表所有 AI 答案引用，也不是统一的 AI 答案引用报表，不能代替其他系统的观测。
 6. **谨慎迭代。** 优先改进有事实证据支持的页面/技术问题，再对主题表达或内容结构做有限实验。
    按相同查询集重复测量并报告变化和样本局限；不要挑选个别有利答案声称普遍提升。
 
@@ -41,8 +40,8 @@ metadata:
   该指南不保证合格页面一定被抓取、收录、引用或展示。
 - 不把 `llms.txt`、某种 schema、固定字数、问答格式或第三方 GEO 分数说成官方必备条件或引用保证。
 - 没有逐次观测证据时，不声称品牌“在 ChatGPT/Gemini/Google AI 中排名第几”或已被引用。
-- Skill 不会访问 Search Console/分析账户、爬取任意网站、修改 robots/WAF 或提交 URL；这些行为需要
-  已注册 Tool、用户授权和相应安全门禁。
+- 当前已提供有授权边界的 Search Console 只读 Tool，可发现站点并查询有限的搜索表现汇总；它不报告 ChatGPT/Gemini 等 AI 答案的完整引用，也不保证包含匿名或长尾数据。GA4 Tool 仅提供获授权的聚合报告。
+- 本 Skill 不爬取任意网站、不修改 robots/WAF、不提交 URL；其他外部读取或写入仅能通过已注册 Tool、用户授权和相应安全门禁。
 
 输出：系统与查询范围、方法/样本、逐次证据及来源、可见性与流量的分层结果、已知偏差、
 高置信修复项、待验证假设和下一次测量方案。明确标注“观察到”“推断”和“未知”。

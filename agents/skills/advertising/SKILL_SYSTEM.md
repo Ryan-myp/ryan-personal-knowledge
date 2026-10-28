@@ -70,14 +70,16 @@ SKILL.md，而由对应 Tool Source 在 Registry 中注册。
 | `ad-creative` 2.10.0 | `practices/creative-strategy` 与 Wiki 的创意路线图、Hook 漏斗诊断 | 生成素材的外部服务、抓取/上传脚本和特定平台规格副本 |
 | `ads` 2.4.6；上游 `operating-check` 参考（2026-10-18） | `practices/account-diagnostics` 的通用审计、Google Search Terms/转化、Meta Insights 解读和日/周 HOLD/FIX/TEST/INVESTIGATE 运营检查 | 未注册报表能力对应的审计项、外部抓取流程和固定表现阈值 |
 | `ab-testing` 2.0.1 | `practices/experimentation-design`、Wiki 的实验方法；触发后按需加载实验设计 reference | 上游固定样本量表、统计计算器或自动平台实验执行 |
-| `attribution` 1.1.4 | `practices/measurement-attribution`、Wiki 的归因/增量方法；触发后按需加载对账 reference | 未接入数据源时声称运行 GA4、CRM、MTA 或 MMM |
-| `analytics` 2.0.3 | `practices/measurement-instrumentation`、Wiki 的测量数据契约和转化信号排障；触发后按需加载事件契约与 conversion QA runbook | GA4/GTM/Pixel/CAPI 配置代码、外部集成和未注册的实施 Tool |
+| `attribution` 1.1.4 | `practices/measurement-attribution`、Wiki 的归因/增量方法；触发后按需加载对账 reference | GA4 仅提供聚合报告；不能声称有 CRM、MMP、财务连接、用户级旅程或已运行 MMM |
+| `analytics` 2.0.3 | `practices/measurement-instrumentation`、Wiki 的测量数据契约和转化信号排障；触发后按需加载事件契约与 conversion QA runbook | GA4/GTM/Pixel/CAPI 配置、事件发送/诊断、用户级明细及未注册实施 Tool |
 | `aso` 2.0.2 | `practices/app-growth`：商店页与广告主张匹配、经官方只读 Tool 查询公开 iOS 商店元数据、页面审查和安装后 cohort 诊断 | 商店抓取、App Store Connect/Google Play Console 私有数据或修改、把公开评分当作广告/下载/留存表现 |
+| `competitor-profiling`、`competitors` | `practices/competitor-research`：公开来源证据分级、竞品定位/方案比较、按日期核对动态事实和机会假设 | 登录/付费墙绕过、私有 API、臆测竞品缺失功能/业绩、自动制作或发布比较页 |
+| `influencer-marketing` | `practices/influencer-partnerships`：创作者受众匹配、合作模型、内容权益/披露、上线前测量和复盘 | 自动外联、签约/付款、无授权的白名单/发布、把粉丝数或 EMV 当成增量收入 |
 | `marketing-loops` 1.4.0 | `practices/ad-growth-operations`：检查频率与动作条件分离、循环契约、跨运行去重需求、失败停止和人工审批 | 将通用定时任务包装成第二套 Runtime、自动调预算/暂停/轮换或跨运行状态能力 |
 | Marketplace `copywriting`、`paid-ads`、`ad-creative`、`marketing-psychology` | `practices/ad-copywriting` 的广告文案 brief、主张证据、变体设计与伦理说服约束 | 虚构产品主张/社会证明、操纵性紧迫感、未经验证的平台规格和素材发布 |
 | Marketplace `page-cro`、`copywriting`、`paid-ads` | `practices/paid-landing-page-review` 的付费流量消息匹配、页面证据审查与可验证测试 | 未授权网页抓取、分析系统接入、页面修改及无来源的转化提升承诺 |
 | Anthropic `data-visualization`、`validate-data`；Hermes `grounded-citations` | `practices/data-visualization` 与 `web-research` 的数据粒度检查、来源映射、缺失值边界和图表自检 | 上游脚本、来源账本、连接器和可执行流程；搜索摘要不能替代网页正文或结构化数据 |
-| Google Search Central SEO Starter Guide、AI features 文档；OpenAI crawler 文档 | `practices/seo-growth` 的自然搜索诊断、`generative-search-visibility` 的 AI 搜索测量、`growth-strategy` 的渠道组合决策；`public-site-quality` Tool 提供单页 PageSpeed/Lighthouse 读取 | 排名/引用保证、未经官方确认的 GEO 配方、整站自动爬取、GSC 私有数据读取或网站改写权限 |
+| Google Search Central SEO Starter Guide、AI features 文档；OpenAI crawler 文档 | `practices/seo-growth` 的自然搜索诊断、`generative-search-visibility` 的 AI 搜索测量、`growth-strategy` 的渠道组合决策；`public-site-quality` Tool 提供单页 PageSpeed/Lighthouse 读取 | 排名/引用保证、未经官方确认的 GEO 配方、整站自动爬取、GSC 属性管理或网站改写权限 |
 
 这些是本机读取到的来源包版本，用于追踪本次蒸馏输入，不代表远端最新版本或 Runtime
 插件版本。来源包中与已发布广告 Wiki 重合的基础内容不重复导入。上游 Skill 只作为
@@ -108,9 +110,16 @@ Source 自动发现。其 `SKILL.md`、references 和 provenance 可进入受限
 付费、ASO、CRO、推荐/合作、产品驱动和生命周期路径；SEO 与 GEO 是独立 advisory Skills，
 不会与广告关键词规划或付费落地页审查混为一谈。新增 Google PageSpeed Insights 单页只读
 Tool：可尝试无 key 低频调用，也支持通过 `GOOGLE_PAGESPEED_API_KEY` 配置受限 API key；
-匿名配额可能被限流，不能承诺免 key 稳定可用。Search Console 数据需 OAuth 及属性权限，
-IndexNow 则是站点所有者主动提交 URL 的写操作而非效果/收录保证，二者当前未接入。详见新
-Skills 的官方来源与边界。
+匿名配额可能被限流，不能承诺免 key 稳定可用。IndexNow 是站点所有者主动提交 URL 的写操作，
+不是效果/收录保证，当前未接入。详见新 Skills 的官方来源与边界。
+
+2026-10-28 补齐增长测量与研究入口：`marketing:google-analytics` 通过 OAuth 提供 GA4
+Property 发现、metadata 和聚合报告；`marketing:search-console` 提供站点发现和有界搜索表现报告。
+二者仅拥有 `analytics.read` 只读权限，使用部署级加密 Vault 凭证，不能读取用户级事件/CRM、修改
+标签或证明事件链路通过。更新 `measurement-instrumentation` 的 Lead/电商阶段、发送方盘点和双发
+去重 QA；更新归因、SEO/GEO 与增长循环对 GA4/GSC 的数据边界。新增 `competitor-research` 与
+`influencer-partnerships` 两个 advisory Skills，依赖已注册的公开搜索/抓取能力和用户提供资料；
+它们不增加外联、签约、支付、素材授权或发布 Tool。
 
 ## 跨渠道 Campaign 管理
 

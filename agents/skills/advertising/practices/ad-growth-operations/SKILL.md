@@ -1,7 +1,7 @@
 ---
 name: ad-growth-operations
 description: "把广告账户检查设计成有证据、可复盘、有停止条件的定期 Agent 任务"
-version: "1.0.1"
+version: "1.1.0"
 namespace: advertising
 triggers:
   - [定期检查广告, 周度账户检查, 每天检查投放, recurring ad review, weekly ads review, weekly paid media review, paid media review loop]
@@ -23,7 +23,9 @@ triggers:
 3. **检查频率与动作门槛**：分别说明多久检查一次，以及什么证据才值得提出动作。频率应匹配
    数据刷新、转化延迟和决策节奏，不能把“每天运行”当成“每天改预算”。
 4. **检查步骤**：先验证账户与数据，再看交付/预算、流量、转化质量、创意、落地页和归因；
-   只检查当前 Registry 中确实有 Tool 返回的数据。
+   只检查当前 Registry 中确实有 Tool 返回的数据。若已配置只读 GA4 / Search Console，分别读取
+   获授权的 Property/站点表现；不可把自然搜索报表与广告平台口径合并，也不可将 GA4 key event
+   直接称作 CRM 确认的 Lead 或订单。
 5. **重复与状态处理**：定义同一问题重复出现时如何合并/冷却，以及前一次结果如何追踪。
    只有调度器 occurrence ID 不等同于业务动作幂等；需要跨运行去重但缺少持久化状态能力时，
    循环必须保持只读并报告重复项，不能重复写入。
