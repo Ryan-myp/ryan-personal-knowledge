@@ -137,6 +137,22 @@ def test_core_agent_contract_forbids_inventing_model_identity():
     assert "Never leave the response empty" in prompt
 
 
+def test_core_agent_contract_hides_internal_tool_selection_from_user_replies():
+    runtime = AdvertisingComposition(
+        require_llm=False,
+        offline_mode=True,
+        start_background_workers=False,
+    )
+    try:
+        prompt = runtime.platform_application.agent.system_prompt
+    finally:
+        runtime.close(wait=True)
+
+    normalized = " ".join(prompt.split())
+    assert "Do not expose internal Tool-selection state" in normalized
+    assert "not selected this turn" not in normalized
+
+
 def test_core_agent_contract_distinguishes_empty_results_from_permission_errors():
     runtime = AdvertisingComposition(
         require_llm=False,

@@ -12,9 +12,9 @@ def test_query_contract_forbids_unrequested_child_queries_and_rounded_counts():
     assert "Do not fetch child resources" in prompt
     assert "explicitly requests descendants" in prompt
     assert "Do not ask the user to resend the same request" in prompt
-    assert "say only that it was not selected this turn" in prompt
+    assert "Do not expose internal Tool-selection state" in prompt
     assert "Do not round counts" in prompt
-    assert "not supplied for this turn" in prompt
+    assert "Use a complete capability catalog" in prompt
 
 
 def test_architecture_diagrams_do_not_trigger_business_data_tools():

@@ -94,6 +94,201 @@ def test_read_request_does_not_select_write_tools_and_remains_bounded():
     assert [item.name for item in selected] == ["find_campaigns"]
 
 
+def test_trend_chart_followup_selects_prior_registered_time_series_reader():
+    tool = _definition(
+        "public_finance_exchange_rate",
+        namespace="public_finance",
+        action="get",
+        resource="exchange_rate",
+        description="查询近期或历史时间序列汇率数据，支持起止日期和最近 N 天",
+        intent_types=("exchange_rate_lookup",),
+        intent_aliases=("查询汇率", "美元兑人民币汇率"),
+        properties={
+            "base_currency": {"type": "string"},
+            "quote_currency": {"type": "string"},
+            "lookback_days": {"type": "integer"},
+        },
+    )
+    selector = ToolSelector()
+    request = "按日期给一个趋势图吧，最近30天的"
+
+    selected = selector.select_relevant(
+        request,
+        [tool],
+        prior_tool_names=("public_finance_exchange_rate",),
+    )
+
+    assert [item.name for item in selected] == ["public_finance_exchange_rate"]
+    assert selector.requires_tool_call(
+        request,
+        selected,
+        prior_tool_names=("public_finance_exchange_rate",),
+    )
+
+
+def test_contextual_followup_reuses_registered_tool_that_ran_last_turn():
+    tool = _definition(
+        "alpha_lookup_records",
+        namespace="alpha",
+        action="search",
+        resource="record",
+        description="Read indexed records by query",
+        intent_types=("lookup_records",),
+        properties={"query": {"type": "string"}},
+    )
+    selector = ToolSelector()
+    request = "这个再查一下"
+
+    selected = selector.select_relevant(
+        request,
+        [tool],
+        prior_tool_names=("alpha_lookup_records",),
+    )
+
+    assert [item.name for item in selected] == ["alpha_lookup_records"]
+    assert selector.requires_tool_call(
+        request,
+        selected,
+        prior_tool_names=("alpha_lookup_records",),
+    )
+
+
+def test_contextual_read_does_not_reuse_prior_write_tool():
+    write = _definition(
+        "alpha_update_record",
+        namespace="alpha",
+        action="update",
+        resource="record",
+        description="Update one record",
+        properties={"record_id": {"type": "string"}},
+    )
+
+    selected = ToolSelector().select_relevant(
+        "这个再查一下",
+        [write],
+        prior_tool_names=("alpha_update_record",),
+    )
+
+    assert selected == []
+
+
+def test_explicit_contextual_write_reuses_registered_prior_write_tool():
+    write = _definition(
+        "alpha_pause_record",
+        namespace="alpha",
+        action="pause",
+        resource="record",
+        description="Pause one record",
+        properties={"record_id": {"type": "string"}},
+    )
+    selector = ToolSelector()
+    request = "这个再暂停一下"
+    history = ()
+
+    selected = selector.select_relevant(
+        request,
+        [write],
+        conversation_context=history,
+        prior_tool_names=("alpha_pause_record",),
+    )
+
+    assert [item.name for item in selected] == ["alpha_pause_record"]
+    assert selector.requires_tool_call(
+        request,
+        selected,
+        conversation_context=history,
+        prior_tool_names=("alpha_pause_record",),
+    )
+
+
+def test_agent_carries_last_turn_tool_into_contextual_followup():
+    definition = _definition(
+        "alpha_lookup_records",
+        namespace="alpha",
+        action="search",
+        resource="record",
+        description="Read indexed records by query",
+        intent_types=("lookup_records",),
+        properties={"query": {"type": "string"}},
+    )
+    selector = ToolSelector()
+
+    class Model:
+        calls = 0
+        required_tool_turns = []
+
+        def complete(self, _messages, tools, request):
+            self.calls += 1
+            if request.initial_tool_choice == "required":
+                self.required_tool_turns.append(
+                    {tool.name for tool in tools}
+                )
+            if self.calls in {1, 3}:
+                return ModelTurn(tool_calls=(ToolCall(
+                    "lookup", "alpha_lookup_records", {"query": "records"},
+                ),))
+            return ModelTurn(content="已完成查询。")
+
+    model = Model()
+
+    def select_tools(request, tools):
+        context = request.context
+        previous_names = context.get("_agent_prior_tool_names", ())
+        history = context.get("_agent_tool_selection_context", ())
+        selected = selector.select_relevant(
+            request.user_input,
+            tools,
+            conversation_context=history,
+            prior_tool_names=previous_names,
+        )
+        if selector.requires_tool_call(
+            request.user_input,
+            selected,
+            conversation_context=history,
+            prior_tool_names=previous_names,
+        ):
+            context["_agent_tool_choice_required"] = True
+        return selected
+
+    app = AgentApplication.create(model=model, tool_selector=select_tools)
+    app.register_tool_source(StaticToolSource("alpha", [ToolBinding(
+        definition,
+        lambda _context, _values: {"records": [{"id": "1"}]},
+    )]))
+    try:
+        assert app.prompt(
+            "查询 alpha record", session_id="contextual-tool-followup",
+        ).status.value == "succeeded"
+        assert app.prompt(
+            "这个再查一下", session_id="contextual-tool-followup",
+        ).status.value == "succeeded"
+        assert model.required_tool_turns == [
+            {"alpha_lookup_records"}, {"alpha_lookup_records"},
+        ]
+    finally:
+        app.close()
+
+
+def test_chart_of_user_supplied_or_local_data_does_not_trigger_external_reads():
+    tool = _definition(
+        "list_campaigns",
+        namespace="google-ads",
+        action="list",
+        resource="campaign",
+        description="列出账户中的 campaign",
+        intent_types=("list_campaigns",),
+        intent_aliases=("campaign 列表",),
+    )
+
+    selected = ToolSelector().select_relevant(
+        "把我上传的 CSV 按日期做个趋势图",
+        [tool],
+        contextual_namespaces=("google-ads",),
+    )
+
+    assert selected == []
+
+
 def test_compound_list_and_detail_request_keeps_both_read_tools():
     tools = [
         _definition(

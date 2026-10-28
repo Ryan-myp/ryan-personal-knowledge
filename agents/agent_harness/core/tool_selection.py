@@ -31,6 +31,15 @@ _READ_CUES = (
     "有哪些", "有啥", "哪几个", "哪些", "展示", "筛选", "过滤", "排除",
 )
 _READ_REFINEMENT_CUES = ("filter", "exclude", "筛选", "过滤", "排除")
+_DATA_VISUALIZATION_CUES = (
+    "趋势图", "折线图", "柱状图", "饼图", "数据图", "数据可视化",
+    "图表", "time series", "trend chart", "line chart", "bar chart",
+    "visualization", "chart", "plot",
+)
+_CHART_RENDER_CUES = (
+    "draw", "illustrate", "generate", "绘制", "绘图", "生成",
+    "画个", "画一", "画张", "画出", "做个", "做一",
+)
 _LIST_READ_CUES = ("list", "列出", "列表", "清单")
 _DETAIL_READ_CUES = ("detail", "details", "详情", "详细信息", "具体信息")
 _DESCENDANT_READ_CUES = (
@@ -197,12 +206,46 @@ def _request_verbs(user_input: str, tools: Sequence[Any]) -> str:
 
 def _is_read_only_request(user_input: str) -> bool:
     text = str(user_input or "").casefold()
+    is_visualization = _is_data_visualization_request(text)
+    write_cues = tuple(
+        cue for cue in _WRITE_CUES
+        if not is_visualization or cue not in _CHART_RENDER_CUES
+    )
     return (
         (
             _has_unnegated_action_cue(text, _READ_CUES)
+            or is_visualization
             or _is_descendant_detail_followup(text)
         )
-        and not _has_unnegated_action_cue(text, _WRITE_CUES)
+        and not _has_unnegated_action_cue(text, write_cues)
+    )
+
+
+def _is_data_visualization_request(user_input: str) -> bool:
+    text = str(user_input or "").casefold()
+    return _has_unnegated_action_cue(text, _DATA_VISUALIZATION_CUES)
+
+
+def _supports_time_series(tool: Any) -> bool:
+    schema = _tool_field(tool, "input_schema", {})
+    if callable(getattr(schema, "to_dict", None)):
+        schema = schema.to_dict()
+    properties = (
+        schema.get("properties", {})
+        if isinstance(schema, dict)
+        else getattr(schema, "properties", {})
+    )
+    names = set(properties) if isinstance(properties, dict) else set()
+    names = {str(name).casefold() for name in names}
+    traits = _tool_field(tool, "traits", ()) or ()
+    if isinstance(traits, str):
+        traits = (traits,)
+    normalized_traits = {str(item).casefold() for item in traits}
+    return (
+        {"start_date", "end_date"} <= names
+        or {"from", "to"} <= names
+        or "lookback_days" in names
+        or "time_series" in normalized_traits
     )
 
 
@@ -313,6 +356,8 @@ def _needs_conversation_context(user_input: str, tools: Sequence[Any]) -> bool:
     if _is_descendant_detail_followup(text):
         return True
     if _is_read_refinement_request(text):
+        return True
+    if _is_data_visualization_request(text):
         return True
     if (
         _is_read_only_request(_request_verbs(text, tools))
@@ -965,6 +1010,7 @@ class ToolSelector:
         *,
         limit: int = 16,
         conversation_context: Sequence[str] = (),
+        prior_tool_names: Sequence[str] = (),
         contextual_namespaces: Sequence[str] = (),
         clarification_followup: bool = False,
     ) -> list[Any]:
@@ -1006,6 +1052,29 @@ class ToolSelector:
             for item in (conversation_context or ())
             if str(item or "").strip()
         ][-12 if clarification_followup else -4:]
+        available_by_name = {
+            str(_tool_field(tool, "name", "") or "").strip(): tool
+            for tool in available_tools or ()
+            if str(_tool_field(tool, "name", "") or "").strip()
+        }
+        prior_tools = [
+            available_by_name[name]
+            for raw_name in prior_tool_names or ()
+            if (name := str(raw_name or "").strip()) in available_by_name
+        ]
+        if _needs_conversation_context(user_input, available_tools):
+            has_registered_anchor = any(
+                _is_read_tool(tool)
+                and _matches_publisher_target(previous, tool)
+                for previous in prior_inputs
+                for tool in available_tools or ()
+            )
+            if (
+                not publisher_target_match
+                and not has_registered_anchor
+                and not prior_tools
+            ):
+                return []
         status_context = _status_check_read_context(
             user_input, prior_inputs, available_tools,
         )
@@ -1026,6 +1095,31 @@ class ToolSelector:
         read_only_request = (
             _is_read_only_request(verb_text) or bool(status_context)
         )
+        write_request = _has_unnegated_write_cue(verb_text)
+        contextual_prior_tools = []
+        if (
+            prior_tools
+            and _needs_conversation_context(user_input, available_tools)
+            and (read_only_request or write_request)
+        ):
+            expected_read = read_only_request and not write_request
+            contextual_prior_tools = [
+                tool for tool in prior_tools
+                if _is_read_tool(tool) is expected_read
+            ]
+            prior_namespaces = list(dict.fromkeys(
+                normalize_namespace(_tool_field(tool, "namespace", ""))
+                for tool in contextual_prior_tools
+                if normalize_namespace(_tool_field(tool, "namespace", ""))
+            ))
+            allowed_prior_namespaces = set(
+                apply_policies(self.policies, prior_namespaces)
+            )
+            contextual_prior_tools = [
+                tool for tool in contextual_prior_tools
+                if normalize_namespace(_tool_field(tool, "namespace", ""))
+                in allowed_prior_namespaces
+            ]
         descendant_followup = (
             read_only_request and _is_descendant_detail_followup(user_input)
             and not publisher_target_match
@@ -1094,13 +1188,19 @@ class ToolSelector:
                 and not status_context
             ):
                 prior_inputs = []
-        else:
+        elif not detected_namespaces:
+            if contextual_prior_tools:
+                active_namespaces = list(dict.fromkeys(
+                    normalize_namespace(_tool_field(tool, "namespace", ""))
+                    for tool in contextual_prior_tools
+                    if normalize_namespace(_tool_field(tool, "namespace", ""))
+                ))
             for prior_input in reversed(prior_inputs):
+                if active_namespaces:
+                    break
                 active_namespaces = self.detect_namespaces(
                     prior_input, available_tools,
                 )
-                if active_namespaces:
-                    break
 
         explicitly_named = [
             tool for tool in (available_tools or ())
@@ -1148,6 +1248,22 @@ class ToolSelector:
                 for previous in prior_inputs
             )
         ]
+        active_namespace_set = {
+            normalize_namespace(namespace) for namespace in active_namespaces
+        }
+        scoped_prior_tools = [
+            tool for tool in contextual_prior_tools
+            if not active_namespace_set
+            or normalize_namespace(_tool_field(tool, "namespace", ""))
+            in active_namespace_set
+        ]
+        current_scope_tools = [
+            tool for tool in (available_tools or ())
+            if not active_namespace_set
+            or normalize_namespace(_tool_field(tool, "namespace", ""))
+            in active_namespace_set
+        ]
+        using_prior_tool_context = False
         if explicitly_named:
             candidates = explicitly_named
         elif explicitly_aliased_web_search:
@@ -1171,6 +1287,12 @@ class ToolSelector:
                 or normalize_namespace(_tool_field(tool, "namespace", ""))
                 in active_namespace_set
             ] or status_anchors
+        elif scoped_prior_tools and not any(
+            _matches_publisher_target(user_input, tool)
+            for tool in current_scope_tools
+        ):
+            candidates = scoped_prior_tools
+            using_prior_tool_context = True
         elif active_namespaces:
             namespace_set = {
                 normalize_namespace(item) for item in active_namespaces
@@ -1261,7 +1383,7 @@ class ToolSelector:
         if prior_inputs and not has_explicit_resource:
             query_terms.update(_terms(" ".join(prior_inputs)))
         if not query_terms:
-            return []
+            return candidates[:1] if using_prior_tool_context else []
         ranked = [
             (
                 _relevance_score(query_terms, tool)
@@ -1276,6 +1398,10 @@ class ToolSelector:
             for index, tool in enumerate(candidates)
         ]
         relevant = [item for item in ranked if item[0] > 0]
+        if not relevant and using_prior_tool_context:
+            # The last actual Tool call is stronger conversational evidence
+            # than a lexical match when the user intentionally omits its name.
+            return candidates[:1]
         if read_only_request:
             relevant = [
                 item for item in relevant
@@ -1365,11 +1491,26 @@ class ToolSelector:
         selected_tools: Sequence[Any],
         *,
         conversation_context: Sequence[str] = (),
+        prior_tool_names: Sequence[str] = (),
     ) -> bool:
         """Require fresh execution for operational reads and explicit writes."""
         verb_text = _request_verbs(user_input, selected_tools)
         write_request = _has_unnegated_write_cue(verb_text)
         read_request = not write_request and _is_read_only_request(verb_text)
+        prior_names = {
+            str(item or "").strip() for item in prior_tool_names or ()
+            if str(item or "").strip()
+        }
+        if (
+            (read_request or write_request)
+            and _needs_conversation_context(user_input, selected_tools)
+            and any(
+                (_is_read_tool(tool) if read_request else not _is_read_tool(tool))
+                and str(_tool_field(tool, "name", "") or "") in prior_names
+                for tool in selected_tools or ()
+            )
+        ):
+            return True
         status_context = _status_check_read_context(
             user_input, conversation_context, selected_tools,
         )
@@ -1418,6 +1559,11 @@ class ToolSelector:
                 _explicit_resource_list_tools(previous, selected_tools)
                 for previous in conversation_context
             )
+        ):
+            return True
+        if _is_data_visualization_request(user_input) and any(
+            _is_read_tool(tool) and _supports_time_series(tool)
+            for tool in (selected_tools or ())
         ):
             return True
         web_search_match = any(

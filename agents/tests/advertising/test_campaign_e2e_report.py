@@ -1,4 +1,5 @@
 import json
+from datetime import date
 
 from scripts.advertising.campaign_e2e_report import build_report
 
@@ -81,3 +82,36 @@ def test_report_does_not_leak_untrusted_run_id_or_promote_unrelated_write(tmp_pa
     report = build_report(tmp_path, MEMORY)
     assert report["cases"][0]["verdict"] == "out_of_scope"
     assert "private-token-from-corrupt-case" not in json.dumps(report)
+
+
+def test_report_exposes_age_of_historical_provider_evidence(tmp_path):
+    memory = {
+        **MEMORY,
+        "campaign_types": [{
+            **MEMORY["campaign_types"][0],
+            "last_verified_at": "2026-01-01",
+        }],
+    }
+
+    report = build_report(tmp_path, memory, as_of=date(2026, 3, 1))
+
+    assert report["evidence_as_of"] == "2026-03-01"
+    assert report["campaign_types"][0]["evidence_last_verified_at"] == "2026-01-01"
+    assert report["campaign_types"][0]["evidence_age_days"] == 59
+    assert report["campaign_types"][0]["current_write_verified"] is False
+
+
+def test_report_marks_missing_invalid_or_future_verification_date_as_unknown(tmp_path):
+    for value in (None, "not-a-date", "2026-03-02"):
+        memory = {
+            **MEMORY,
+            "campaign_types": [{
+                **MEMORY["campaign_types"][0],
+                "last_verified_at": value,
+            }],
+        }
+
+        report = build_report(tmp_path, memory, as_of=date(2026, 3, 1))
+
+        assert report["campaign_types"][0]["evidence_last_verified_at"] is None
+        assert report["campaign_types"][0]["evidence_age_days"] is None

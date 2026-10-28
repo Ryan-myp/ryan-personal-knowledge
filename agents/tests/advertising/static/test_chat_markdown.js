@@ -223,6 +223,40 @@ test('Mermaid flowcharts render with strict settings and sanitized SVG', async (
     delete context.document;
 });
 
+test('Mermaid time-series charts render from a fenced xychart-beta block', async () => {
+    const rendered = [];
+    context.window = {
+        mermaid: {
+            initialize() {},
+            async render(id, source) {
+                rendered.push({ id, source });
+                return { svg: '<svg><path d="M0 0"></path></svg>' };
+            },
+        },
+    };
+    context.document = {
+        createElement(tagName) { return new MockElement(tagName); },
+        body: new MockElement('body'),
+    };
+    const pre = {
+        classList: { add(name) { this[name] = true; } },
+        replaceWith(element) { this.replacedWith = element; },
+    };
+    const source = 'xychart-beta\n  x-axis ["10-01", "10-02"]\n  y-axis "USD/CNY" 7.0 --> 7.2\n  line [7.11, 7.12]';
+    const code = { textContent: source, parentElement: pre };
+    const root = {
+        querySelectorAll(selector) {
+            return selector === 'pre > code' ? [code] : [];
+        },
+    };
+
+    const count = await context.renderMermaidDiagrams(root);
+
+    assert.equal(count, 1);
+    assert.equal(rendered[0].source, source);
+    assert.equal(pre.replacedWith.className, 'mermaid-diagram');
+});
+
 test('Mermaid repairs quoted edge labels from generated diagrams before rendering', async () => {
     const rendered = [];
     context.window = {

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from datetime import date
 from pathlib import Path
 import re
 import sys
@@ -58,6 +59,19 @@ def _latest_response(case: Mapping[str, Any]) -> dict[str, Any]:
                 return phase["response"]
     response = case.get("response")
     return response if isinstance(response, dict) else {}
+
+
+def _evidence_age(value: Any, as_of: date) -> tuple[str | None, int | None]:
+    """Parse a date-only verification stamp without treating bad data as fresh."""
+    if not isinstance(value, str) or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", value):
+        return None, None
+    try:
+        verified_at = date.fromisoformat(value)
+    except ValueError:
+        return None, None
+    if verified_at > as_of:
+        return None, None
+    return verified_at.isoformat(), (as_of - verified_at).days
 
 
 def _case_summary(
@@ -132,9 +146,15 @@ def _case_summary(
     return row
 
 
-def build_report(directory: Path, memory: Mapping[str, Any]) -> dict[str, Any]:
+def build_report(
+    directory: Path,
+    memory: Mapping[str, Any],
+    *,
+    as_of: date | None = None,
+) -> dict[str, Any]:
     """A Tool result plus a matching transport is proof of a read, not a write."""
     directory = Path(directory)
+    report_date = as_of or date.today()
     trusted_accounts = memory["scope"]["test_accounts"]
     tools = {
         provider: {
@@ -154,23 +174,32 @@ def build_report(directory: Path, memory: Mapping[str, Any]) -> dict[str, Any]:
         _case_summary(path, trusted_accounts, tools, events)
         for path in paths
     ]
-    campaign_types = [{
-        "provider": item["provider"],
-        "campaign_type": item["campaign_type"],
-        "template_key": item["template_key"],
-        "historical_state": item["verification_state"],
-        "current_write_verified": False,
-        "gap_recorded": bool(item.get("remaining_gap")),
-    } for item in memory["campaign_types"]]
+    campaign_types = []
+    for item in memory["campaign_types"]:
+        verified_at, age_days = _evidence_age(
+            item.get("last_verified_at"), report_date,
+        )
+        campaign_types.append({
+            "provider": item["provider"],
+            "campaign_type": item["campaign_type"],
+            "template_key": item["template_key"],
+            "historical_state": item["verification_state"],
+            "evidence_last_verified_at": verified_at,
+            "evidence_age_days": age_days,
+            "current_write_verified": False,
+            "gap_recorded": bool(item.get("remaining_gap")),
+        })
     return {
         "schema_version": "campaign-e2e-diagnostic/v1",
         "scope": "confirmed_test_accounts_campaign_hierarchy_only",
+        "evidence_as_of": report_date.isoformat(),
         "read_verified": sum(row["verdict"] == "read_verified" for row in cases),
         "write_verified": 0,
         "cases": cases,
         "campaign_types": campaign_types,
         "limitations": [
             "Historical template memory is not current-run CRUD evidence.",
+            "Evidence age is informational; unknown or future verification dates are not treated as current.",
             "Writes need exact resource readback and human review; no automatic promotion.",
             "Deletes are not live-enabled by the current Provider Tool contracts.",
         ],

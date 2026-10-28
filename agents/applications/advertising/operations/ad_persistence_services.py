@@ -13,6 +13,7 @@ from typing import Any, Mapping, Optional
 from agents.agent_harness.core.execution_trace import ExecutionTrace
 from agents.agent_harness.core.interfaces import ToolResult
 from agents.applications.advertising.persistence.models import ToolCallRecord
+from .conversation_digest import compact_conversation_digest
 from .conversation_state import update_conversation_state
 
 
@@ -46,27 +47,15 @@ class AdPersistenceServices:
         evicted_messages.extend(session.add_message({"role": "user", "content": safe_user}))
         evicted_messages.extend(session.add_message({"role": "assistant", "content": safe_reply}))
         if evicted_messages:
-            digest_lines = [
-                str(session.ctx.metadata.get("conversation_digest") or "").strip()
-            ]
-            for message in evicted_messages:
-                role = "用户" if message.get("role") == "user" else "助手"
-                content = self.runtime._redact_for_persistence(message.get("content", ""))
-                content = " ".join(str(content).split())
-                if len(content) > 360:
-                    content = content[:220] + "…[中间内容已折叠]…" + content[-110:]
-                if content:
-                    digest_lines.append(f"- {role}：{content}")
-            digest = "\n".join(line for line in digest_lines if line)
-            # Keep both the earliest durable constraints and the most recent
-            # state. A tail-only slice makes old decisions disappear exactly
-            # when repeated compaction is needed most.
-            digest_limit = 2400
-            if len(digest) > digest_limit:
-                marker = "\n…[较早摘要已折叠]…\n"
-                side = max(1, (digest_limit - len(marker)) // 2)
-                digest = digest[:side] + marker + digest[-side:]
-            session.ctx.metadata["conversation_digest"] = digest
+            session.ctx.metadata["conversation_digest"] = compact_conversation_digest(
+                session.ctx.metadata.get("conversation_digest"),
+                (
+                    message.get("content")
+                    for message in evicted_messages
+                    if isinstance(message, dict) and message.get("role") == "user"
+                ),
+                redactor=self.runtime._redact_for_persistence,
+            )
         session.ctx.metadata["conversation_turn_count"] = int(
             session.ctx.metadata.get("conversation_turn_count", 0) or 0
         ) + 1

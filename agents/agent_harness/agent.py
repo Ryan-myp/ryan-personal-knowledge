@@ -934,6 +934,40 @@ class Agent:
                 recent = [relevant[0], *tail]
         return tuple(recent)
 
+    @staticmethod
+    def _prior_turn_tool_names(
+        request: TurnRequest,
+        transcript: Sequence[AgentMessage],
+        *,
+        limit: int = 8,
+    ) -> tuple[str, ...]:
+        """Return registered Tool names invoked in the immediately prior turn.
+
+        This is routing context only. The receiving selector must resolve every
+        name against the current registry and reapply current policy before a
+        Tool can reach the model.
+        """
+        prior_user_turn = next((
+            message.turn_id
+            for message in reversed(transcript)
+            if message.role == "user"
+            and message.turn_id != str(request.turn_id or "")
+        ), None)
+        if prior_user_turn is None:
+            return ()
+        names: list[str] = []
+        seen: set[str] = set()
+        for message in reversed(transcript):
+            if message.role != "tool" or message.turn_id != prior_user_turn:
+                continue
+            name = str(message.name or "").strip()
+            if name and name not in seen:
+                seen.add(name)
+                names.append(name)
+            if len(names) >= limit:
+                break
+        return tuple(names)
+
     def _tool_selection_request(
         self,
         request: TurnRequest,
@@ -945,6 +979,9 @@ class Agent:
         recent_inputs = self._recent_user_inputs(request, transcript, state)
         if recent_inputs:
             selection_context["_agent_tool_selection_context"] = recent_inputs
+        prior_tool_names = self._prior_turn_tool_names(request, transcript)
+        if prior_tool_names:
+            selection_context["_agent_prior_tool_names"] = prior_tool_names
         pending = pending_input_interaction(
             request.turn_id, transcript, choice=request.user_input.strip(),
             response=selection_context.get("_agent_interaction_response"),
@@ -1012,6 +1049,7 @@ class Agent:
                 for message in transcript
             )
             selection_context.pop("_agent_tool_selection_context", None)
+            selection_context.pop("_agent_prior_tool_names", None)
             selection_context.pop("_agent_clarification_followup", None)
             selection_context.pop("_agent_pending_interaction", None)
             selection_context.pop("_agent_interaction_response", None)

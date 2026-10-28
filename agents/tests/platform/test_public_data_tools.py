@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 import pytest
@@ -89,6 +90,7 @@ def test_public_data_tools_are_read_only_bounded_and_categorized():
         assert definition.max_output_bytes <= 32_000
         assert definition.input_schema.additional_properties is False
         assert "public_data" in definition.traits
+    assert bindings["public_finance_exchange_rate"].definition.contract_version == "1.1.0"
 
 
 def test_exchange_rate_uses_fixed_endpoint_and_projects_public_data():
@@ -129,6 +131,95 @@ def test_exchange_rate_uses_fixed_endpoint_and_projects_public_data():
     assert options["allow_redirects"] is False
     assert options["stream"] is True
     assert response.closed is True
+
+
+def test_exchange_rate_supports_bounded_date_range_for_trend_charts():
+    today = datetime.now(timezone.utc).date()
+    start = today - timedelta(days=1)
+    start_text, end_text = start.isoformat(), today.isoformat()
+    response = FakeResponse([
+        {"date": end_text, "base": "USD", "quote": "CNY", "rate": 7.12},
+        {
+            "date": start_text, "base": "USD", "quote": "CNY",
+            "rate": 7.11, "provider_payload": "must not leak",
+        },
+    ])
+    calls = []
+
+    def request_get(url, **kwargs):
+        calls.append((url, kwargs))
+        return response
+
+    _, bindings = _bindings(request_get)
+    result = _execute(bindings["public_finance_exchange_rate"], {
+        "base_currency": "USD",
+        "quote_currency": "CNY",
+        "start_date": start_text,
+        "end_date": end_text,
+    })
+
+    assert result.success is True
+    assert result.data["count"] == 2
+    assert result.data["records"] == [
+        {"date": start_text, "rate": 7.11},
+        {"date": end_text, "rate": 7.12},
+    ]
+    assert result.data["source_url"] == (
+        "https://api.frankfurter.dev/v2/rates?base=USD&quotes=CNY"
+        f"&from={start_text}&to={end_text}"
+    )
+    assert calls[0][0] == "https://api.frankfurter.dev/v2/rates"
+    assert calls[0][1]["params"] == {
+        "base": "USD", "quotes": "CNY",
+        "from": start_text, "to": end_text,
+    }
+    assert response.closed is True
+
+
+def test_exchange_rate_lookback_days_uses_inclusive_bounded_window():
+    today = datetime.now(timezone.utc).date()
+    start = today - timedelta(days=29)
+    response = FakeResponse([
+        {"date": today.isoformat(), "base": "USD", "quote": "CNY", "rate": 7.1},
+    ])
+    calls = []
+    _, bindings = _bindings(
+        lambda url, **kwargs: calls.append((url, kwargs)) or response
+    )
+
+    result = _execute(bindings["public_finance_exchange_rate"], {
+        "base_currency": "USD",
+        "quote_currency": "CNY",
+        "lookback_days": 30,
+    })
+
+    assert result.success is True
+    assert result.data["start_date"] == start.isoformat()
+    assert result.data["end_date"] == today.isoformat()
+    assert calls[0][1]["params"]["from"] == start.isoformat()
+    assert calls[0][1]["params"]["to"] == today.isoformat()
+
+
+@pytest.mark.parametrize("arguments", [
+    {"start_date": "2000-01-01"},
+    {"start_date": "2000-01-01", "end_date": "2000-01-02", "date": "2000-01-01"},
+    {"lookback_days": 93},
+    {"start_date": "2000-01-03", "end_date": "2000-01-01"},
+])
+def test_exchange_rate_rejects_invalid_or_unbounded_date_ranges(arguments):
+    calls = []
+    _, bindings = _bindings(
+        lambda url, **kwargs: calls.append((url, kwargs))
+    )
+
+    result = _execute(bindings["public_finance_exchange_rate"], {
+        "base_currency": "USD",
+        "quote_currency": "CNY",
+        **arguments,
+    })
+
+    assert result.success is False
+    assert calls == []
 
 
 def test_exchange_rate_rejects_path_injection_before_network_call():

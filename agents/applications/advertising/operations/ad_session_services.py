@@ -11,6 +11,7 @@ from agents.agent_harness.core.interfaces import ToolContext, ToolResult
 from .session_context import SessionContext
 from .conversation_state import valid_conversation_state
 from .conversation_task_state import valid_conversation_task_state
+from .conversation_digest import compact_conversation_digest
 
 logger = logging.getLogger(__name__)
 
@@ -82,7 +83,10 @@ class AdSessionServices:
                 )
             stored_digest = persisted_metadata.get("conversation_digest")
             if isinstance(stored_digest, str):
-                ctx.metadata["conversation_digest"] = stored_digest[:2400]
+                ctx.metadata["conversation_digest"] = compact_conversation_digest(
+                    stored_digest,
+                    redactor=self.runtime._redact_for_persistence,
+                )
             ctx.metadata["conversation_state"] = valid_conversation_state(
                 persisted_metadata.get("conversation_state")
             )

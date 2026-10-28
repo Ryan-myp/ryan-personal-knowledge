@@ -9,7 +9,7 @@ import threading
 import time
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, Callable, Mapping
 from urllib.parse import urlencode, urlsplit
 
@@ -28,6 +28,8 @@ from agents.agent_harness.core.interfaces import (
 
 MAX_RESPONSE_BYTES = 256_000
 MAX_OUTPUT_BYTES = 32_000
+MAX_EXCHANGE_RANGE_DAYS = 92
+MAX_EXCHANGE_OBSERVATIONS = 100
 REQUEST_TIMEOUT = (3, 8)
 _ALLOWED_HOSTS = frozenset({
     "api.frankfurter.dev",
@@ -246,7 +248,37 @@ class _ExchangeRateExecutor(_PublicDataExecutor):
     def execute(self, _context: Any, arguments: dict[str, Any]) -> ToolResult:
         try:
             base, quote = _exchange_currencies(arguments)
-            params = _exchange_date_params(arguments)
+            query = _exchange_rate_query(arguments)
+            if query["kind"] == "range":
+                endpoint = f"{self._endpoint.rsplit('/rate', 1)[0]}/rates"
+                params = {
+                    "base": base,
+                    "quotes": quote,
+                    "from": query["start_date"],
+                    "to": query["end_date"],
+                }
+                payload = self._fetch(params, endpoint=endpoint)
+                records = _project_exchange_rate_series(
+                    payload,
+                    base,
+                    quote,
+                    date.fromisoformat(query["start_date"]),
+                    date.fromisoformat(query["end_date"]),
+                )
+                return ToolResult.ok({
+                    "source": "Frankfurter",
+                    "source_url": f"{endpoint}?{urlencode(params)}",
+                    "data_status": "live_external",
+                    "base": base,
+                    "quote": quote,
+                    "start_date": query["start_date"],
+                    "end_date": query["end_date"],
+                    "count": len(records),
+                    "records": records,
+                    "retrieved_at": _now(),
+                })
+
+            params = {"date": query["date"]} if query["date"] else {}
             endpoint = f"{self._endpoint}/{base}/{quote}"
             payload = self._fetch(params, endpoint=endpoint)
             rate, observed_date = _project_exchange_rate(payload, base, quote)
@@ -275,19 +307,70 @@ def _exchange_currencies(arguments: Mapping[str, Any]) -> tuple[str, str]:
     return base, quote
 
 
-def _exchange_date_params(arguments: Mapping[str, Any]) -> dict[str, str]:
+def _exchange_rate_query(arguments: Mapping[str, Any]) -> dict[str, str]:
     requested_date = arguments.get("date")
-    if requested_date in (None, ""):
-        return {}
-    if not isinstance(requested_date, str):
+    start_date = arguments.get("start_date")
+    end_date = arguments.get("end_date")
+    lookback_days = arguments.get("lookback_days")
+    has_date = requested_date not in (None, "")
+    has_start = start_date not in (None, "")
+    has_end = end_date not in (None, "")
+    has_lookback = lookback_days not in (None, "")
+    if has_date and (has_start or has_end or has_lookback):
+        raise _PublicDataError("单日日期和日期范围参数不能同时使用")
+    if has_lookback and (has_start or has_end):
+        raise _PublicDataError("最近 N 天与起止日期参数不能同时使用")
+    if has_start != has_end:
+        raise _PublicDataError("日期范围必须同时提供开始日期和结束日期")
+    if has_date:
+        return {
+            "kind": "single",
+            "date": _parse_exchange_date(requested_date).isoformat(),
+        }
+
+    today = datetime.now(timezone.utc).date()
+    if has_lookback:
+        if isinstance(lookback_days, bool) or not isinstance(lookback_days, int):
+            raise _PublicDataError("最近天数必须是整数")
+        if not 1 <= lookback_days <= MAX_EXCHANGE_RANGE_DAYS:
+            raise _PublicDataError(
+                f"日期范围必须在 1 到 {MAX_EXCHANGE_RANGE_DAYS} 天内"
+            )
+        start = today - timedelta(days=lookback_days - 1)
+        return {
+            "kind": "range",
+            "start_date": start.isoformat(),
+            "end_date": today.isoformat(),
+        }
+    if has_start:
+        start = _parse_exchange_date(start_date)
+        end = _parse_exchange_date(end_date)
+        if start > end:
+            raise _PublicDataError("开始日期不能晚于结束日期")
+        if (end - start).days + 1 > MAX_EXCHANGE_RANGE_DAYS:
+            raise _PublicDataError(
+                f"日期范围不能超过 {MAX_EXCHANGE_RANGE_DAYS} 天"
+            )
+        return {
+            "kind": "range",
+            "start_date": start.isoformat(),
+            "end_date": end.isoformat(),
+        }
+    return {"kind": "single", "date": ""}
+
+
+def _parse_exchange_date(value: Any) -> date:
+    if not isinstance(value, str):
         raise _PublicDataError("日期必须使用 YYYY-MM-DD 格式")
     try:
-        parsed_date = date.fromisoformat(requested_date)
+        parsed = date.fromisoformat(value)
     except ValueError as error:
         raise _PublicDataError("日期必须使用 YYYY-MM-DD 格式") from error
-    if parsed_date > datetime.now(timezone.utc).date():
+    if parsed.isoformat() != value:
+        raise _PublicDataError("日期必须使用 YYYY-MM-DD 格式")
+    if parsed > datetime.now(timezone.utc).date():
         raise _PublicDataError("日期不能晚于今天")
-    return {"date": parsed_date.isoformat()}
+    return parsed
 
 
 def _project_exchange_rate(
@@ -311,6 +394,54 @@ def _project_exchange_rate(
     ):
         raise _PublicDataError("公共数据服务返回的货币代码不匹配")
     return float(rate), _bounded_text(payload.get("date"), 10)
+
+
+def _project_exchange_rate_series(
+    payload: Any,
+    base: str,
+    quote: str,
+    start: date,
+    end: date,
+) -> list[dict[str, Any]]:
+    if not isinstance(payload, list):
+        raise _PublicDataError("公共数据服务返回了不支持的时间序列结构")
+    if len(payload) > MAX_EXCHANGE_OBSERVATIONS:
+        raise _PublicDataError("汇率观测数量超过安全上限")
+    records = []
+    seen_dates: set[str] = set()
+    for item in payload:
+        if not isinstance(item, Mapping):
+            raise _PublicDataError("公共数据服务返回了无效的汇率观测")
+        if (
+            str(item.get("base") or "").upper() != base
+            or str(item.get("quote") or "").upper() != quote
+        ):
+            raise _PublicDataError("公共数据服务返回的货币代码不匹配")
+        observed = _bounded_text(item.get("date"), 10)
+        try:
+            observed_date = date.fromisoformat(observed)
+        except ValueError as error:
+            raise _PublicDataError("公共数据服务返回了无效的观测日期") from error
+        if observed_date.isoformat() != observed:
+            raise _PublicDataError("公共数据服务返回了无效的观测日期")
+        if observed_date < start or observed_date > end:
+            raise _PublicDataError("公共数据服务返回了范围外的观测")
+        rate = item.get("rate")
+        if (
+            isinstance(rate, bool)
+            or not isinstance(rate, (int, float))
+            or not math.isfinite(float(rate))
+            or float(rate) <= 0
+        ):
+            raise _PublicDataError("公共数据服务返回了无效汇率")
+        if observed in seen_dates:
+            raise _PublicDataError("公共数据服务返回了重复日期观测")
+        seen_dates.add(observed)
+        records.append({"date": observed, "rate": float(rate)})
+    if not records:
+        raise _PublicDataError("该日期范围没有可用的汇率数据")
+    records.sort(key=lambda item: item["date"])
+    return records
 
 
 class _WorldBankIndicatorExecutor(_PublicDataExecutor):
@@ -514,6 +645,7 @@ class _PublicDataToolSpec:
     schema: ToolSchema
     result_items_key: str
     timeout_seconds: float = 12
+    contract_version: str = "1.0.0"
 
 
 def _definition(spec: _PublicDataToolSpec, permission: str) -> ToolDefinition:
@@ -537,7 +669,7 @@ def _definition(spec: _PublicDataToolSpec, permission: str) -> ToolDefinition:
         required_permissions=[permission],
         scope_required=False,
         result_items_key=spec.result_items_key,
-        contract_version="1.0.0",
+        contract_version=spec.contract_version,
     )
 
 
@@ -549,9 +681,13 @@ def _exchange_rate_spec() -> _PublicDataToolSpec:
         description=(
             "Look up a current or historical daily currency exchange rate from "
             "the no-key Frankfurter API. Use for currency conversion or comparing "
-            "advertising budgets across currencies. Input uses three-letter "
-            "currency codes; an optional date is YYYY-MM-DD. This is an external "
-            "reference rate, not a trading quote."
+            "advertising budgets across currencies, or a historical time series "
+            "for a date-based trend. Input uses three-letter currency codes; "
+            "choose one of a single date or a range up to 92 calendar days, "
+            "using a complete start/end date pair or lookback_days from 1 to 92. "
+            "Date ranges return actual published "
+            "observations only; weekends and holidays are not interpolated. "
+            "This is an external reference rate, not a trading quote."
         ),
         action="lookup",
         resource_type="exchange_rate",
@@ -563,9 +699,13 @@ def _exchange_rate_spec() -> _PublicDataToolSpec:
             "美元兑人民币",
             "exchange rate",
             "currency conversion",
+            "历史汇率时间序列",
+            "汇率趋势图",
+            "date-based exchange rate trend",
         ),
         schema=_exchange_rate_schema(),
         result_items_key="records",
+        contract_version="1.1.0",
     )
 
 
@@ -588,6 +728,24 @@ def _exchange_rate_schema() -> ToolSchema:
                 "type": "string",
                 "format": "date",
                 "description": "Optional historical date in YYYY-MM-DD",
+            },
+            "start_date": {
+                "type": "string",
+                "format": "date",
+                "description": "Inclusive start date for a historical time series",
+            },
+            "end_date": {
+                "type": "string",
+                "format": "date",
+                "description": "Inclusive end date for a historical time series",
+            },
+            "lookback_days": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": MAX_EXCHANGE_RANGE_DAYS,
+                "description": (
+                    "Inclusive number of calendar days ending today, for example 30"
+                ),
             },
         },
         ["base_currency", "quote_currency"],

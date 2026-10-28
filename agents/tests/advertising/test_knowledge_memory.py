@@ -11,7 +11,7 @@ from agents.applications.advertising.knowledge.knowledge_management import (
     ManagedKnowledgeManager,
     ManagedKnowledgeProvider,
 )
-from agents.agent_harness.core.memory import MemoryManager
+from agents.agent_harness.core.memory import MemoryManager, MemoryRecord
 from agents.agent_harness.core.intent import LLMIntentParser
 from agents.agent_harness.core.interfaces import ParsedIntent, ToolContext
 from agents.applications.advertising.persistence.store import AdAgentStore
@@ -1131,6 +1131,146 @@ def test_memory_recall_prioritizes_explicit_preferences_over_automatic_history()
     assert result[0].memory_id != automatic.memory_id
 
 
+def test_memory_search_deduplicates_repeated_query_terms_before_ranking():
+    store = AdAgentStore(":memory:")
+    base = {
+        "tenant_id": "tenant-a",
+        "user_id": "user-a",
+        "kind": "semantic",
+        "source": "user_explicit",
+        "importance": 0.5,
+        "confidence": 1.0,
+        "created_at": "2026-10-01T00:00:00+00:00",
+        "updated_at": "2026-10-01T00:00:00+00:00",
+    }
+    store.save_memory(MemoryRecord(
+        memory_id="google-only",
+        content="Google account reporting connection",
+        **base,
+    ))
+    store.save_memory(MemoryRecord(
+        memory_id="budget-and-campaign",
+        content="Budget campaign pacing rules",
+        **base,
+    ))
+
+    result = store.search_memories(
+        "Google Google Google budget campaign",
+        tenant_id="tenant-a",
+        user_id="user-a",
+        limit=2,
+    )
+
+    assert [item.memory_id for item in result] == [
+        "budget-and-campaign", "google-only",
+    ]
+
+
+def test_memory_search_breaks_equal_score_ties_in_favor_of_newer_records():
+    store = AdAgentStore(":memory:")
+    base = {
+        "tenant_id": "tenant-a",
+        "user_id": "user-a",
+        "kind": "semantic",
+        "content": "Meta budget campaign defaults",
+        "source": "user_explicit",
+        "importance": 0.5,
+        "confidence": 1.0,
+        "created_at": "2000-01-01T00:00:00+00:00",
+    }
+    store.save_memory(MemoryRecord(
+        memory_id="older",
+        updated_at="2000-01-01T00:00:00+00:00",
+        **base,
+    ))
+    store.save_memory(MemoryRecord(
+        memory_id="newer",
+        updated_at="2001-01-01T00:00:00+00:00",
+        **base,
+    ))
+
+    result = store.search_memories(
+        "Meta budget campaign",
+        tenant_id="tenant-a",
+        user_id="user-a",
+        limit=2,
+    )
+
+    assert [item.memory_id for item in result] == ["newer", "older"]
+
+
+def test_memory_search_uses_whole_latin_tokens_to_avoid_substring_false_matches():
+    store = AdAgentStore(":memory:")
+    base = {
+        "tenant_id": "tenant-a",
+        "user_id": "user-a",
+        "kind": "semantic",
+        "source": "user_explicit",
+        "importance": 0.5,
+        "confidence": 1.0,
+        "created_at": "2026-10-01T00:00:00+00:00",
+        "updated_at": "2026-10-01T00:00:00+00:00",
+    }
+    store.save_memory(MemoryRecord(
+        memory_id="lead-operations",
+        content="Leads operations and qualification",
+        **base,
+    ))
+    store.save_memory(MemoryRecord(
+        memory_id="ads-operations",
+        content="Ads campaign operations",
+        **base,
+    ))
+
+    result = store.search_memories(
+        "ads",
+        tenant_id="tenant-a",
+        user_id="user-a",
+        limit=5,
+    )
+
+    assert [item.memory_id for item in result] == ["ads-operations"]
+
+
+def test_memory_search_keeps_explicit_long_term_notes_beyond_recent_candidate_window():
+    store = AdAgentStore(":memory:")
+    store.save_memory(MemoryRecord(
+        memory_id="explicit-long-term",
+        tenant_id="tenant-a",
+        user_id="user-a",
+        kind="semantic",
+        content="TikTok campaign budget preference: keep campaigns paused",
+        source="user_explicit",
+        importance=0.9,
+        confidence=1.0,
+        created_at="2025-01-01T00:00:00+00:00",
+        updated_at="2025-01-01T00:00:00+00:00",
+    ))
+    for index in range(205):
+        store.save_memory(MemoryRecord(
+            memory_id=f"recent-automatic-{index}",
+            tenant_id="tenant-a",
+            user_id="user-a",
+            kind="episodic",
+            content=f"Routine system event {index}",
+            source="runtime_automatic",
+            importance=0.2,
+            confidence=0.8,
+            created_at="2026-10-27T00:00:00+00:00",
+            updated_at=f"2026-10-27T00:{index // 60:02d}:{index % 60:02d}+00:00",
+        ))
+
+    result = store.search_memories(
+        "TikTok campaign budget",
+        tenant_id="tenant-a",
+        user_id="user-a",
+        limit=2,
+    )
+
+    assert result
+    assert result[0].memory_id == "explicit-long-term"
+
+
 def test_memory_context_marks_safe_defaults_and_blocks_resource_authority():
     store = AdAgentStore(":memory:")
     manager = MemoryManager(store, cache_ttl_seconds=0)
@@ -1478,6 +1618,7 @@ def test_session_window_and_digest_restore_after_restart():
     metadata = __import__("json").loads(persisted["metadata"])
     assert len(metadata["messages"]) == 20
     assert "用户请求 0" in metadata["conversation_digest"]
+    assert "助手回复 0" not in metadata["conversation_digest"]
 
     restarted = AdvertisingComposition(require_llm=False, persistence_store=store, features=[])
     restored = restarted._ensure_session("session-1", "user-1", None, {}, tenant_id="tenant-1")
@@ -1485,10 +1626,65 @@ def test_session_window_and_digest_restore_after_restart():
     assert restored.messages[0]["content"] == "用户请求 2"
     assert restored.messages[-1]["content"] == "助手回复 11"
     assert "用户请求 0" in restored.ctx.metadata["conversation_digest"]
+    assert "助手回复 0" not in restored.ctx.metadata["conversation_digest"]
     if restarted.task_executor:
         restarted.task_executor.shutdown(wait=True)
     if runtime.task_executor:
         runtime.task_executor.shutdown(wait=True)
+
+
+def test_conversation_digest_keeps_unique_user_requests_within_bounds():
+    store = AdAgentStore(":memory:")
+    runtime = AdvertisingComposition(
+        require_llm=False, persistence_store=store, features=[],
+    )
+    session = runtime._ensure_session(
+        "deduplicated-digest", "user-1", None, {}, tenant_id="tenant-1",
+    )
+    for index in range(16):
+        request = "重复主题请求" if index % 2 == 0 else f"独立主题请求 {index}"
+        runtime.persist_conversation_turn(
+            session, f"turn-{index}", request, f"助手臆测答案 {index}",
+        )
+
+    digest = session.ctx.metadata["conversation_digest"]
+
+    assert digest.count("重复主题请求") == 1
+    assert "助手臆测答案" not in digest
+    assert "独立主题请求 1" in digest
+    assert len(digest) <= 2400
+    runtime.close(wait=True)
+
+
+def test_session_restore_drops_assistant_lines_from_legacy_digest():
+    store = AdAgentStore(":memory:")
+    runtime = AdvertisingComposition(
+        require_llm=False, persistence_store=store, features=[],
+    )
+    runtime._ensure_session(
+        "legacy-digest", "user-1", None, {}, tenant_id="tenant-1",
+    )
+    runtime._session_manager.update_session("legacy-digest", {
+        "tenant_id": "tenant-1",
+        "conversation_digest": (
+            "- 用户：Meta campaign 保持 paused\n"
+            "- 助手：平台已经确认所有广告都暂停"
+        ),
+    })
+    restarted = AdvertisingComposition(
+        require_llm=False, persistence_store=store, features=[],
+    )
+
+    restored = restarted._ensure_session(
+        "legacy-digest", "user-1", None, {}, tenant_id="tenant-1",
+    )
+
+    assert restored.ctx.metadata["conversation_digest"] == (
+        "- 用户：Meta campaign 保持 paused"
+    )
+    assert "平台已经确认" not in restored.ctx.metadata["conversation_digest"]
+    restarted.close(wait=True)
+    runtime.close(wait=True)
 
 
 def test_memory_policy_rejects_empty_and_redacts_credential_like_values():
@@ -1647,7 +1843,8 @@ def test_session_working_memory_has_character_budget_and_preserves_digest():
 
     assert sum(len(item["content"]) for item in session.messages) <= session.MAX_CONTEXT_CHARS
     assert all(len(item["content"]) <= session.MAX_MESSAGE_CHARS for item in session.messages)
-    assert "用户请求 0" in session.ctx.metadata["conversation_digest"]
+    assert "用户请求" in session.ctx.metadata["conversation_digest"]
+    assert "助手回复" not in session.ctx.metadata["conversation_digest"]
     runtime.close(wait=True)
 
 

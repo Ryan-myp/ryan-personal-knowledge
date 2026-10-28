@@ -825,6 +825,10 @@ class AdApplicationAssembly:
                         tools,
                         limit=MAX_RELEVANT_TOOLS_PER_TURN,
                         conversation_context=conversation_context,
+                        prior_tool_names=tuple(
+                            request_context.get("_agent_prior_tool_names", ())
+                            or ()
+                        ),
                         contextual_namespaces=contextual_namespaces,
                         clarification_followup=clarification_followup,
                     )
@@ -869,6 +873,10 @@ class AdApplicationAssembly:
                         request.user_input,
                         selected,
                         conversation_context=conversation_context,
+                        prior_tool_names=tuple(
+                            request_context.get("_agent_prior_tool_names", ())
+                            or ()
+                        ),
                     )
                 ):
                     request_context["_agent_tool_choice_required"] = True
