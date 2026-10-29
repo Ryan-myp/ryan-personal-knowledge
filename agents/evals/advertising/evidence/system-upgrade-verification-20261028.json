@@ -1,0 +1,79 @@
+{
+  "schema_version": "system-upgrade-verification/v1",
+  "date": "2026-10-28",
+  "scope": "local_checks_and_model_backed_offline_providers",
+  "full_project_check": {
+    "command": "make ad-agent-check",
+    "exit_code": 0,
+    "compilation_passed": true,
+    "capability_audit_passed": true,
+    "tool_contracts_and_snapshot_passed": true,
+    "validated_tools": 321,
+    "tests_passed": 3218,
+    "tests_failed": 0,
+    "warnings": 1,
+    "test_duration_seconds": 308.58,
+    "knowledge_check_passed": true,
+    "knowledge_pages": 85
+  },
+  "incremental_quality": {
+    "changed_python_source_files": 37,
+    "baseline_findings": 503,
+    "current_findings": 500,
+    "new_findings": 0,
+    "gate_passed": true
+  },
+  "whole_repository_quality": {
+    "scanned_files": 758,
+    "findings": 4990,
+    "score": 0.0,
+    "gate_passed": false
+  },
+  "focused_line_coverage_percent": {
+    "tool_output": 92,
+    "execution_evidence": 85,
+    "combined": 88,
+    "whole_system_coverage_assessed": false
+  },
+  "model_backed_regression": {
+    "latest_scope": "two_targeted_meta_report_cases",
+    "latest_passed": 2,
+    "latest_total": 2,
+    "tool_arguments_asserted": true,
+    "advertising_providers": "offline",
+    "provider_e2e": false,
+    "full_dataset_rerun_after_final_fix": false,
+    "historical_failures_preserved": true,
+    "latest_evidence": "system-upgrade-model-meta-recheck-20261028.json",
+    "release_ready": false
+  },
+  "fixed_knowledge_retrieval_evaluation": {
+    "total_cases": 65,
+    "negative_cases": 7,
+    "negative_failures": 0,
+    "hybrid_hit_at_3": 1.0,
+    "hybrid_recall_at_3": 0.887,
+    "open_domain_accuracy_assessed": false
+  },
+  "local_evidence_window_benchmark": {
+    "old_p50_ms": 68.373,
+    "new_p50_ms": 43.352,
+    "reduction_percent": 36.6,
+    "samples_per_path": 15,
+    "end_to_end_latency_assessed": false,
+    "evidence": "system-upgrade-evidence-window-performance-20261028.json"
+  },
+  "external_skill_up_entrypoint": {
+    "command": "agents/evals/advertising/skill-up/run.sh",
+    "exit_code": 127,
+    "passed": false,
+    "reason": "skill-up CLI is not installed"
+  },
+  "delivery": {
+    "database_migration": false,
+    "committed": false,
+    "pushed": false,
+    "service_restarted": false,
+    "advertising_provider_calls_this_round": 0
+  }
+}

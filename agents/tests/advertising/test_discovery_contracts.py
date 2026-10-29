@@ -244,7 +244,7 @@ def test_google_app_campaign_requires_declared_parameters_before_execution():
         (
             "tiktok",
             {"objective_type": "LEAD_GENERATION"},
-            ["tiktok_create_campaign", "tiktok_create_adgroup", "tiktok_create_lead_ad"],
+            ["tiktok_smart_plus_create_campaign", "tiktok_smart_plus_create_adgroup", "tiktok_smart_plus_create_ad"],
         ),
         (
             "tiktok",
@@ -834,6 +834,7 @@ def test_plugin_only_channel_auto_discovers_without_tool_source_or_central_confi
         'agent_readonly_recipe',
         'new_network_list_campaigns',
         'agent_request_input',
+        'agent_discover_tools',
     }
     assert runtime.skill_loader.get("new-network-skill").namespace_aliases == ["新网络"]
 
@@ -882,6 +883,7 @@ def test_standard_skill_discovery_does_not_require_category_directories(tmp_path
         'agent_readonly_recipe',
         'new_network_plan',
         'agent_request_input',
+        'agent_discover_tools',
     }
     loaded = runtime.skill_loader.get("campaign-planning")
     assert loaded is not None
@@ -911,6 +913,7 @@ def test_untrusted_skill_root_is_advisory_only_by_default(tmp_path):
         'agent_knowledge_search',
         'agent_readonly_recipe',
         'agent_request_input',
+        'agent_discover_tools',
     }
 
 

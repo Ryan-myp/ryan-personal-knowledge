@@ -356,14 +356,18 @@ def run(
 
     model_metrics = ModelMetrics()
     phase_metrics = PhaseMetrics()
+    from agents.agent_platform.evals.execution_evidence import ToolArgumentEvidence
+    argument_evidence = ToolArgumentEvidence()
     def record_metrics(event: Mapping[str, Any]) -> None:
         model_metrics(event)
         phase_metrics(event)
+        argument_evidence(event)
 
     try:
         runtime_result = {}
         session_id = "skill-up:" + str(session_input.get("case_id") or "case")
         for user_input in user_turns:
+            argument_evidence.clear()
             transcript.append({"role": "user", "content": user_input})
             runtime_result = runtime.run(
                 user_input=user_input,
@@ -379,6 +383,10 @@ def run(
         duration_ms = max(int((time.monotonic() - started) * 1000), 0)
         runtime_result["model_metrics"] = model_metrics.snapshot()
         runtime_result["phase_metrics"] = phase_metrics.snapshot()
+        if "tool_results" in runtime_result:
+            runtime_result["tool_results"] = argument_evidence.enrich(
+                runtime_result["tool_results"],
+            )
     finally:
         # Evaluation is often run repeatedly by the management API. Release
         # the Runtime-owned lifecycle and in-memory SQLite connection after

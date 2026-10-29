@@ -4,12 +4,28 @@
             activeView: 'trace',
             activeCardId: null,
             cards: new Map(),
+            confirmationKind: null,
             open: false,
         };
 
+        function hasWorkbenchArtifacts() {
+            return workbenchState.cards.size > 0 || Boolean(workbenchState.confirmationKind);
+        }
+
+        function syncWorkbenchTabs() {
+            const available = hasWorkbenchArtifacts();
+            const tabbar = document.getElementById('workbenchTabbar');
+            const creationTab = document.getElementById('workbench-tab-creation');
+            const label = document.getElementById('workbenchContextLabel');
+            if (tabbar) tabbar.hidden = !available;
+            if (creationTab) creationTab.hidden = !available;
+            if (label) label.textContent = workbenchState.confirmationKind === 'action' ? '操作确认' : '广告创建';
+        }
+
         function setWorkbenchView(view) {
-            const nextView = view === 'creation' ? 'creation' : 'trace';
+            const nextView = view === 'creation' && hasWorkbenchArtifacts() ? 'creation' : 'trace';
             workbenchState.activeView = nextView;
+            syncWorkbenchTabs();
             const traceView = document.getElementById('trace-workbench-view');
             const creationView = document.getElementById('creation-workbench-view');
             const traceTab = document.getElementById('workbench-tab-trace');
@@ -52,6 +68,7 @@
                 workbenchState.cards.set(String(card.id), card);
                 workbenchState.activeCardId = String(card.id);
             }
+            workbenchState.confirmationKind = null;
             openAgentWorkbench('creation');
             const host = document.getElementById('creation-workbench-host');
             const confirmationHost = document.getElementById('confirmation-workbench-host');
@@ -67,34 +84,43 @@
         }
 
         function closeCreationWorkbench() {
-            const confirmationHost = document.getElementById('confirmation-workbench-host');
-            if (confirmationHost) confirmationHost.hidden = true;
             closeAgentWorkbench();
         }
 
-        function openConfirmationWorkbench() {
+        function openConfirmationWorkbench({ creation = false } = {}) {
+            const confirmationHost = document.getElementById('confirmation-workbench-host');
+            if (!confirmationHost?.childElementCount) {
+                workbenchState.confirmationKind = null;
+                setWorkbenchView('trace');
+                return;
+            }
+            workbenchState.confirmationKind = creation ? 'creation' : 'action';
             openAgentWorkbench('creation');
             const host = document.getElementById('creation-workbench-host');
-            const confirmationHost = document.getElementById('confirmation-workbench-host');
             if (host) host.hidden = true;
             if (confirmationHost) confirmationHost.hidden = false;
             const title = document.getElementById('workbenchCreationTitle');
             const subtitle = document.getElementById('workbenchCreationSubtitle');
-            if (title) title.textContent = '提交前确认';
-            if (subtitle) subtitle.textContent = '请检查账户、层级、预算、定向和素材；确认后才会继续执行。';
+            if (title) title.textContent = creation ? '提交前确认' : '确认与补充';
+            if (subtitle) subtitle.textContent = creation
+                ? '请检查账户、层级、预算、定向和素材；确认后才会继续执行。'
+                : '核对本次操作的内容，确认或补充后继续。';
+            updateCreationWorkbenchCount();
         }
 
         function updateCreationWorkbenchCount() {
+            syncWorkbenchTabs();
             const count = document.getElementById('workbenchCreationCount');
             if (!count) return;
             const size = workbenchState.cards.size;
             count.textContent = size ? `${size} 张` : '';
-            count.hidden = !size;
+            count.hidden = !size || workbenchState.confirmationKind === 'action';
         }
 
         function clearCreationWorkbenchDraft() {
             workbenchState.activeCardId = null;
             workbenchState.cards.clear();
+            workbenchState.confirmationKind = null;
             const host = document.getElementById('creation-workbench-host');
             if (host) {
                 host.replaceChildren();
@@ -169,6 +195,7 @@
         function resetCreationWorkbench() {
             workbenchState.activeCardId = null;
             workbenchState.cards.clear();
+            workbenchState.confirmationKind = null;
             document.getElementById('creation-workbench-host')?.replaceChildren();
             document.getElementById('confirmation-workbench-host')?.replaceChildren();
             setWorkbenchView('trace');
@@ -177,11 +204,14 @@
         }
 
         function clearWorkbenchConfirmation() {
+            workbenchState.confirmationKind = null;
             const confirmationHost = document.getElementById('confirmation-workbench-host');
             if (confirmationHost) {
                 confirmationHost.replaceChildren();
                 confirmationHost.hidden = true;
             }
             const host = document.getElementById('creation-workbench-host');
-            if (host) host.hidden = false;
+            if (host) host.hidden = !workbenchState.cards.size;
+            setWorkbenchView(workbenchState.activeView);
+            updateCreationWorkbenchCount();
         }

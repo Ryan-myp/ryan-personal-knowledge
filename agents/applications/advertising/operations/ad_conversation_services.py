@@ -10,9 +10,27 @@ import json
 from typing import Any, Mapping, Optional
 
 from agents.agent_harness.core.conversation_title import ConversationTitleGenerator
+from agents.applications.advertising.persistence.models import ConversationMessagePage
 from agents.tools.advertising.shared.domain.conversation import project_conversation_messages
 from .ad_conversation_feedback_services import AdConversationFeedbackServices
 from .ad_conversation_knowledge_services import AdConversationKnowledgeServices
+from .session_context import SessionContext
+
+
+def _cached_sidebar_messages(metadata: Mapping[str, Any]) -> list[Mapping[str, Any]] | None:
+    """Use the bounded presentation window written when a Run finishes."""
+    messages = metadata.get("messages")
+    if not isinstance(messages, list) or not 0 < len(messages) <= SessionContext.MAX_MESSAGES:
+        return None
+    if not all(
+        isinstance(row, Mapping) and row.get("role") in {"user", "assistant"}
+        and isinstance(row.get("content"), str)
+        for row in messages
+    ):
+        return None
+    if not messages[-1]["content"].strip():
+        return None
+    return messages
 
 
 class AdConversationServices:
@@ -65,24 +83,44 @@ class AdConversationServices:
         """List only the authenticated principal's durable conversations."""
         if not self.runtime._session_manager:
             return []
-        conversations = []
-        for session in self.runtime._session_manager.list_sessions(
+        page_limit = min(max(1, int(limit)), 256)
+        sessions = self.runtime._session_manager.list_sessions(
             user_id,
-            limit=limit,
+            limit=page_limit,
             tenant_id=tenant_id,
             before_updated_at=before_updated_at,
             before_session_id=before_session_id,
-        ):
-            records = self.runtime._session_manager.list_conversation_messages(
-                str(session.get("session_id") or ""), limit=500
-            )
+        )
+        prepared = []
+        for session in sessions:
             metadata = AdConversationServices._decode_session_metadata(session)
-            messages = project_conversation_messages(
-                [record.to_dict() for record in records],
-                metadata.get("conversation_ui"),
-            )
-            conversations.append(AdConversationServices._conversation_summary(session, messages))
-        return conversations[:limit]
+            prepared.append(({**session, "metadata": metadata}, _cached_sidebar_messages(metadata)))
+        legacy_ids = [str(session["session_id"]) for session, cached in prepared if cached is None]
+        pages = self.runtime._session_manager.list_conversation_preview_messages(
+            legacy_ids, user_id=user_id, tenant_id=tenant_id,
+        ) if legacy_ids else {}
+        return [
+            self._sidebar_summary(session, cached, pages.get(str(session["session_id"])))
+            for session, cached in prepared
+        ]
+
+    def _sidebar_summary(
+        self, session: Mapping[str, Any], cached: list[Mapping[str, Any]] | None,
+        page: ConversationMessagePage | None,
+    ) -> dict[str, Any]:
+        metadata = session["metadata"]
+        messages = cached if cached is not None else project_conversation_messages(
+            [record.to_dict() for record in page.records] if page else [],
+            metadata.get("conversation_ui"),
+        )
+        summary = self._conversation_summary(session, messages)
+        turns = metadata.get("conversation_turn_count")
+        partial = (page is not None and page.has_more) or (
+            cached is not None and type(turns) is int and turns * 2 > len(cached)
+        )
+        if partial:
+            summary.pop("message_count", None)
+        return self.runtime._redact_for_persistence(summary)
 
     def rename_conversation(
         self, session_id: str, title: str, *, user_id: str,
@@ -120,6 +158,9 @@ class AdConversationServices:
 
     def get_conversation_feedback_trend(self, **kwargs: Any) -> dict[str, Any]:
         return self.feedback_services.get_conversation_feedback_trend(**kwargs)
+
+    def page_conversation_feedback_review_queue(self, filters: Any) -> dict[str, Any]:
+        return self.feedback_services.page_conversation_feedback_review_queue(filters)
 
     def list_conversation_feedback_review_queue(
         self, **kwargs: Any,
@@ -237,6 +278,23 @@ class AdConversationServices:
             if result.get("status") == "recovery_required" else None
         )
         return result
+
+    def get_latest_run_status(
+        self, session_id: str, user_id: str, tenant_id: str = "default",
+    ) -> Optional[dict[str, str]]:
+        """Read only the latest Run status without loading its event history."""
+        manager = self.runtime._session_manager
+        getter = getattr(manager, "get_latest_execution_run", None)
+        if not callable(getter):
+            return None
+        record = getter(session_id, user_id=user_id, tenant_id=tenant_id)
+        if record is None:
+            return None
+        value = record.get("status") if isinstance(record, Mapping) else getattr(
+            record, "status", None,
+        )
+        status = str(value or "").strip().lower()
+        return {"status": status} if status else None
 
     def get_run_events(
         self, run_id: str, user_id: str, tenant_id: str = "default",

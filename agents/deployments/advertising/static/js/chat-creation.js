@@ -706,7 +706,7 @@
             const target = document.getElementById('confirmation-workbench-host')
                 || document.getElementById('confirmCardContainer');
             target?.appendChild(review);
-            if (typeof openConfirmationWorkbench === 'function') openConfirmationWorkbench();
+            if (typeof openConfirmationWorkbench === 'function') openConfirmationWorkbench({ creation: true });
         }
 
         function selectorTemplateOptions(card) {
@@ -1351,7 +1351,7 @@
                         || (options.length > 0 && options.length <= 6 && field.options_state !== 'awaiting_dependency' && field.options_state !== 'no_matching_rule');
                     if (useChoiceTiles) {
                         const multiple = field.control === 'multiselect';
-                        control = renderChoiceTiles(options, field.value, multiple, option => field.option_labels?.[String(option.value)] || '', value => {
+                        control = renderChoiceControl(options, field.value, multiple, option => field.option_labels?.[String(option.value)] || '', value => {
                             field.value = multiple && !value.length ? undefined : value;
                             creationCardState.set(card.id, card);
                             scheduleCreationCardEvaluation(card, field.path);

@@ -166,6 +166,7 @@ def test_blueprint_context_uses_canonical_namespace_contract_and_scoped_cache():
     runtime = SimpleNamespace(
         tool_selector=SimpleNamespace(build_context_for_input=lambda *_args, **_kwargs: {
             "namespaces": ["provider-b", "provider-a", "provider-a"],
+            "needs_creation_context": True,
         }),
         creation_card_builder=SimpleNamespace(
             llm_context=lambda **kwargs: queries.append(kwargs) or "scoped blueprints",
@@ -177,6 +178,29 @@ def test_blueprint_context_uses_canonical_namespace_contract_and_scoped_cache():
     ] == "scoped blueprints"
     service.build_skill_context("another", [], None, "tenant")
     assert queries == [{"providers": ["provider-a", "provider-b"]}]
+
+
+def test_read_only_context_does_not_build_creation_blueprints():
+    def forbidden(**_kwargs):
+        raise AssertionError("read-only requests must not build blueprints")
+
+    service = AdvertisingRuntimeContext(SimpleNamespace(
+        tool_selector=SimpleNamespace(build_context_for_input=lambda *_args, **_kwargs: {
+            "namespaces": ["example"], "needs_creation_context": False,
+        }), creation_card_builder=SimpleNamespace(llm_context=forbidden),
+    ))
+    assert not service.build_skill_context("report", [], None, "tenant").get("publisher_context")
+
+
+def test_creation_selection_is_serialized_once_but_keeps_workflow_instructions():
+    selection = {"available": True, "blueprint_id": "unique-blueprint", "create_tools": ["create_parent"],
+                 "preset_values": {"parent.name": "unique-preset"},
+                 "resource_lookup_requirements": [{"lookup_tool": "unique-lookup"}]}
+    prompt = AdvertisingContextProvider._render_prompt({}, {"creation_selection": selection})
+    assert prompt.count("unique-blueprint") == 1
+    assert prompt.count("unique-preset") == 1
+    assert prompt.count("unique-lookup") == 1
+    assert "必须完成蓝图声明的全部层级" in prompt
 
 
 def test_context_build_failure_clears_previous_advisory_data():

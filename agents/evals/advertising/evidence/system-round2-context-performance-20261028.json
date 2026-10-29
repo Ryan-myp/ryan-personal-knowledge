@@ -1,0 +1,29 @@
+{
+  "schema_version": "context-preparation-benchmark/v1",
+  "provider_calls": 0,
+  "model_calls": 0,
+  "metadata_scoring": {
+    "scope": "scoring_all_registered_contracts_not_full_selection_or_model_latency",
+    "tools": 321,
+    "samples_per_path": 20,
+    "uncached_p50_ms": 16.783,
+    "cached_p50_ms": 9.888,
+    "scores_identical": true,
+    "cache": {
+      "hits": 90956,
+      "misses": 38047,
+      "maxsize": 2048,
+      "currsize": 2048
+    }
+  },
+  "read_compaction": {
+    "mode": "synthetic_read_results",
+    "samples": 20,
+    "p50_ms": 3.364,
+    "before_message_chars": 136831,
+    "after_message_chars": 31302,
+    "message_char_budget": 32000,
+    "message_identity_preserved": true,
+    "raw_message_chars_after": 136831
+  }
+}

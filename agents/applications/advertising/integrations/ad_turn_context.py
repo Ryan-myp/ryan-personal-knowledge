@@ -31,7 +31,6 @@ class AdTurnContextService:
     """Build application-owned context without routing or executing Tools."""
 
     _CONTEXT_LIMITS = {
-        "tool_prompt": 6000,
         "expert_knowledge": 6000,
         "publisher_context": 3500,
         "knowledge": 6000,
@@ -49,7 +48,6 @@ class AdTurnContextService:
         "memory_context",
         "publisher_context",
         "expert_knowledge",
-        "tool_prompt",
         "conversation_state",
         "conversation_task_state",
     )
@@ -262,9 +260,12 @@ class AdTurnContextService:
         )
         if not isinstance(skill_context, dict):
             skill_context = {}
+        # The Harness sends executable schemas through the model's tools
+        # parameter. This unused textual copy must not evict user memory.
+        skill_context.pop("tool_prompt", None)
         budget = cls._CONTEXT_LIMITS
         truncated: dict[str, bool] = {}
-        for key in ("tool_prompt", "expert_knowledge", "publisher_context"):
+        for key in ("expert_knowledge", "publisher_context"):
             value, was_truncated = cls._bounded_text(
                 skill_context.get(key), budget[key]
             )

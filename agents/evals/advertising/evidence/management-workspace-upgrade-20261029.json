@@ -1,0 +1,1676 @@
+{
+  "date": "2026-10-29",
+  "scope": "Management UI, template catalog and offline regression; no advertising Provider requests",
+  "checks": {
+    "full_agent_check": {
+      "command": "make ad-agent-check",
+      "passed": 3274,
+      "warnings": 1,
+      "stage": "Before final frontend changes; final touched areas tested below"
+    },
+    "final_python": {
+      "passed": 224,
+      "warnings": 1,
+      "files": [
+        "test_management_catalog_integrity.py",
+        "test_creation_templates.py",
+        "test_blueprints.py",
+        "test_api_server_contract.py"
+      ]
+    },
+    "final_static_js": {
+      "passed": 165,
+      "failed": 0
+    },
+    "compileall": {
+      "passed": true
+    },
+    "creation_contract_audit": {
+      "strict_guided_passed": true,
+      "blueprints": 31,
+      "creation_tools": 74,
+      "lookup_contracts": 280,
+      "structured_guidance_gaps": 6,
+      "advanced_structured_fields": 11
+    },
+    "quality_gate": {
+      "passed": false,
+      "score": 0,
+      "findings": 4992,
+      "files": 763,
+      "note": "Repository-wide structural/style debt remains; this round does not clear the whole gate."
+    },
+    "browser": {
+      "passed": true,
+      "errors": [],
+      "metrics": {
+        "knowledge": {
+          ".knowledge-console": {
+            "x": 228,
+            "y": 60,
+            "width": 1212,
+            "height": 840,
+            "scrollHeight": 840
+          },
+          ".knowledge-reader": {
+            "x": 488,
+            "y": 223.1875,
+            "width": 952,
+            "height": 676.8125,
+            "scrollHeight": 1442
+          },
+          ".knowledge-search-panel": {
+            "x": 228,
+            "y": 124,
+            "width": 1212,
+            "height": 99.1875,
+            "scrollHeight": 98
+          },
+          ".knowledge-reader-body": {
+            "x": 488,
+            "y": 384.875,
+            "width": 900,
+            "height": 1233.34375,
+            "scrollHeight": 1233
+          }
+        },
+        "blueprint": {
+          ".blueprint-console": {
+            "x": 228,
+            "y": 60,
+            "width": 1212,
+            "height": 840,
+            "scrollHeight": 840
+          },
+          "#blueprintFields": {
+            "x": 478,
+            "y": 393.515625,
+            "width": 962,
+            "height": 447.484375,
+            "scrollHeight": 699
+          },
+          ".blueprint-editor-header": {
+            "x": 478,
+            "y": 124,
+            "width": 962,
+            "height": 71.78125,
+            "scrollHeight": 72
+          },
+          ".blueprint-editor-footer": {
+            "x": 478,
+            "y": 841,
+            "width": 962,
+            "height": 59,
+            "scrollHeight": 58
+          }
+        },
+        "blueprint-review": {
+          ".studio-review": {
+            "x": 478,
+            "y": 292.96875,
+            "width": 962,
+            "height": 548.03125,
+            "scrollHeight": 548
+          },
+          ".studio-review-body": {
+            "x": 502,
+            "y": 328.96875,
+            "width": 914,
+            "height": 247.8125,
+            "scrollHeight": 248
+          }
+        },
+        "templates": {
+          ".creation-studio": {
+            "x": 228,
+            "y": 60,
+            "width": 1212,
+            "height": 840,
+            "scrollHeight": 840
+          },
+          "#blueprintFields": {
+            "x": 478,
+            "y": 393.515625,
+            "width": 962,
+            "height": 447.484375,
+            "scrollHeight": 699
+          }
+        },
+        "new-template": {
+          ".template-create-picker": {
+            "x": 478,
+            "y": 124,
+            "width": 962,
+            "height": 776,
+            "scrollHeight": 776
+          }
+        },
+        "save-template": {
+          "#blueprintTemplatePanel": {
+            "x": 478,
+            "y": 245.171875,
+            "width": 962,
+            "height": 654.828125,
+            "scrollHeight": 655
+          }
+        },
+        "schedules": {
+          ".schedule-console": {
+            "x": 228,
+            "y": 60,
+            "width": 1212,
+            "height": 840,
+            "scrollHeight": 840
+          },
+          ".schedule-stat-grid": {
+            "x": 252,
+            "y": 148,
+            "width": 1164,
+            "height": 54,
+            "scrollHeight": 53
+          },
+          "#scheduleRunRows": {
+            "x": 270,
+            "y": 593.65625,
+            "width": 1128,
+            "height": 62.5,
+            "scrollHeight": 63
+          }
+        },
+        "schedule-result": {
+          "#scheduleRunDetail": {
+            "x": 228,
+            "y": 124,
+            "width": 1212,
+            "height": 776,
+            "scrollHeight": 776
+          },
+          "#scheduleRunContent": {
+            "x": 264,
+            "y": 230.390625,
+            "width": 960,
+            "height": 293.75,
+            "scrollHeight": 294
+          }
+        },
+        "skills": {
+          ".skill-console": {
+            "x": 228,
+            "y": 60,
+            "width": 1212,
+            "height": 840,
+            "scrollHeight": 840
+          },
+          ".skill-files": {
+            "x": 532,
+            "y": 293,
+            "width": 884,
+            "height": 495.5,
+            "scrollHeight": 496
+          }
+        },
+        "mcp": {
+          ".mcp-console": {
+            "x": 228,
+            "y": 60,
+            "width": 1212,
+            "height": 840,
+            "scrollHeight": 840
+          },
+          ".mcp-editor": null
+        },
+        "settings": {
+          ".service-settings-console": {
+            "x": 228,
+            "y": 60,
+            "width": 1212,
+            "height": 840,
+            "scrollHeight": 840
+          },
+          ".service-settings-form": {
+            "x": 584,
+            "y": 214,
+            "width": 780,
+            "height": 561.78125,
+            "scrollHeight": 562
+          }
+        },
+        "health": {
+          ".monitoring-health-panel": {
+            "x": 252,
+            "y": 249.390625,
+            "width": 900,
+            "height": 265.359375,
+            "scrollHeight": 265
+          }
+        },
+        "events": {
+          ".monitoring-events-panel": {
+            "x": 252,
+            "y": 249.390625,
+            "width": 1164,
+            "height": 556.234375,
+            "scrollHeight": 556
+          }
+        },
+        "country-dropdown": {
+          ".multi-choice-popover:popover-open": {
+            "x": 520,
+            "y": 528,
+            "width": 560,
+            "height": 360,
+            "scrollHeight": 358
+          }
+        },
+        "meta-targeting": {
+          "#blueprintFields": {
+            "x": 0,
+            "y": 0,
+            "width": 0,
+            "height": 0,
+            "scrollHeight": 0
+          }
+        },
+        "memory": {
+          ".memory-console": {
+            "x": 228,
+            "y": 60,
+            "width": 1212,
+            "height": 840,
+            "scrollHeight": 840
+          },
+          ".memory-console-body": {
+            "x": 228,
+            "y": 124,
+            "width": 1212,
+            "height": 776,
+            "scrollHeight": 776
+          }
+        },
+        "monitoring": {
+          "#monitoringOverlay .monitoring-console": {
+            "x": 228,
+            "y": 60,
+            "width": 1212,
+            "height": 840,
+            "scrollHeight": 840
+          }
+        },
+        "feedback": {
+          ".feedback-trend-console": {
+            "x": 228,
+            "y": 60,
+            "width": 1212,
+            "height": 840,
+            "scrollHeight": 840
+          }
+        },
+        "knowledge-dark": {
+          ".knowledge-reader": {
+            "x": 488,
+            "y": 223.1875,
+            "width": 952,
+            "height": 676.8125,
+            "scrollHeight": 1442
+          }
+        },
+        "knowledge-mobile": {
+          ".knowledge-console": {
+            "x": 0,
+            "y": 56,
+            "width": 390,
+            "height": 788,
+            "scrollHeight": 788
+          },
+          ".knowledge-reader": {
+            "x": 0,
+            "y": 401.375,
+            "width": 390,
+            "height": 442.625,
+            "scrollHeight": 1766
+          }
+        },
+        "blueprint-mobile": {
+          ".creation-studio": {
+            "x": 0,
+            "y": 56,
+            "width": 390,
+            "height": 788,
+            "scrollHeight": 788
+          },
+          "#blueprintFields": {
+            "x": 0,
+            "y": 441.875,
+            "width": 390,
+            "height": 322.328125,
+            "scrollHeight": 944
+          }
+        },
+        "health-mobile": {
+          ".monitoring-health-panel": {
+            "x": 16,
+            "y": 232.390625,
+            "width": 358,
+            "height": 265.359375,
+            "scrollHeight": 265
+          }
+        },
+        "blueprint-dark": {
+          "#blueprintFields": {
+            "x": 478,
+            "y": 393.515625,
+            "width": 962,
+            "height": 451.390625,
+            "scrollHeight": 699
+          }
+        }
+      },
+      "empty_fixture_routes": [
+        "/knowledge/documents",
+        "/knowledge/semantic-index/status",
+        "/memory",
+        "/feedback/trend",
+        "/feedback/review"
+      ]
+    }
+  },
+  "runtime_readback": {
+    "port": 8766,
+    "bind": "0.0.0.0",
+    "readiness": "ready",
+    "readiness_checks": [
+      "runtime",
+      "llm",
+      "tool_registry",
+      "persistence",
+      "workers"
+    ],
+    "visible_templates": 32,
+    "account_templates": 14,
+    "general_starters": 18,
+    "visible_blueprints": 31,
+    "static_assets_version": "20261029-management-final-v4"
+  },
+  "behavior": {
+    "navigation": [
+      "Skills",
+      "MCP",
+      "知识库",
+      "模板管理",
+      "模型与密钥",
+      "系统运维",
+      "最近对话"
+    ],
+    "template_flow": [
+      "选择渠道",
+      "选择广告类型",
+      "填写蓝图字段",
+      "保存模板"
+    ],
+    "multi_select": [
+      "search labels/codes",
+      "preserve API values",
+      "apply together",
+      "escape cancels draft selection",
+      "unknown saved values remain visible"
+    ],
+    "operations_views": {
+      "health": "GET /readyz; 503 not_ready rendered as diagnostic data",
+      "events": "GET /monitoring/overview; aggregate outbox and consumer status only"
+    }
+  },
+  "boundaries": [
+    "No user database migration",
+    "No credentials or principal changes",
+    "No advertising API requests",
+    "General starter templates are dry_run_only, not live verification",
+    "Event view does not expose per-event records or manual retry"
+  ],
+  "replay": {
+    "export": "./scripts/ad-agent-python -m scripts.advertising.export_management_ui_fixture /tmp/management-ui-fixture.json",
+    "browser": "node scripts/advertising/check_management_workspace.cjs /tmp/management-ui-fixture.json /tmp/management-ui-evidence",
+    "requirements": "Playwright and Chromium. CHROMIUM_EXECUTABLE optionally selects an installed Chromium."
+  },
+  "template_library_followup": {
+    "static_version": "20261029-template-library-v1",
+    "static_js_passed": 178,
+    "pagination": "client-side over existing locally persisted catalog; bounded rendered rows",
+    "scenarios": [
+      "combined filters",
+      "pagination and return state",
+      "readonly details",
+      "copy builtin to editable",
+      "cancel deletion",
+      "delete template",
+      "create template",
+      "edit parameters",
+      "inactive status preservation",
+      "save failure recovery",
+      "retained draft after workspace switch",
+      "mobile layout"
+    ],
+    "browser_errors": [],
+    "layout": {
+      "templates": {
+        ".creation-studio": {
+          "x": 228,
+          "y": 60,
+          "width": 1212,
+          "height": 840,
+          "scrollHeight": 840
+        },
+        "#templateLibrary": {
+          "x": 228,
+          "y": 124,
+          "width": 1212,
+          "height": 776,
+          "scrollHeight": 1738
+        }
+      },
+      "templates-wide": {
+        "#templateLibrary": {
+          "x": 228,
+          "y": 124,
+          "width": 1692,
+          "height": 956,
+          "scrollHeight": 1738
+        },
+        ".template-library-table": {
+          "x": 252,
+          "y": 239.1875,
+          "width": 1644,
+          "height": 1507.875,
+          "scrollHeight": 1508
+        }
+      },
+      "template-detail": {
+        "#templateDetail": {
+          "x": 228,
+          "y": 171.390625,
+          "width": 1212,
+          "height": 728.609375,
+          "scrollHeight": 2068
+        }
+      },
+      "templates-mobile": {
+        "#templateLibrary": {
+          "x": 0,
+          "y": 115,
+          "width": 390,
+          "height": 729,
+          "scrollHeight": 2911
+        },
+        ".template-library-filters": {
+          "x": 16,
+          "y": 131,
+          "width": 358,
+          "height": 253.5625,
+          "scrollHeight": 253
+        }
+      },
+      "template-detail-mobile": {
+        "#templateDetail": {
+          "x": 0,
+          "y": 162.390625,
+          "width": 390,
+          "height": 681.609375,
+          "scrollHeight": 2361
+        }
+      }
+    },
+    "service_read_only": {
+      "/": {
+        "http_status": 200,
+        "content_verified": true
+      },
+      "/static/js/chat.js": {
+        "http_status": 200,
+        "content_verified": true
+      },
+      "/static/js/chat-template-browser.js": {
+        "http_status": 200,
+        "content_verified": true
+      },
+      "/static/css/chat-management.css": {
+        "http_status": 200,
+        "content_verified": true
+      },
+      "catalog": {
+        "total": 32,
+        "builtin": 32,
+        "custom": 0
+      }
+    },
+    "provider_api_calls": false,
+    "live_template_mutations": false,
+    "database_migration_required": false,
+    "full_check": {
+      "exit_code": 0,
+      "python_tests_passed": 3300,
+      "warnings": 1,
+      "static_js_passed": 178,
+      "diff_check": "passed"
+    }
+  },
+  "resource_catalog_followup": {
+    "static_version": "20261029-resource-catalog-v1",
+    "static_js_passed": 183,
+    "pagination": "Client-side pagination over existing API result limits: knowledge 100; Skills/MCP 200. Not server-side full-catalog pagination.",
+    "scenarios": [
+      "list-first, no automatic detail selection",
+      "combined search and source/status/platform/category filters",
+      "10/20/50 rows per page",
+      "return preserves filters and page",
+      "full-width reader and editor",
+      "builtin resources stay read-only",
+      "Skill edits create new immutable versions",
+      "in-memory draft survives reading another record",
+      "refresh does not overwrite MCP editing draft",
+      "late MCP refresh cannot reopen returned detail",
+      "external MCP removal uses existing confirmation",
+      "desktop/mobile light and dark layouts"
+    ],
+    "browser_errors": [],
+    "empty_fixture_routes": [
+      "/knowledge/semantic-index/status",
+      "/memory",
+      "/feedback/trend"
+    ],
+    "layout": {
+      "knowledge-list": {
+        "#knowledgeCatalog": {
+          "x": 228,
+          "y": 222.1875,
+          "width": 1212,
+          "height": 677.8125,
+          "scrollHeight": 1471
+        }
+      },
+      "knowledge": {
+        ".knowledge-console": {
+          "x": 228,
+          "y": 60,
+          "width": 1212,
+          "height": 840,
+          "scrollHeight": 840
+        },
+        ".knowledge-reader": {
+          "x": 228,
+          "y": 171.390625,
+          "width": 1212,
+          "height": 728.609375,
+          "scrollHeight": 1434
+        },
+        ".knowledge-search-panel": {
+          "x": 0,
+          "y": 0,
+          "width": 0,
+          "height": 0,
+          "scrollHeight": 0
+        },
+        ".knowledge-reader-body": {
+          "x": 228,
+          "y": 333.078125,
+          "width": 1100,
+          "height": 1225.34375,
+          "scrollHeight": 1225
+        }
+      },
+      "knowledge-editor": {
+        "#knowledgeComposer": {
+          "x": 228,
+          "y": 208.1875,
+          "width": 1212,
+          "height": 691.8125,
+          "scrollHeight": 692
+        },
+        "#knowledgeContent": {
+          "x": 264,
+          "y": 578.15625,
+          "width": 1140,
+          "height": 190,
+          "scrollHeight": 188
+        }
+      },
+      "skills-list": {
+        "#skillsCatalog": {
+          "x": 228,
+          "y": 183,
+          "width": 1212,
+          "height": 717,
+          "scrollHeight": 1756
+        }
+      },
+      "skills": {
+        ".skill-console": {
+          "x": 228,
+          "y": 60,
+          "width": 1212,
+          "height": 840,
+          "scrollHeight": 840
+        },
+        ".skill-files": {
+          "x": 252,
+          "y": 392.390625,
+          "width": 1164,
+          "height": 396.109375,
+          "scrollHeight": 396
+        }
+      },
+      "mcp-list": {
+        "#mcpCatalog": {
+          "x": 228,
+          "y": 187,
+          "width": 1212,
+          "height": 713,
+          "scrollHeight": 1496
+        }
+      },
+      "mcp": {
+        ".mcp-console": {
+          "x": 228,
+          "y": 60,
+          "width": 1212,
+          "height": 840,
+          "scrollHeight": 840
+        },
+        ".mcp-detail": {
+          "x": 228,
+          "y": 234.390625,
+          "width": 1212,
+          "height": 665.609375,
+          "scrollHeight": 666
+        }
+      },
+      "knowledge-dark": {
+        ".knowledge-reader": {
+          "x": 228,
+          "y": 208.1875,
+          "width": 1212,
+          "height": 321.90625,
+          "scrollHeight": 1434
+        }
+      },
+      "knowledge-list-mobile": {
+        "#knowledgeCatalog": {
+          "x": 0,
+          "y": 299.984375,
+          "width": 390,
+          "height": 256,
+          "scrollHeight": 5464
+        }
+      },
+      "knowledge-mobile": {
+        ".knowledge-console": {
+          "x": 0,
+          "y": 56,
+          "width": 390,
+          "height": 788,
+          "scrollHeight": 788
+        },
+        ".knowledge-reader": {
+          "x": 0,
+          "y": 199.1875,
+          "width": 390,
+          "height": 298.40625,
+          "scrollHeight": 1774
+        }
+      },
+      "skills-list-mobile": {
+        "#skillsCatalog": {
+          "x": 0,
+          "y": 224,
+          "width": 390,
+          "height": 620,
+          "scrollHeight": 4966
+        }
+      },
+      "skills-mobile": {
+        ".skill-editor": {
+          "x": 0,
+          "y": 219.390625,
+          "width": 390,
+          "height": 624.609375,
+          "scrollHeight": 820
+        },
+        "#skillFiles": {
+          "x": 16,
+          "y": 328.984375,
+          "width": 358,
+          "height": 561,
+          "scrollHeight": 561
+        }
+      },
+      "mcp-list-mobile": {
+        "#mcpCatalog": {
+          "x": 0,
+          "y": 221.1875,
+          "width": 390,
+          "height": 622.8125,
+          "scrollHeight": 4401
+        }
+      },
+      "mcp-mobile": {
+        ".mcp-detail": {
+          "x": 0,
+          "y": 268.578125,
+          "width": 390,
+          "height": 575.421875,
+          "scrollHeight": 575
+        }
+      }
+    },
+    "service_read_only": {
+      "/": {
+        "http_status": 200,
+        "content_verified": true
+      },
+      "/static/js/chat.js": {
+        "http_status": 200,
+        "content_verified": true
+      },
+      "/static/js/chat-resource-catalogs.js": {
+        "http_status": 200,
+        "content_verified": true
+      },
+      "/static/js/chat-management-catalogs.js": {
+        "http_status": 200,
+        "content_verified": true
+      },
+      "/static/css/chat-catalogs.css": {
+        "http_status": 200,
+        "content_verified": true
+      },
+      "/knowledge/catalog?limit=100": {
+        "http_status": 200,
+        "counts": {
+          "documents": 85,
+          "tree": 5
+        }
+      },
+      "/knowledge/documents?limit=100": {
+        "http_status": 200,
+        "counts": {
+          "documents": 0
+        }
+      },
+      "/skills?limit=200": {
+        "http_status": 200,
+        "counts": {
+          "skills": 31,
+          "managed_skills": 0,
+          "builtin_skills": 31
+        }
+      },
+      "/mcp/servers?limit=200": {
+        "http_status": 200,
+        "counts": {
+          "servers": 19
+        }
+      }
+    },
+    "provider_api_calls": false,
+    "live_resource_mutations": false,
+    "database_migration_required": false,
+    "draft_storage": "One unsaved draft per resource workspace, in browser memory; not retained across page reloads.",
+    "full_check": {
+      "exit_code": 0,
+      "python_tests_passed": 3300,
+      "warnings": 1,
+      "static_js_passed": 183,
+      "diff_check": "passed",
+      "compile": "passed",
+      "tool_contract_audit": "passed",
+      "knowledge_checks": "passed",
+      "qguard": "Existing repository-wide gate failure remains; see earlier verification record."
+    }
+  },
+  "template_preset_separation": {
+    "static_version": "20261029-template-presets-v1",
+    "static_js_passed": 187,
+    "browser_errors": [],
+    "service_readback": {
+      "/": {
+        "status": 200,
+        "marker_found": true
+      },
+      "/static/js/chat.js": {
+        "status": 200,
+        "marker_found": true
+      },
+      "/static/js/chat-template-browser.js": {
+        "status": 200,
+        "marker_found": true
+      },
+      "/static/js/chat-blueprint-editor.js": {
+        "status": 200,
+        "marker_found": true
+      },
+      "catalog": {
+        "total": 32,
+        "builtin_presets": 32,
+        "saved_templates": 0,
+        "builtin_account_presets": 14,
+        "builtin_general_presets": 18
+      }
+    },
+    "behavior": [
+      "list contains saved user templates only",
+      "new-template flow retains general and account builtin presets",
+      "preset options match blueprint identity/version/status",
+      "draft deep-copies preset values and detaches builtin identity",
+      "user-created general templates remain listed",
+      "saved templates remain editable under existing authorization",
+      "empty state explains how to create a saved template"
+    ],
+    "layout": {
+      "templates-empty": {
+        "#templateLibrary": {
+          "x": 228,
+          "y": 124,
+          "width": 1212,
+          "height": 776,
+          "scrollHeight": 776
+        }
+      },
+      "templates": {
+        ".creation-studio": {
+          "x": 228,
+          "y": 60,
+          "width": 1212,
+          "height": 840,
+          "scrollHeight": 840
+        },
+        "#templateLibrary": {
+          "x": 228,
+          "y": 124,
+          "width": 1212,
+          "height": 776,
+          "scrollHeight": 1738
+        }
+      },
+      "templates-wide": {
+        "#templateLibrary": {
+          "x": 228,
+          "y": 124,
+          "width": 1692,
+          "height": 956,
+          "scrollHeight": 1738
+        },
+        ".template-library-table": {
+          "x": 252,
+          "y": 239.1875,
+          "width": 1644,
+          "height": 1507.875,
+          "scrollHeight": 1508
+        }
+      },
+      "template-detail": {
+        "#templateDetail": {
+          "x": 228,
+          "y": 171.390625,
+          "width": 1212,
+          "height": 728.609375,
+          "scrollHeight": 729
+        }
+      },
+      "new-template": {
+        ".template-create-picker": {
+          "x": 228,
+          "y": 171.390625,
+          "width": 1212,
+          "height": 542.625,
+          "scrollHeight": 543
+        }
+      },
+      "templates-mobile": {
+        "#templateLibrary": {
+          "x": 0,
+          "y": 115,
+          "width": 390,
+          "height": 729,
+          "scrollHeight": 2803
+        },
+        ".template-library-filters": {
+          "x": 16,
+          "y": 131,
+          "width": 358,
+          "height": 253.5625,
+          "scrollHeight": 253
+        }
+      },
+      "template-detail-mobile": {
+        "#templateDetail": {
+          "x": 0,
+          "y": 162.390625,
+          "width": 390,
+          "height": 681.609375,
+          "scrollHeight": 952
+        }
+      }
+    },
+    "database_migration_required": false,
+    "provider_calls": false,
+    "live_writes": false,
+    "full_check": {
+      "exit_code": 0,
+      "python_tests_passed": 3300,
+      "warnings": 1,
+      "static_js_passed": 187,
+      "compile": "passed",
+      "tool_audit": "passed",
+      "knowledge_checks": "passed",
+      "diff_check": "passed",
+      "qguard": "Existing whole-repository failure remains outside this frontend change."
+    }
+  },
+  "template_database_recovery": {
+    "static_version": "20261029-template-db-v1",
+    "cause": "Previous source=builtin separation also hid configured account templates; original values remained in the builtin configuration.",
+    "storage": "Existing SQLite creation_templates table in agents/ad_agent/ad_agent.db",
+    "recovery": {
+      "method": "Existing POST /creation-templates/{id}/duplicate API",
+      "restored": 14,
+      "database_rows": 14,
+      "builtin_preserved": 32,
+      "all_parameters_preserved": true,
+      "all_editable": true,
+      "is_default": false,
+      "private_backup_directory": "agents/ad_agent/private/template-recovery-20261029/",
+      "duplicate_detection": "name/provider/account_id/blueprint_id; existing records are not overwritten"
+    },
+    "contract": {
+      "additive_query_parameter": "source=user|builtin; omitted preserves existing behavior",
+      "user_source": "Read store only; no builtin expansion",
+      "invalid_source_http_status": 422,
+      "authorization": "Existing ads.read, trusted tenant/user principal and account scope unchanged",
+      "list_limit": 200,
+      "pagination": "Existing client-side pagination"
+    },
+    "loading": {
+      "list_request": "/creation-templates?source=user&limit=200",
+      "editor_catalog": "Lazy loaded and reused; formats come from blueprint catalog",
+      "failure_recovery": "Preserve prior list, show retry notice; navigation sequence rejects stale transitions",
+      "before": [
+        {
+          "route": "/creation-templates",
+          "ms": 673.7,
+          "bytes": 64559
+        },
+        {
+          "route": "/creation-blueprints",
+          "ms": 660.6,
+          "bytes": 675825
+        },
+        {
+          "route": "/tools",
+          "ms": 160.9,
+          "bytes": 799426
+        },
+        {
+          "route": "/ad-formats",
+          "ms": 7.4,
+          "bytes": 33486
+        }
+      ],
+      "after": {
+        "requests": [
+          {
+            "ms": 137.55,
+            "bytes": 30137,
+            "count": 14,
+            "all_editable": true
+          },
+          {
+            "ms": 10.49,
+            "bytes": 30137,
+            "count": 14,
+            "all_editable": true
+          },
+          {
+            "ms": 9.49,
+            "bytes": 30137,
+            "count": 14,
+            "all_editable": true
+          }
+        ],
+        "static_version_ok": true
+      },
+      "live_browser": {
+        "rows": 14,
+        "edit_buttons": 14,
+        "open_ms": 42,
+        "requests": [
+          "/creation-templates?source=user&limit=200"
+        ]
+      },
+      "measurement_scope": "Local 8766 samples; browser used warm list endpoint; not a cross-network performance guarantee"
+    },
+    "service": {
+      "bind": "0.0.0.0:8766",
+      "restarted": true,
+      "same_launchagent_manifest": true,
+      "health": "ready"
+    },
+    "verification": {
+      "full_check_exit_code": 0,
+      "python_tests_passed": 3302,
+      "warnings": 1,
+      "static_js_passed": 188,
+      "targeted_template_python_passed": 26,
+      "compile": "passed",
+      "tool_contract_audit": "passed",
+      "knowledge_checks": "passed",
+      "offline_browser_errors": [],
+      "live_browser_network": "Only same-origin GET allowed; external requests and mutations blocked",
+      "diff_check": "passed",
+      "qguard": "Historical repository-wide failure remains; not claimed passed",
+      "coverage": "Not measured this round"
+    },
+    "provider_api_calls": false,
+    "local_template_writes": true,
+    "database_schema_migration_required": false,
+    "rollback": "Revert code together, retain restored user templates and original database",
+    "observability_integration_required": false
+  },
+  "sidebar_navigation": {
+    "changes": [
+      "Model and credential management moved into system operations menu",
+      "Schedules promoted to top-level navigation after template management",
+      "Regular navigation shares style selectors"
+    ],
+    "css_version": "20261029-sidebar-nav-v1",
+    "browser": {
+      "checks": [
+        {
+          "width": 1440,
+          "schedule_navigation": "passed",
+          "settings_navigation": "passed",
+          "menu_closes": "passed"
+        },
+        {
+          "width": 390,
+          "schedule_navigation": "passed",
+          "settings_navigation": "passed",
+          "menu_closes": "passed"
+        }
+      ],
+      "page_errors": [],
+      "network": "Only local same-origin GET; all external requests and mutations blocked"
+    },
+    "static_js_passed": 188,
+    "api_contract_changes": false,
+    "database_changes": false,
+    "provider_api_calls": false,
+    "qguard": {
+      "status": "FAIL",
+      "score": 0,
+      "files": 765,
+      "findings": 5002,
+      "scope": "whole repository; existing large baseline remains"
+    },
+    "full_check": {
+      "exit_code": 0,
+      "python_tests_passed": 3302,
+      "warnings": 1,
+      "compile": "passed",
+      "capability_audit": "passed",
+      "knowledge_checks": "passed",
+      "diff_check": "passed"
+    },
+    "browser_dark": {
+      "checks": [
+        {
+          "theme": "dark",
+          "width": 1440,
+          "schedule_navigation": "passed",
+          "settings_navigation": "passed",
+          "menu_closes": "passed"
+        },
+        {
+          "theme": "dark",
+          "width": 390,
+          "schedule_navigation": "passed",
+          "settings_navigation": "passed",
+          "menu_closes": "passed"
+        }
+      ],
+      "page_errors": [],
+      "network": "Only local same-origin GET; all external requests and mutations blocked"
+    }
+  },
+  "general_workspace_shell": {
+    "static_version": "20261029-workspace-shell-v1",
+    "changes": [
+      "General workspace header without fixed channel badges",
+      "Single welcome template reused on initial load and new chat",
+      "Six keyboard-accessible task starters that fill drafts only",
+      "Composer mode and hints share one bounded row",
+      "Native collapsible activity footer with real trace state and newest-first events"
+    ],
+    "static_js_passed": 190,
+    "new_regressions": [
+      "Live activity state and safe event label",
+      "Reset to honest empty state"
+    ],
+    "browser": {
+      "checks": [
+        {
+          "theme": "light",
+          "viewport": {
+            "width": 1440,
+            "height": 1000
+          },
+          "metrics": {
+            "width": 1440,
+            "height": 1000,
+            "documentWidth": 1440,
+            "dock": {
+              "x": 228,
+              "y": 959,
+              "width": 1212,
+              "height": 41,
+              "bottom": 1000
+            },
+            "input": {
+              "x": 228,
+              "y": 835.25,
+              "width": 1212,
+              "height": 123.75,
+              "bottom": 959
+            },
+            "header": {
+              "x": 228,
+              "y": 60,
+              "width": 1212,
+              "height": 49,
+              "bottom": 109
+            }
+          },
+          "keyboard": true,
+          "resetWelcome": true,
+          "activityUpdates": true,
+          "openTrace": true
+        },
+        {
+          "theme": "light",
+          "viewport": {
+            "width": 390,
+            "height": 844
+          },
+          "metrics": {
+            "width": 390,
+            "height": 844,
+            "documentWidth": 390,
+            "dock": {
+              "x": 0,
+              "y": 803,
+              "width": 390,
+              "height": 41,
+              "bottom": 844
+            },
+            "input": {
+              "x": 0,
+              "y": 684,
+              "width": 390,
+              "height": 119,
+              "bottom": 803
+            },
+            "header": {
+              "x": 0,
+              "y": 56,
+              "width": 390,
+              "height": 49,
+              "bottom": 105
+            }
+          },
+          "keyboard": true,
+          "resetWelcome": true,
+          "activityUpdates": true,
+          "openTrace": true
+        },
+        {
+          "theme": "dark",
+          "viewport": {
+            "width": 1440,
+            "height": 1000
+          },
+          "metrics": {
+            "width": 1440,
+            "height": 1000,
+            "documentWidth": 1440,
+            "dock": {
+              "x": 228,
+              "y": 959,
+              "width": 1212,
+              "height": 41,
+              "bottom": 1000
+            },
+            "input": {
+              "x": 228,
+              "y": 812,
+              "width": 1212,
+              "height": 147,
+              "bottom": 959
+            },
+            "header": {
+              "x": 228,
+              "y": 60,
+              "width": 1212,
+              "height": 49,
+              "bottom": 109
+            }
+          },
+          "keyboard": true,
+          "resetWelcome": true,
+          "activityUpdates": true,
+          "openTrace": true
+        },
+        {
+          "theme": "dark",
+          "viewport": {
+            "width": 390,
+            "height": 844
+          },
+          "metrics": {
+            "width": 390,
+            "height": 844,
+            "documentWidth": 390,
+            "dock": {
+              "x": 0,
+              "y": 803,
+              "width": 390,
+              "height": 41,
+              "bottom": 844
+            },
+            "input": {
+              "x": 0,
+              "y": 684,
+              "width": 390,
+              "height": 119,
+              "bottom": 803
+            },
+            "header": {
+              "x": 0,
+              "y": 56,
+              "width": 390,
+              "height": 49,
+              "bottom": 105
+            }
+          },
+          "keyboard": true,
+          "resetWelcome": true,
+          "activityUpdates": true,
+          "openTrace": true
+        }
+      ],
+      "errors": [],
+      "network": "Same-origin local GET only; synthetic events never execute tools"
+    },
+    "management_browser_errors": [],
+    "activity_examples": "Synthetic client events; no agent or tool execution",
+    "provider_api_calls": false,
+    "api_contract_changes": false,
+    "database_changes": false,
+    "permission_changes": false,
+    "qguard": {
+      "status": "FAIL",
+      "score": 0,
+      "files": 765,
+      "findings": 5002,
+      "note": "Same existing repository-wide baseline as before this shell change"
+    },
+    "full_check": {
+      "exit_code": 0,
+      "python_tests_passed": 3302,
+      "warnings": 1,
+      "compile": "passed",
+      "capability_audit": "passed",
+      "knowledge_checks": "passed",
+      "diff_check": "passed"
+    },
+    "rollback": "Restore HTML, welcome/mode/trace scripts and CSS references together; retain data and configuration",
+    "browser_breakpoints": {
+      "checks": [
+        {
+          "theme": "light",
+          "viewport": {
+            "width": 1920,
+            "height": 900
+          },
+          "metrics": {
+            "width": 1920,
+            "height": 900,
+            "documentWidth": 1920,
+            "dock": {
+              "x": 228,
+              "y": 859,
+              "width": 1692,
+              "height": 41,
+              "bottom": 900
+            },
+            "input": {
+              "x": 228,
+              "y": 735.25,
+              "width": 1692,
+              "height": 123.75,
+              "bottom": 859
+            },
+            "header": {
+              "x": 228,
+              "y": 60,
+              "width": 1692,
+              "height": 49,
+              "bottom": 109
+            }
+          },
+          "keyboard": true,
+          "resetWelcome": true,
+          "activityUpdates": true,
+          "openTrace": true
+        },
+        {
+          "theme": "light",
+          "viewport": {
+            "width": 980,
+            "height": 800
+          },
+          "metrics": {
+            "width": 980,
+            "height": 800,
+            "documentWidth": 980,
+            "dock": {
+              "x": 228,
+              "y": 759,
+              "width": 752,
+              "height": 41,
+              "bottom": 800
+            },
+            "input": {
+              "x": 228,
+              "y": 636,
+              "width": 752,
+              "height": 123,
+              "bottom": 759
+            },
+            "header": {
+              "x": 228,
+              "y": 60,
+              "width": 752,
+              "height": 49,
+              "bottom": 109
+            }
+          },
+          "keyboard": true,
+          "resetWelcome": true,
+          "activityUpdates": true,
+          "openTrace": true
+        },
+        {
+          "theme": "light",
+          "viewport": {
+            "width": 768,
+            "height": 800
+          },
+          "metrics": {
+            "width": 768,
+            "height": 800,
+            "documentWidth": 768,
+            "dock": {
+              "x": 0,
+              "y": 759,
+              "width": 768,
+              "height": 41,
+              "bottom": 800
+            },
+            "input": {
+              "x": 0,
+              "y": 640,
+              "width": 768,
+              "height": 119,
+              "bottom": 759
+            },
+            "header": {
+              "x": 0,
+              "y": 56,
+              "width": 768,
+              "height": 49,
+              "bottom": 105
+            }
+          },
+          "keyboard": true,
+          "resetWelcome": true,
+          "activityUpdates": true,
+          "openTrace": true
+        },
+        {
+          "theme": "dark",
+          "viewport": {
+            "width": 1920,
+            "height": 900
+          },
+          "metrics": {
+            "width": 1920,
+            "height": 900,
+            "documentWidth": 1920,
+            "dock": {
+              "x": 228,
+              "y": 859,
+              "width": 1692,
+              "height": 41,
+              "bottom": 900
+            },
+            "input": {
+              "x": 228,
+              "y": 736,
+              "width": 1692,
+              "height": 123,
+              "bottom": 859
+            },
+            "header": {
+              "x": 228,
+              "y": 60,
+              "width": 1692,
+              "height": 49,
+              "bottom": 109
+            }
+          },
+          "keyboard": true,
+          "resetWelcome": true,
+          "activityUpdates": true,
+          "openTrace": true
+        },
+        {
+          "theme": "dark",
+          "viewport": {
+            "width": 980,
+            "height": 800
+          },
+          "metrics": {
+            "width": 980,
+            "height": 800,
+            "documentWidth": 980,
+            "dock": {
+              "x": 228,
+              "y": 759,
+              "width": 752,
+              "height": 41,
+              "bottom": 800
+            },
+            "input": {
+              "x": 228,
+              "y": 636,
+              "width": 752,
+              "height": 123,
+              "bottom": 759
+            },
+            "header": {
+              "x": 228,
+              "y": 60,
+              "width": 752,
+              "height": 49,
+              "bottom": 109
+            }
+          },
+          "keyboard": true,
+          "resetWelcome": true,
+          "activityUpdates": true,
+          "openTrace": true
+        },
+        {
+          "theme": "dark",
+          "viewport": {
+            "width": 768,
+            "height": 800
+          },
+          "metrics": {
+            "width": 768,
+            "height": 800,
+            "documentWidth": 768,
+            "dock": {
+              "x": 0,
+              "y": 759,
+              "width": 768,
+              "height": 41,
+              "bottom": 800
+            },
+            "input": {
+              "x": 0,
+              "y": 640,
+              "width": 768,
+              "height": 119,
+              "bottom": 759
+            },
+            "header": {
+              "x": 0,
+              "y": 56,
+              "width": 768,
+              "height": 49,
+              "bottom": 105
+            }
+          },
+          "keyboard": true,
+          "resetWelcome": true,
+          "activityUpdates": true,
+          "openTrace": true
+        }
+      ],
+      "errors": [],
+      "network": "Same-origin local GET only; synthetic events never execute tools"
+    }
+  },
+  "contextual_workbench": {
+    "static_version": "20261029-contextual-workbench-v1",
+    "changes": [
+      "Trace-only navigation until real artifacts exist",
+      "Creation cards reveal the ad creation tab",
+      "Non-ad confirmations use neutral labels",
+      "Clearing context hides empty tabs; closing preserves pending confirmation",
+      "Trace panel compact on desktop and visible full-width on mobile",
+      "Honest idle state without empty filters, details or duplicate mode bar",
+      "Close button closes panel instead of leaving stale collapsed button state"
+    ],
+    "browser": {
+      "checks": [
+        {
+          "theme": "light",
+          "viewport": {
+            "width": 1920,
+            "height": 1000
+          },
+          "emptyTraceWidth": 480,
+          "creationConditional": true,
+          "genericConfirmation": true,
+          "closeReopen": true,
+          "noPageOverflow": true
+        },
+        {
+          "theme": "light",
+          "viewport": {
+            "width": 1440,
+            "height": 900
+          },
+          "emptyTraceWidth": 460.796875,
+          "creationConditional": true,
+          "genericConfirmation": true,
+          "closeReopen": true,
+          "noPageOverflow": true
+        },
+        {
+          "theme": "light",
+          "viewport": {
+            "width": 390,
+            "height": 844
+          },
+          "emptyTraceWidth": 390,
+          "creationConditional": true,
+          "genericConfirmation": true,
+          "closeReopen": true,
+          "noPageOverflow": true
+        },
+        {
+          "theme": "dark",
+          "viewport": {
+            "width": 1920,
+            "height": 1000
+          },
+          "emptyTraceWidth": 480,
+          "creationConditional": true,
+          "genericConfirmation": true,
+          "closeReopen": true,
+          "noPageOverflow": true
+        },
+        {
+          "theme": "dark",
+          "viewport": {
+            "width": 1440,
+            "height": 900
+          },
+          "emptyTraceWidth": 460.796875,
+          "creationConditional": true,
+          "genericConfirmation": true,
+          "closeReopen": true,
+          "noPageOverflow": true
+        },
+        {
+          "theme": "dark",
+          "viewport": {
+            "width": 390,
+            "height": 844
+          },
+          "emptyTraceWidth": 390,
+          "creationConditional": true,
+          "genericConfirmation": true,
+          "closeReopen": true,
+          "noPageOverflow": true
+        }
+      ],
+      "errors": [],
+      "network": "Local GET only; all drafts, confirmations and execution events are synthetic browser data"
+    },
+    "management_browser_errors": [],
+    "static_js_passed": 194,
+    "full_check": {
+      "exit_code": 0,
+      "python_tests_passed": 3302,
+      "warnings": 1,
+      "compile": "passed",
+      "capability_audit": "passed",
+      "knowledge_checks": "passed",
+      "diff_check": "passed"
+    },
+    "qguard_result": [
+      "扫描文件: 765",
+      "发现问题: 5002",
+      "质量评分: 0.0 (F)",
+      "门禁状态: FAIL"
+    ],
+    "coverage": "Not measured this round",
+    "provider_api_calls": false,
+    "database_changes": false,
+    "permission_changes": false,
+    "failure_recovery": "Failed or awaiting-input turns preserve drafts; closing does not discard confirmations",
+    "rollback": "Restore HTML/workbench/trace/creation confirmation call and CSS versions together; retain database and config",
+    "observability_integration_required": false
+  }
+}

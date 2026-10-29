@@ -46,8 +46,11 @@ another call ID; independent calls are bounded into parallel batches and a
 failed dependency prevents its dependents from running. Every Tool can also
 use a bounded timeout. Automatic retry is limited to explicitly read/none
 effects with a safe or idempotent replay policy; writes are never retried by
-the Harness. Repeated failures open a per-Tool circuit breaker, and a timed
-out write returns an unknown effect with `recovery_required`.
+the Harness. Repeated exceptions open a circuit scoped to tenant, user,
+execution mode and Tool; a timed-out write returns an unknown effect with
+`recovery_required`. Circuit state is bounded to 4096 keys. After the cooldown,
+one recovery probe is admitted; cancellation or a local capacity rejection
+releases that probe, and an expiring probe lease prevents permanent lockout.
 Timed-out model and Tool calls keep their in-flight capacity slot until the
 underlying thread actually exits. `AgentApplication.create` exposes
 `max_inflight_model_invocations` and `max_inflight_tool_invocations` for this
@@ -79,7 +82,15 @@ Tool exposure is bounded per model turn. `AgentApplication.create` accepts
 `max_tools` and an optional `tool_selector(request, tools)` so applications
 can select a relevant subset without changing the Runtime or Tool contracts.
 Session transcripts are isolated by tenant, user and `session_id`. The in-memory
-working window is bounded, while an injected `TranscriptStore` keeps the full
+working window removes complete older user-led turns. When the current group
+exceeds its character budget, completed registered read collections can become
+smaller model-facing previews, oldest first. Each preview retains its Tool call,
+scope, paging facts and at least one complete row or declared identity; omitted
+rows/fields are explicitly marked. Writes, failures, unknown effects, interactions,
+user requests and policy remain exact. If this protected minimum still exceeds
+the budget, or the message-count cap is reached, model admission fails after the
+executed Tool batch has been retained and persisted. A new user turn can evict that
+oversized prior group. An injected `TranscriptStore` keeps the full
 sanitized history and hydrates a new process. Model adapters support bounded
 retries, provider fallback for retryable failures, timeout signalling, streaming
 deltas and cumulative token budgets. Persistence, lease, idempotency and audit
@@ -100,11 +111,16 @@ available. Deleting the session removes its archived context.
 256000 serialized characters). The model window evicts complete older user
 turns, never slices the current request, Tool arguments or system instructions,
 and does not rewrite the durable transcript. Necessary context that still
-exceeds the limit fails with `model_input_limit_exceeded` and a user-facing
+exceeds the limit after read-preview compaction fails with `model_input_limit_exceeded` and a user-facing
 explanation. `LLMClient.complete` rechecks the final text/schema payload,
 including document text and each internal response-repair attempt. Embedded
 image bytes are not text context; attachment transport limits remain separate.
 These character counts are not model-specific token estimates.
+
+`tool_evidence_compacted` events contain counts and sizes, without result data.
+Compaction changes the model view only; stored messages, Run results, call IDs,
+replay caches and policy gates are preserved. `context_cleanup_error` records a
+cleanup failure's type and Run identity without exception text or credentials.
 
 `max_model_output_chars` (default 128000) bounds model text, Tool calls and
 context updates; `max_stream_chunks` (default 10000) also bounds empty chunks.

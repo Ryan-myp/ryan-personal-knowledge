@@ -10,6 +10,7 @@ from __future__ import annotations
 import re
 from collections import deque
 from dataclasses import dataclass, field
+from functools import lru_cache
 from typing import Any, Callable, Iterable, Optional, Sequence
 
 from .interfaces import ParsedIntent, ToolDefinition
@@ -69,7 +70,7 @@ _AMBIGUOUS_OPERATION_CUES = frozenset({"set", "设置"})
 _KNOWLEDGE_EXPLANATION_CUES = (
     "相关知识", "基础知识", "基础概念", "知识介绍", "讲下", "讲讲", "讲一讲",
     "介绍一下", "介绍下", "给我介绍", "告诉我", "科普一下",
-    "详解", "详细讲解", "详细解释", "讲解一下", "讲解下", "解释一下", "解释下",
+    "详解", "详细讲解", "详细解释", "讲解一下", "讲解下", "解释一下", "解释下", "解释",
     "怎么理解", "是什么", "是什么意思", "是什么概念", "原理是什么", "有什么区别",
     "有啥区别", "有何区别", "区别是什么", "对比一下", "what is", "what are", "tell me about",
     "overview", "basics", "fundamentals", "explain", "difference between",
@@ -105,6 +106,22 @@ _KNOWLEDGE_FOLLOWUP_CUES = (
 _PROCESS_CUES = (
     "流程", "工作流", "workflow", "process",
 )
+_PROCESS_COMPARISON_CUES = (
+    "是不是", "是否", "对不对", "一样", "一致", "符合",
+    "is this", "same as", "match", "follow this",
+)
+_ACTION_MENTION_CUES = (
+    "比如用户说", "例如用户说", "用户说", "用户提到", "我说",
+    "比如说", "例如", "比如", "假设", "for example", "such as",
+    "if a user says", "if the user says",
+)
+_DIRECT_WRITE_REQUEST_CUES = (
+    "帮我", "帮忙", "请帮我", "我想", "我要", "我需要", "需要你",
+    "为我", "替我", "please", "help me", "i want you to", "i need you to",
+)
+_EXPLANATION_VERBS = (
+    "解释", "说明", "讲解", "介绍", "分析", "梳理", "describe", "explain",
+)
 _PROCESS_CLAUSE_SEPARATORS = re.compile(
     r"(?:[，,。；;]|并且|然后|同时|并|以及|\b(?:and|then|also|but)\b)"
 )
@@ -139,10 +156,25 @@ def _tool_field(tool: Any, key: str, default: Any = "") -> Any:
     return getattr(tool, key, default)
 
 
+@lru_cache(maxsize=2048)
+def _cached_metadata_terms(text: str) -> frozenset[str]:
+    return frozenset(_terms(text))
+
+
+def _metadata_terms(value: Any) -> frozenset[str]:
+    """Cache bounded publisher metadata by value; never cache user queries."""
+    text = str(value or "")
+    if len(text) > 2048:
+        return frozenset(_terms(text))
+    return _cached_metadata_terms(text)
+
+
 def _schema_terms(tool: Any) -> set[str]:
     schema = _tool_field(tool, "input_schema", {})
-    if callable(getattr(schema, "to_dict", None)):
-        schema = schema.to_dict()
+    if not isinstance(schema, dict) and not hasattr(schema, "properties"):
+        serialize = getattr(schema, "to_dict", None)
+        if callable(serialize):
+            schema = serialize()
     properties = (
         schema.get("properties", {})
         if isinstance(schema, dict)
@@ -151,9 +183,9 @@ def _schema_terms(tool: Any) -> set[str]:
     terms: set[str] = set()
     if isinstance(properties, dict):
         for name, spec in properties.items():
-            terms.update(_terms(name))
+            terms.update(_metadata_terms(name))
             if isinstance(spec, dict):
-                terms.update(_terms(spec.get("description", "")))
+                terms.update(_metadata_terms(spec.get("description", "")))
     return terms
 
 
@@ -201,11 +233,31 @@ def _request_verbs(user_input: str, tools: Sequence[Any]) -> str:
         if len(parts) > 1:
             pattern = r"\b" + r"[\s_-]*".join(map(re.escape, parts)) + r"s?\b"
             text = re.sub(pattern, " ", text)
+    return _without_descriptive_actions(text)
+
+
+def _without_descriptive_actions(text: str) -> str:
+    """Past states in a read request are data, not new imperative actions."""
+    if not _has_unnegated_action_cue(text, _READ_CUES):
+        return text
+    spans = []
+    for cue in _WRITE_CUES:
+        if re.fullmatch(r"[a-z]+", cue):
+            spans.extend(
+                match.span() for match in _cue_matches(text, cue)
+                if match.group() != cue
+            )
+        elif re.fullmatch(r"[\u3400-\u9fff]+", cue):
+            spans.extend(match.span() for match in re.finditer(
+                r"(?:已(?:经)?|被)\s*" + re.escape(cue), text,
+            ))
+    for start, end in sorted(spans, reverse=True):
+        text = text[:start] + " " * (end - start) + text[end:]
     return text
 
 
 def _is_read_only_request(user_input: str) -> bool:
-    text = str(user_input or "").casefold()
+    text = _without_descriptive_actions(str(user_input or "").casefold())
     is_visualization = _is_data_visualization_request(text)
     write_cues = tuple(
         cue for cue in _WRITE_CUES
@@ -264,7 +316,7 @@ def _has_explicit_read_action(user_input: str) -> bool:
 
 def _is_explicit_list_request(user_input: str) -> bool:
     text = str(user_input or "").casefold()
-    return any(_contains_cue(text, cue) for cue in _LIST_READ_CUES)
+    return _has_unnegated_action_cue(text, _LIST_READ_CUES)
 
 
 def _has_unnegated_action_cue(user_input: str, cues: Sequence[str]) -> bool:
@@ -404,6 +456,10 @@ def _is_process_explanation_request(
 ) -> bool:
     """Keep workflow explanations separate from operational Tool requests."""
     text = str(user_input or "").casefold()
+    if _is_process_comparison_question(text) and not _has_actionable_process_question_clause(
+        text, tools,
+    ):
+        return True
     if _is_read_only_request(_request_verbs(user_input, tools)):
         return False
     if not any(_contains_cue(text, cue) for cue in _PROCESS_CUES):
@@ -423,6 +479,112 @@ def _is_process_explanation_request(
         ):
             return False
     return True
+
+
+def _is_process_comparison_question(text: str) -> bool:
+    """Recognize questions that compare a described process with a reference."""
+    normalized = str(text or "").casefold().strip()
+    return (
+        any(_contains_cue(normalized, cue) for cue in _PROCESS_CUES)
+        and (
+            any(_contains_cue(normalized, cue) for cue in _PROCESS_COMPARISON_CUES)
+            or normalized.endswith(("吗", "么", "不", "?", "？"))
+        )
+    )
+
+
+def _has_direct_write_request(text: str) -> bool:
+    normalized = str(text or "").casefold()
+    for cue in _WRITE_CUES:
+        for match in _cue_matches(normalized, cue):
+            if _action_is_negated(normalized, match.start(), match.group()):
+                continue
+            prefix = normalized[max(0, match.start() - 48):match.start()]
+            markers = [
+                (prefix.rfind(marker), marker)
+                for marker in _DIRECT_WRITE_REQUEST_CUES
+                if prefix.rfind(marker) >= 0
+            ]
+            if not markers:
+                continue
+            marker_start, marker = max(markers, key=lambda item: item[0])
+            intervening = prefix[marker_start + len(marker):]
+            if not any(verb in intervening for verb in _EXPLANATION_VERBS):
+                return True
+    return False
+
+
+def _strip_imperative_prefix(prefix: str, namespaces: set[str]) -> str:
+    """Remove command introducers and registered namespace names as tokens."""
+    prefixes = (
+        *_DIRECT_WRITE_REQUEST_CUES, "请", "在", "继续", "接着", "再", "这个", "那个",
+        "on", "in", "then", "again", "continue", "this", "that",
+    )
+    for namespace in namespaces:
+        parts = re.findall(r"[a-z0-9]+", namespace)
+        if parts:
+            pattern = r"\b" + r"[\s_-]*".join(map(re.escape, parts)) + r"\b"
+            prefix = re.sub(pattern, " ", prefix)
+    for marker in sorted(prefixes, key=len, reverse=True):
+        pattern = re.escape(marker)
+        if marker.isascii():
+            pattern = r"\b" + pattern + r"\b"
+        prefix = re.sub(pattern, " ", prefix)
+    return re.sub(r"[\s,:：]+", "", prefix)
+
+
+def _requires_imperative_write(text: str, tools: Sequence[Any]) -> bool:
+    """Force a write call only for an imperative, not a mentioned operation."""
+    namespaces = {
+        str(_tool_field(tool, "namespace", "") or "").casefold()
+        for tool in tools
+    } - {""}
+    for clause in _PROCESS_CLAUSE_SEPARATORS.split(text.casefold()):
+        for cue in _WRITE_CUES:
+            for match in _cue_matches(clause, cue):
+                if _action_is_negated(clause, match.start(), match.group()):
+                    continue
+                if not _strip_imperative_prefix(clause[:match.start()], namespaces):
+                    return True
+    return False
+
+
+def _is_action_mention_clause(clause: str) -> bool:
+    normalized = str(clause or "").casefold()
+    return (
+        any(_contains_cue(normalized, cue) for cue in _ACTION_MENTION_CUES)
+        and not _has_direct_write_request(normalized)
+    )
+
+
+def _has_actionable_process_question_clause(
+    text: str,
+    tools: Sequence[Any],
+) -> bool:
+    """Keep explicit operations alongside a process question actionable."""
+    for clause in _PROCESS_CLAUSE_SEPARATORS.split(text):
+        normalized = clause.strip()
+        if not normalized or _is_action_mention_clause(normalized):
+            continue
+        has_process_context = any(
+            _contains_cue(normalized, cue) for cue in _PROCESS_CUES
+        )
+        write_request = _has_unnegated_write_cue(
+            _request_verbs(normalized, tools),
+        )
+        if write_request and (
+            not has_process_context or _has_direct_write_request(normalized)
+        ):
+            return True
+        if has_process_context:
+            continue
+        read_request = _is_read_only_request(_request_verbs(normalized, tools))
+        if read_request and any(
+            _is_read_tool(tool) and _matches_publisher_target(normalized, tool)
+            for tool in tools or ()
+        ):
+            return True
+    return False
 
 
 def _is_knowledge_explanation_request(
@@ -659,7 +821,7 @@ def _relevance_score(query_terms: set[str], tool: Any) -> int:
     )
     score = 0
     for weight, value in fields:
-        overlap = query_terms & _terms(value)
+        overlap = query_terms & _metadata_terms(value)
         score += weight * min(len(overlap), 3)
     return score + len(query_terms & _schema_terms(tool))
 
@@ -923,6 +1085,43 @@ def _alias_scoped_reads(user_input: str, tools: Sequence[Any]) -> list[Any]:
     return [tool for tool in tools if id(tool) in selected_ids]
 
 
+def _refinement_read_anchors(
+    text: str, tools: Sequence[Any], prior_tools: Sequence[Any],
+    prior_inputs: Sequence[str],
+) -> list[Any]:
+    """Keep the published read operation, not just its resource namespace."""
+    readers = [tool for tool in tools if _is_read_tool(tool) and str(
+        _tool_field(tool, "action", "")
+    ).casefold() in _READ_ACTIONS | {"report"}]
+    targeted = [tool for tool in readers if _matches_publisher_target(text, tool)]
+    if targeted:
+        readers = targeted
+    if _is_explicit_list_request(text):
+        return _explicit_resource_list_tools(text, readers)
+    prior = [tool for tool in prior_tools if tool in readers]
+    if prior:
+        return prior
+    for source in reversed(prior_inputs):
+        if _is_read_refinement_request(source):
+            continue
+        if _is_knowledge_explanation_request(source, readers) or any(
+            _contains_cue(source, cue) for cue in _DETAIL_READ_CUES
+        ):
+            return []
+        matches = [tool for tool in readers if _matches_tool_alias(source, tool)]
+        if matches:
+            return matches
+        matches = (
+            _explicit_resource_list_tools(source, readers)
+            if _is_explicit_list_request(source) or _is_read_only_request(
+                _request_verbs(source, readers),
+            ) else []
+        )
+        if matches:
+            return matches
+    return []
+
+
 @dataclass
 class ToolSelection:
     """Bounded, deterministic result of metadata-driven Tool selection."""
@@ -1027,7 +1226,14 @@ class ToolSelector:
         if _is_process_explanation_request(user_input, available_tools):
             return []
         if _is_knowledge_explanation_request(user_input, available_tools):
-            return _semantic_discovery_tools(available_tools)[:limit]
+            discovery = [
+                tool for tool in _semantic_discovery_tools(available_tools)
+                if not _has_only_negated_alias(user_input, tool)
+            ]
+            explicit_sources = [
+                tool for tool in discovery if _matches_tool_alias(user_input, tool)
+            ]
+            return (explicit_sources or discovery)[:limit]
         text = str(user_input or "").casefold()
         verb_text = _request_verbs(user_input, available_tools)
         publisher_target_match = any(
@@ -1035,10 +1241,7 @@ class ToolSelector:
             or _matches_short_cjk_alias(user_input, tool)
             for tool in available_tools or ()
         )
-        refinement_followup = (
-            _is_read_refinement_request(user_input)
-            and not publisher_target_match
-        )
+        refinement_followup = _is_read_refinement_request(user_input)
         if (
             _is_short_comparative_followup(text)
             and not _is_descendant_detail_followup(text)
@@ -1313,27 +1516,9 @@ class ToolSelector:
         else:
             candidates = list(available_tools or ())
         if refinement_followup:
-            for previous in reversed(prior_inputs):
-                if (
-                    not _is_read_only_request(_request_verbs(previous, candidates))
-                    or any(
-                        _contains_cue(previous, cue)
-                        for cue in _DETAIL_READ_CUES
-                    )
-                    or any(
-                        _matches_tool_alias(previous, tool)
-                        for tool in candidates
-                        if str(_tool_field(tool, "action", "")).casefold()
-                        in {"get", "report"}
-                    )
-                ):
-                    continue
-                anchored = _explicit_resource_list_tools(previous, candidates)
-                if anchored:
-                    candidates = anchored
-                    break
-            else:
-                return []
+            return _refinement_read_anchors(
+                user_input, candidates, scoped_prior_tools, prior_inputs,
+            )[:min(limit, self.max_read_tools_per_turn)]
         if descendant_followup:
             return _descendant_followup_tools(
                 prior_inputs, candidates, active_namespaces,
@@ -1497,6 +1682,12 @@ class ToolSelector:
         verb_text = _request_verbs(user_input, selected_tools)
         write_request = _has_unnegated_write_cue(verb_text)
         read_request = not write_request and _is_read_only_request(verb_text)
+        if (
+            write_request
+            and any(not _is_read_tool(tool) for tool in selected_tools)
+            and not _requires_imperative_write(user_input, selected_tools)
+        ):
+            return False
         prior_names = {
             str(item or "").strip() for item in prior_tool_names or ()
             if str(item or "").strip()

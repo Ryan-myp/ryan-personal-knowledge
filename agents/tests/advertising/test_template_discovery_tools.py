@@ -338,7 +338,7 @@ def test_dialog_selection_loads_template_card_then_merges_freeform_inputs(
                     "choice", "agent_request_input",
                     {"question": "请选择模板", "choices": [state["choice"]]},
                 )])
-            assert names == {get_name}
+            assert names == {get_name, "agent_discover_tools"}
             assert request.initial_tool_choice == "required"
             return ModelTurn(tool_calls=[ToolCall(
                 "preview", get_name, {

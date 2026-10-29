@@ -1,0 +1,117 @@
+{
+  "schema_version": "agent-regression-report/v1",
+  "mode": "model_backed_offline_providers",
+  "complete": true,
+  "completed_cases": 3,
+  "provider_e2e": false,
+  "total": 3,
+  "passed": 1,
+  "failed": 2,
+  "ungraded": 0,
+  "error": 0,
+  "cases": [
+    {
+      "id": "upgrade-meta-status-query",
+      "status": "failed",
+      "failures": [
+        "tool_arguments:meta_get_campaign_report:0"
+      ],
+      "checks": 5,
+      "tool_call_count": 1,
+      "tool_names": [
+        "meta_get_campaign_report"
+      ],
+      "phase_ms": {
+        "run_wall": 87731.897,
+        "tool_duration_sum": 3.752,
+        "model": 87405.12,
+        "model_prepare": 308.34,
+        "context_build": 57.803,
+        "run_event_persistence": 2.492
+      },
+      "runtime_state": {
+        "status": "succeeded",
+        "needs_input": false,
+        "needs_confirmation": false
+      },
+      "execution_states": [
+        "completed"
+      ],
+      "duration_ms": 88443.73
+    },
+    {
+      "id": "upgrade-meta-report-followup",
+      "status": "failed",
+      "failures": [
+        "required_tool:meta_get_campaign_report",
+        "forbidden_tool:meta_list_campaigns",
+        "tool_arguments:meta_get_campaign_report:0"
+      ],
+      "checks": 8,
+      "tool_call_count": 1,
+      "tool_names": [
+        "meta_list_campaigns"
+      ],
+      "phase_ms": {
+        "run_wall": 103364.142,
+        "tool_duration_sum": 5.308,
+        "model": 102697.88,
+        "model_prepare": 642.89,
+        "context_build": 258.385,
+        "run_event_persistence": 3.774
+      },
+      "runtime_state": {
+        "status": "succeeded",
+        "needs_input": false,
+        "needs_confirmation": false
+      },
+      "execution_states": [
+        "completed"
+      ],
+      "duration_ms": 103879.611
+    },
+    {
+      "id": "upgrade-knowledge-topic-switch",
+      "status": "passed",
+      "failures": [],
+      "checks": 6,
+      "tool_call_count": 1,
+      "tool_names": [
+        "agent_knowledge_search"
+      ],
+      "phase_ms": {
+        "run_wall": 121485.221,
+        "tool_duration_sum": 41.907,
+        "model": 120996.74,
+        "model_prepare": 388.96,
+        "context_build": 130.179,
+        "run_event_persistence": 7.312
+      },
+      "runtime_state": {
+        "status": "succeeded",
+        "needs_input": false,
+        "needs_confirmation": false
+      },
+      "execution_states": [
+        "completed"
+      ],
+      "duration_ms": 121991.876
+    }
+  ],
+  "gate_passed": false,
+  "latency_samples": 3,
+  "latency_p50_ms": 103879.611,
+  "latency_p95_ms": 121991.876,
+  "release_ready": false,
+  "release_blockers": [
+    "release_gate_not_configured"
+  ],
+  "phase_p95_ms": {
+    "run_wall": 121485.221,
+    "tool_duration_sum": 41.907,
+    "model": 120996.74,
+    "model_prepare": 642.89,
+    "context_build": 258.385,
+    "run_event_persistence": 7.312
+  }
+}

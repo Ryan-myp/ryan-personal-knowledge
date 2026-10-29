@@ -1,11 +1,18 @@
+        let skillDetailSequence = 0;
+        let skillListSequence = 0;
+        let skillSavePending = false;
+
         function openSkillManager() {
             closeWorkspacePopovers();
             document.getElementById('skillOverlay').classList.add('active');
             document.getElementById('skillOverlay').setAttribute('aria-hidden', 'false');
-            loadManagedSkills();
+            showResourceList('skills');
+            if (!skillState.loaded) loadManagedSkills();
         }
 
         function closeSkillManager() {
+            skillDetailSequence += 1;
+            skillListSequence += 1;
             if (skillState.evaluationTimer) window.clearTimeout(skillState.evaluationTimer);
             skillState.evaluationTimer = null;
             document.getElementById('skillOverlay').classList.remove('active');
@@ -33,114 +40,39 @@
         }
 
         async function loadManagedSkills(select = null) {
+            const sequence = ++skillListSequence;
+            const detailSequence = skillDetailSequence;
+            const request = beginCatalogLoad('skills', {retry: () => loadManagedSkills()});
             clearSkillNotice();
             try {
                 const data = await apiFetch('/skills?limit=200');
+                if (sequence !== skillListSequence) return;
                 const managedSkills = Array.isArray(data.managed_skills) ? data.managed_skills : (data.skills || []);
                 const builtinSkills = Array.isArray(data.builtin_skills) ? data.builtin_skills : [];
+                skillState.loaded = true;
                 skillState.versions = [...managedSkills, ...builtinSkills];
                 renderSkillList();
-                if (select) {
-                    await selectSkillVersion(select.skillName, select.version, select.source);
-                } else if (skillState.selected) {
-                    const stillExists = skillState.versions.some(item =>
-                        item.skill_name === skillState.selected.skillName && item.version === skillState.selected.version && (item.source || 'managed') === (skillState.selected.source || 'managed')
-                    );
-                    if (stillExists) await selectSkillVersion(skillState.selected.skillName, skillState.selected.version, skillState.selected.source);
-                } else if (data.builtin_skills?.length) {
-                    const firstBuiltin = data.builtin_skills[0];
-                    await selectSkillVersion(firstBuiltin.skill_name, firstBuiltin.version, 'builtin');
-                }
-                if (!skillState.versions.length) newSkillDraft();
+                if (detailSequence !== skillDetailSequence) return;
+                if (select) await selectSkillVersion(select.skillName, select.version, select.source);
             } catch (error) {
+                if (sequence !== skillListSequence) return;
+                request.error = error.message || 'Skill 列表读取失败';
                 renderSkillList();
-                showSkillNotice(error.message, true);
+            } finally {
+                finishCatalogLoad(request, request.error);
             }
         }
 
         function renderSkillList() {
-            const list = document.getElementById('skillList');
-            list.replaceChildren();
-            if (!skillState.versions.length) {
-                const empty = document.createElement('div');
-                empty.className = 'skill-list-empty';
-                empty.textContent = '当前租户还没有 Skill 版本。点击“新建 Skill 版本”开始。';
-                list.appendChild(empty);
-                return;
-            }
-            const groups = new Map();
-            for (const item of skillState.versions) {
-                if (!groups.has(item.skill_name)) groups.set(item.skill_name, []);
-                groups.get(item.skill_name).push(item);
-            }
-            if (!skillState.expanded.size) skillState.expanded.add(groups.keys().next().value);
-            if (skillState.selected?.skillName) skillState.expanded.add(skillState.selected.skillName);
-            const tree = document.createElement('div');
-            tree.className = 'skill-tree';
-            for (const [name, versions] of groups) {
-                const group = document.createElement('div');
-                group.className = 'skill-tree-group';
-                const isExpanded = skillState.expanded.has(name);
-                const title = document.createElement('button');
-                title.type = 'button';
-                title.className = 'skill-tree-node';
-                title.setAttribute('aria-expanded', String(isExpanded));
-                const chevron = document.createElement('span');
-                chevron.className = 'skill-tree-chevron';
-                chevron.textContent = '›';
-                const folder = document.createElement('span');
-                folder.className = 'skill-tree-folder';
-                folder.textContent = '◇';
-                const nameLabel = document.createElement('span');
-                nameLabel.className = 'skill-tree-name';
-                nameLabel.textContent = name;
-                const count = document.createElement('span');
-                count.className = 'skill-tree-count';
-                count.textContent = `${versions.length}`;
-                title.append(chevron, folder, nameLabel, count);
-                title.addEventListener('click', () => {
-                    if (skillState.expanded.has(name)) skillState.expanded.delete(name);
-                    else skillState.expanded.add(name);
-                    renderSkillList();
-                });
-                group.appendChild(title);
-                const branch = document.createElement('div');
-                branch.className = `skill-tree-branch${isExpanded ? ' expanded' : ''}`;
-                for (const item of versions) {
-                    const button = document.createElement('button');
-                    button.type = 'button';
-                    button.className = 'skill-tree-version';
-                    if (skillState.selected && skillState.selected.skillName === item.skill_name && skillState.selected.version === item.version) {
-                        button.classList.add('active');
-                    }
-                    const connector = document.createElement('span');
-                    connector.className = 'skill-tree-connector';
-                    const meta = document.createElement('span');
-                    meta.className = 'skill-tree-version-meta';
-                    const version = document.createElement('span');
-                    version.className = 'skill-tree-version-number';
-                    version.textContent = `v${item.version}`;
-                    const digest = document.createElement('span');
-                    digest.className = 'skill-tree-version-digest';
-                    digest.textContent = item.sha256 ? `${item.sha256.slice(0, 12)}…` : '无摘要';
-                    meta.append(version, digest);
-                    const status = document.createElement('span');
-                    status.className = `skill-tree-status ${item.status || ''}`;
-                    status.textContent = item.source === 'builtin' ? '内置 · 只读' : skillStatusLabel(item.status);
-                    button.append(connector, meta, status);
-                    button.addEventListener('click', () => {
-                        skillState.expanded.add(name);
-                        selectSkillVersion(item.skill_name, item.version, item.source);
-                    });
-                    branch.appendChild(button);
-                }
-                group.appendChild(branch);
-                tree.appendChild(group);
-            }
-            list.appendChild(tree);
+            renderSkillsCatalogTable();
         }
 
         function newSkillDraft() {
+            setResourceView('skills', 'edit');
+            resourceCatalogs.skills.hasDraft = true;
+            skillState.browsingOnly = false;
+            trackResourceDraft('skills', '.skill-editor');
+            skillDetailSequence += 1;
             if (skillState.evaluationTimer) window.clearTimeout(skillState.evaluationTimer);
             skillState.evaluationTimer = null;
             skillState.selected = null;
@@ -174,59 +106,84 @@
         }
 
         async function selectSkillVersion(skillName, version, source = 'managed') {
+            const sequence = ++skillDetailSequence;
+            setResourceView('skills', 'detail');
+            skillState.browsingOnly = true;
+            skillState.selected = null;
+            skillState.detail = null;
+            skillState.readOnly = true;
+            skillState.files = [];
+            if (skillState.evaluationTimer) window.clearTimeout(skillState.evaluationTimer);
+            skillState.evaluationTimer = null;
+            document.getElementById('skillNameInput').value = skillName;
+            document.getElementById('skillVersionInput').value = version;
+            renderSkillFiles();
+            updateSkillEditorState();
+            showSkillNotice('正在读取 Skill 文件…');
             try {
                 const endpoint = source === 'builtin'
                     ? `/skills/builtin/${encodeURIComponent(skillName)}/versions/${encodeURIComponent(version)}`
                     : `/skills/${encodeURIComponent(skillName)}/versions/${encodeURIComponent(version)}`;
                 const data = await apiFetch(endpoint);
+                if (sequence !== skillDetailSequence) return;
                 skillState.selected = { skillName, version, source: source || data.source || 'managed' };
                 skillState.detail = data;
                 skillState.readOnly = skillState.selected.source === 'builtin';
                 skillState.files = Object.entries(data.files || {}).map(([path, value]) => ({
                     path,
                     encoding: value && value.encoding === 'base64' && !likelyTextPath(path) ? 'base64' : 'utf-8',
-                    content: value && value.encoding === 'base64' ? decodeBase64(value.content) : String(value || ''),
+                    content: value && value.encoding === 'base64'
+                        ? (likelyTextPath(path) ? decodeBase64(value.content) : value.content)
+                        : String(value || ''),
                 }));
                 skillState.activeFilePath = skillState.files[0]?.path || 'SKILL.md';
-                skillState.previewMode = skillState.readOnly && /\.(md|markdown)$/i.test(skillState.activeFilePath);
+                skillState.previewMode = (skillState.readOnly || skillState.browsingOnly) && /\.(md|markdown)$/i.test(skillState.activeFilePath);
                 document.getElementById('skillNameInput').value = skillName;
                 document.getElementById('skillVersionInput').value = version;
                 renderSkillList();
                 renderSkillFiles();
                 renderSkillEvaluation(data);
                 updateSkillEditorState();
-            } catch (error) { showSkillNotice(error.message, true); }
+                clearSkillNotice();
+                return true;
+            } catch (error) {
+                if (sequence === skillDetailSequence) showSkillNotice(error.message, true);
+            }
         }
 
         function updateSkillEditorState() {
-            const readOnly = skillState.readOnly;
+            const readOnly = skillState.readOnly || skillState.browsingOnly;
             const nameInput = document.getElementById('skillNameInput');
             const versionInput = document.getElementById('skillVersionInput');
             if (nameInput) nameInput.readOnly = readOnly;
             if (versionInput) versionInput.readOnly = readOnly;
             document.getElementById('skillSaveButton')?.toggleAttribute('disabled', readOnly);
-            document.getElementById('skillEvaluateButton')?.toggleAttribute('disabled', readOnly || !skillState.selected);
-            document.getElementById('skillPublishButton')?.toggleAttribute('disabled', readOnly || !skillState.selected);
-            document.getElementById('skillUnpublishButton')?.toggleAttribute('disabled', readOnly || !skillState.selected);
-            document.getElementById('skillCloneButton')?.toggleAttribute('disabled', !readOnly);
+            document.getElementById('skillEvaluateButton')?.toggleAttribute('disabled', skillState.readOnly || !skillState.selected);
+            document.getElementById('skillPublishButton')?.toggleAttribute('disabled', skillState.readOnly || !skillState.selected);
+            document.getElementById('skillUnpublishButton')?.toggleAttribute('disabled', skillState.readOnly || !skillState.selected);
+            document.getElementById('skillCloneButton')?.toggleAttribute('disabled', !skillState.selected);
+            const clone = document.getElementById('skillCloneButton');
+            if (clone) clone.textContent = skillState.readOnly ? '复制为新版本' : '编辑新版本';
         }
 
         function cloneSelectedBuiltin() {
-            if (!skillState.selected || skillState.selected.source !== 'builtin') return;
-            const parts = String(skillState.selected.version).split('.').map(value => Number.parseInt(value, 10));
-            const nextVersion = parts.length === 3 && parts.every(Number.isInteger)
-                ? `${parts[0]}.${parts[1]}.${parts[2] + 1}` : '1.0.0';
+            if (!skillState.selected) return;
+            const nextVersion = nextSkillRevision(skillState.selected.skillName, skillState.selected.version, skillState.versions);
+            setResourceView('skills', 'edit');
+            resourceCatalogs.skills.hasDraft = true;
+            skillState.browsingOnly = false;
+            trackResourceDraft('skills', '.skill-editor');
             skillState.selected = null;
             skillState.detail = null;
             skillState.readOnly = false;
             skillState.activeFilePath = skillState.files[0]?.path || 'SKILL.md';
             skillState.previewMode = false;
             document.getElementById('skillVersionInput').value = nextVersion;
-            document.getElementById('skillEvalSummary').textContent = '已复制内置 Skill；请编辑内容并保存为新的托管版本。';
+            document.getElementById('skillEvalSummary').textContent = '已创建新版本草稿；请编辑内容后保存，原版本保持不变。';
             renderSkillList();
             renderSkillFiles();
             updateSkillEditorState();
-            showSkillNotice('已复制内置 Skill。修改后点击“保存为新版本”，不会改动部署内置版本。');
+            showSkillNotice('已复制当前内容。修改后点击“保存为新版本”，不会改动原版本。');
         }
 
         function renderSkillFiles() {
@@ -290,7 +247,7 @@
                     fileButton.className = `skill-file-tree-file${item.file.path === activeFile.path ? ' active' : ''}`;
                     fileButton.innerHTML = `<span class="skill-file-tree-file-mark">—</span><span class="skill-file-tree-file-name">${escapeHtml(item.name)}</span><span class="skill-file-tree-file-type">${escapeHtml(item.file.encoding === 'base64' ? 'bin' : 'md')}</span>`;
                     fileButton.title = item.file.path;
-                    fileButton.addEventListener('click', () => { skillState.activeFilePath = item.file.path; skillState.previewMode = skillState.readOnly && /\.(md|markdown)$/i.test(item.file.path); renderSkillFiles(); });
+                    fileButton.addEventListener('click', () => { skillState.activeFilePath = item.file.path; skillState.previewMode = (skillState.readOnly || skillState.browsingOnly) && /\.(md|markdown)$/i.test(item.file.path); renderSkillFiles(); });
                     parent.appendChild(fileButton);
                 }
             };
@@ -299,7 +256,7 @@
             addFile.type = 'button';
             addFile.className = 'skill-file-tree-add';
             addFile.textContent = '+ 添加文件';
-            addFile.disabled = skillState.readOnly;
+            addFile.disabled = (skillState.readOnly || skillState.browsingOnly);
             addFile.addEventListener('click', addSkillFile);
             treePanel.append(treeTitle, tree, addFile);
             const editorPanel = document.createElement('section');
@@ -311,16 +268,16 @@
             const path = document.createElement('input');
             path.id = 'skillFilePathInput';
             path.type = 'text'; path.placeholder = 'references/guide.md'; path.value = activeFile.path;
-            path.readOnly = skillState.readOnly;
+            path.readOnly = (skillState.readOnly || skillState.browsingOnly);
             path.addEventListener('input', () => { activeFile.path = path.value; });
             const encoding = document.createElement('select');
             encoding.innerHTML = '<option value="utf-8">UTF-8 文本</option><option value="base64">Base64 二进制</option>';
             encoding.value = activeFile.encoding;
-            encoding.disabled = skillState.readOnly;
+            encoding.disabled = (skillState.readOnly || skillState.browsingOnly);
             encoding.addEventListener('change', () => { activeFile.encoding = encoding.value; });
             const remove = document.createElement('button');
             remove.type = 'button'; remove.textContent = '删除';
-            remove.disabled = skillState.readOnly;
+            remove.disabled = (skillState.readOnly || skillState.browsingOnly);
             remove.addEventListener('click', () => { skillState.files = skillState.files.filter(file => file !== activeFile); skillState.activeFilePath = skillState.files[0]?.path || ''; renderSkillFiles(); });
             const isMarkdown = /\.(md|markdown)$/i.test(activeFile.path);
             const tabbar = document.createElement('div');
@@ -352,7 +309,7 @@
             editorTabPanel.setAttribute('role', 'tabpanel');
             editorTabPanel.setAttribute('aria-labelledby', 'skillFileEditTab');
             const content = document.createElement('textarea');
-            content.spellcheck = false; content.value = activeFile.content; content.readOnly = skillState.readOnly;
+            content.spellcheck = false; content.value = activeFile.content; content.readOnly = (skillState.readOnly || skillState.browsingOnly);
             content.addEventListener('input', () => { activeFile.content = content.value; });
             content.className = 'skill-file-editor';
             editorTabPanel.appendChild(content);
@@ -423,7 +380,7 @@
         }
 
         function addSkillFile() {
-            if (skillState.readOnly) return;
+            if ((skillState.readOnly || skillState.browsingOnly)) return;
             skillState.files.push({ path: 'references/new.md', encoding: 'utf-8', content: '' });
             skillState.activeFilePath = 'references/new.md';
             renderSkillFiles();
@@ -442,10 +399,15 @@
         }
 
         async function saveSkillDraft() {
-            if (skillState.readOnly) {
-                showSkillNotice('内置 Skill 只能复制为新的托管版本后再编辑。', true);
+            if (skillSavePending) return;
+            if (skillState.readOnly || skillState.browsingOnly) {
+                showSkillNotice('请先复制为新版本，再修改和保存。', true);
                 return;
             }
+            const sequence = skillDetailSequence;
+            skillSavePending = true;
+            const button = document.getElementById('skillSaveButton');
+            if (button) button.disabled = true;
             try {
                 const skillName = document.getElementById('skillNameInput').value.trim().toLowerCase();
                 const version = document.getElementById('skillVersionInput').value.trim();
@@ -454,9 +416,16 @@
                     method: 'POST', headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ version, files: collectSkillFiles() }),
                 });
-                showSkillNotice(`已保存 ${skillName}@${version}，digest: ${data.sha256 || '已生成'}`);
+                if (sequence !== skillDetailSequence) return;
+                resourceCatalogs.skills.hasDraft = false;
                 await loadManagedSkills({ skillName, version });
-            } catch (error) { showSkillNotice(error.message, true); }
+                showSkillNotice(`已保存 ${skillName}@${version}，digest: ${data.sha256 || '已生成'}`);
+            } catch (error) {
+                if (sequence === skillDetailSequence) showSkillNotice(error.message, true);
+            } finally {
+                skillSavePending = false;
+                if (button) button.disabled = Boolean(skillState.readOnly || skillState.browsingOnly);
+            }
         }
 
         async function uploadSkillZip() {

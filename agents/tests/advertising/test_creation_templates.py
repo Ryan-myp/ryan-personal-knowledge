@@ -87,6 +87,26 @@ def test_template_crud_is_scoped_to_authenticated_user():
     assert templates.apply("tenant-a", "user-a", created["template_id"]) is None
 
 
+def test_saved_template_list_reads_database_without_expanding_builtin_blueprints(monkeypatch):
+    templates = manager()
+    created = templates.create("tenant-a", "user-a", payload())
+    templates.create("tenant-a", "other-user", payload(name="别人的模板"))
+
+    def unexpected_catalog(**kwargs):
+        raise AssertionError("saved template list must not expand builtin blueprints")
+
+    monkeypatch.setattr(templates, "_filtered_builtin_records", unexpected_catalog)
+    result = templates.list("tenant-a", "user-a", source="user")
+    assert [row["template_id"] for row in result] == [created["template_id"]]
+    assert templates.list("tenant-b", "user-a", source="user") == []
+    assert templates.list("tenant-a", "user-a", source="user", account_scope={"meta": []}) == []
+
+
+def test_template_source_filter_is_validated():
+    with pytest.raises(CreationTemplateError, match="source"):
+        manager().list("tenant-a", "user-a", source="invalid")
+
+
 def test_template_applies_schema_fields_exposed_by_the_expanded_blueprint():
     from agents.tools.advertising.providers.meta import create_meta_tool_source
 
@@ -272,6 +292,11 @@ def test_template_http_contract_uses_trusted_principal_and_blueprint_registry(mo
         listed = client.get("/creation-templates", headers={"X-API-Key": "template-key"})
         assert listed.status_code == 200
         assert listed.json()["templates"][0]["template_id"] == template_id
+        saved = client.get("/creation-templates?source=user", headers={"X-API-Key": "template-key"})
+        assert saved.status_code == 200
+        assert [item["template_id"] for item in saved.json()["templates"]] == [template_id]
+        invalid = client.get("/creation-templates?source=invalid", headers={"X-API-Key": "template-key"})
+        assert invalid.status_code == 422
         applied = client.post(
             f"/creation-templates/{template_id}/apply",
             headers={"X-API-Key": "template-key"},
@@ -328,8 +353,8 @@ def test_builtin_template_is_account_bound_read_only_and_duplicable():
 
 
 def test_builtin_templates_are_filtered_by_whitelisted_test_accounts():
-    definitions = load_builtin_template_definitions()
-    assert len(definitions) == 13
+    definitions = [item for item in load_builtin_template_definitions() if item.get("scope_type", "account") == "account"]
+    assert len(definitions) == 16
     templates_by_key = {item["key"]: item for item in definitions}
     assert templates_by_key["google.test.app"]["values"]["campaign.app_campaign_setting"] == {
         "app_id": "959841107",
@@ -453,6 +478,7 @@ def test_requested_ad_type_templates_bind_only_to_the_confirmed_test_account():
         item["blueprint_id"]: item
         for item in definitions
         if item["blueprint_id"] in expected_accounts
+        and item["account_id"] == expected_accounts[item["blueprint_id"]]
     }
 
     assert set(templates) == set(expected_accounts)
@@ -474,7 +500,7 @@ def test_builtin_template_http_catalog_uses_runtime_whitelist(monkeypatch):
     class Validator:
         allowed_accounts = {
             "meta": ["2806375919473667"],
-            "google-ads": ["9055507554"],
+            "google-ads": ["9055507554", "7574609568"],
             "tiktok": ["7397068114548195329"],
             "dv360": ["5110831"],
         }
@@ -496,10 +522,11 @@ def test_builtin_template_http_catalog_uses_runtime_whitelist(monkeypatch):
         )
         assert response.status_code == 200
         templates = response.json()["templates"]
-        assert len(templates) == 13
         assert all(item["source"] == "builtin" for item in templates)
+        templates = [item for item in templates if item["scope_type"] == "account"]
+        assert len(templates) == 16
         assert {item["account_id"] for item in templates} == {
-            "2806375919473667", "9055507554",
+            "2806375919473667", "9055507554", "7574609568",
             "7397068114548195329", "5110831",
         }
         builtin_id = templates[0]["template_id"]
@@ -653,6 +680,55 @@ def test_google_builtin_templates_prefill_everything_except_name_schedule_and_bu
     assert app["ad_group.status"] == "PAUSED"
     assert app["ad.name"]
     assert app["ad.status"] == "ENABLED"
+
+
+def test_google_7574609568_templates_use_account_owned_resources_and_paused_parents():
+    definitions = {
+        item["key"]: item
+        for item in load_builtin_template_definitions()
+        if item["key"].startswith("google.test.7574609568.")
+    }
+
+    assert set(definitions) == {
+        "google.test.7574609568.performance-max",
+        "google.test.7574609568.shopping",
+        "google.test.7574609568.app",
+    }
+    for item in definitions.values():
+        assert item["account_id"] == "7574609568"
+        assert item["verification_status"] == "pending_live_verification"
+        assert "customers/9055507554/" not in json.dumps(item["values"])
+
+    pmax = definitions["google.test.7574609568.performance-max"]["values"]
+    assert pmax["campaign.shopping_setting"]["merchant_id"] == 119120369
+    assert pmax["campaign.status"] == "PAUSED"
+    assert pmax["asset_group.status"] == "PAUSED"
+    assert all(
+        resource.startswith("customers/7574609568/assets/")
+        for field in (
+            "asset_group.images",
+            "asset_group.square_marketing_images",
+            "asset_group.logos",
+        )
+        for resource in pmax[field]
+    )
+
+    shopping = definitions["google.test.7574609568.shopping"]["values"]
+    assert shopping["campaign.shopping_setting.merchant_id"] == 119120369
+    assert shopping["campaign.status"] == "PAUSED"
+    assert shopping["ad_group.status"] == "PAUSED"
+    assert shopping["ad.status"] == "PAUSED"
+
+    app = definitions["google.test.7574609568.app"]["values"]
+    assert app["campaign.app_campaign_setting"]["app_id"] == "com.shopee.th"
+    assert app["campaign.app_campaign_setting"]["app_store"] == "GOOGLE_APP_STORE"
+    assert app["campaign.status"] == "PAUSED"
+    assert app["ad_group.status"] == "PAUSED"
+    assert app["ad.status"] == "ENABLED"
+    assert all(
+        resource.startswith("customers/7574609568/assets/")
+        for resource in app["ad.images"]
+    )
 
 
 def test_google_template_user_inputs_are_projected_into_campaign_tool_arguments():

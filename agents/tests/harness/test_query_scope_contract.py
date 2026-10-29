@@ -6,6 +6,22 @@ from agents.agent_platform.tools.web_search import web_search_tool_source
 from agents.tools.advertising.providers.source_factory import create_tool_source
 
 
+def test_explicit_knowledge_source_survives_a_provider_topic_switch():
+    tools = [binding.definition for source in (
+        create_tool_source("google-ads"), create_tool_source("meta"),
+        knowledge_search_tool_source(provider=object(), required_permission="ads.read"),
+        web_search_tool_source(configuration_provider=lambda: {}, required_permission="ads.read"),
+    ) for binding in source.list_bindings()]
+    selector = ToolSelector()
+    request = "换一个主题，只从知识库解释 Google Ads 的智能出价原理，不读任何账户"
+    selected = selector.select_relevant(
+        request, tools,
+        conversation_context=("查询 Meta campaign 列表", "把返回结果按状态分组"),
+    )
+    assert [tool.name for tool in selected] == ["agent_knowledge_search"]
+    assert selector.requires_tool_call(request, selected)
+
+
 def test_query_contract_forbids_unrequested_child_queries_and_rounded_counts():
     prompt = " ".join(CORE_AGENT_SYSTEM_PROMPT.split())
     assert "QUERY SCOPE" in prompt

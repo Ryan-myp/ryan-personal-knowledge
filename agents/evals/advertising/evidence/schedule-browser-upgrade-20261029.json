@@ -1,0 +1,357 @@
+{
+  "date": "2026-10-29",
+  "scope": "scheduled task browsing, per-task instances, pagination and filters",
+  "verification": {
+    "make_ad_agent_check": {
+      "exit_code": 0,
+      "python_tests_passed": 3285,
+      "warnings": 1
+    },
+    "static_js": {
+      "passed": 168,
+      "failed": 0
+    },
+    "new_pagination_module_coverage": {
+      "covered_lines": 51,
+      "num_statements": 54,
+      "percent_covered": 91.89189189189189,
+      "percent_covered_display": "92",
+      "missing_lines": 3,
+      "excluded_lines": 0,
+      "percent_statements_covered": 94.44444444444444,
+      "percent_statements_covered_display": "94",
+      "num_branches": 20,
+      "num_partial_branches": 3,
+      "covered_branches": 17,
+      "missing_branches": 3,
+      "percent_branches_covered": 85.0,
+      "percent_branches_covered_display": "85"
+    },
+    "browser": {
+      "fixture_tasks": 25,
+      "fixture_runs": 65,
+      "page_errors": [],
+      "network": "all HTTP fulfilled with offline fixtures or aborted",
+      "schedule_layouts": {
+        "schedules": {
+          ".schedule-console": {
+            "x": 228,
+            "y": 60,
+            "width": 1212,
+            "height": 840,
+            "scrollHeight": 840
+          },
+          "#scheduleListView": {
+            "x": 252,
+            "y": 148,
+            "width": 1164,
+            "height": 2713.9375,
+            "scrollHeight": 2714
+          }
+        },
+        "schedule-instances": {
+          "#scheduleHistoryView": {
+            "x": 252,
+            "y": 148,
+            "width": 1164,
+            "height": 1780.1875,
+            "scrollHeight": 1780
+          }
+        },
+        "schedule-result": {
+          "#scheduleRunDetail": {
+            "x": 228,
+            "y": 124,
+            "width": 1212,
+            "height": 776,
+            "scrollHeight": 776
+          },
+          "#scheduleRunContent": {
+            "x": 264,
+            "y": 252.78125,
+            "width": 960,
+            "height": 293.75,
+            "scrollHeight": 294
+          }
+        },
+        "schedules-mobile": {
+          "#scheduleListView": {
+            "x": 16,
+            "y": 131,
+            "width": 358,
+            "height": 591.140625,
+            "scrollHeight": 591
+          },
+          ".schedule-pagination": {
+            "x": 16,
+            "y": 614.34375,
+            "width": 358,
+            "height": 107.796875,
+            "scrollHeight": 107
+          }
+        },
+        "schedule-instances-mobile": {
+          "#scheduleHistoryView": {
+            "x": 16,
+            "y": 131,
+            "width": 358,
+            "height": 1894.171875,
+            "scrollHeight": 1894
+          },
+          "#scheduleHistoryView .schedule-pagination": {
+            "x": 16,
+            "y": 736.203125,
+            "width": 358,
+            "height": 107.796875,
+            "scrollHeight": 107
+          }
+        }
+      }
+    },
+    "service_read_only": {
+      "readiness": "ready",
+      "tasks": {
+        "page": 1,
+        "limit": 10,
+        "total": 5,
+        "pages": 1,
+        "has_next": false,
+        "has_previous": false
+      },
+      "read_only": true,
+      "selected_task_runs": {
+        "page": 1,
+        "limit": 10,
+        "total": 0,
+        "pages": 1,
+        "has_next": false,
+        "has_previous": false
+      },
+      "failed_runs": 1,
+      "static_version": "20261029-schedule-pages-v1",
+      "populated_task_runs": {
+        "page": 1,
+        "limit": 10,
+        "total": 4,
+        "pages": 1,
+        "has_next": false,
+        "has_previous": false
+      },
+      "single_run_read": "passed"
+    },
+    "diff_check": "passed",
+    "qguard": {
+      "status": "FAIL",
+      "scanned_files": 764,
+      "findings": 4995,
+      "score": 0,
+      "review": "Pagination SQL structure uses fixed internal identifiers; user values are bound parameters. Whole-repository findings remain unresolved."
+    }
+  },
+  "deployment": {
+    "host": "0.0.0.0",
+    "port": 8766,
+    "existing_configuration_and_database_retained": true,
+    "resource_version": "20261029-schedule-pages-v1"
+  },
+  "provider_api_calls_during_validation": false,
+  "database_migration_required": false,
+  "limitations": [
+    "Offline fixtures validate multi-page browser behavior; live service was read-only.",
+    "Offset pagination and bounded LIKE search have not been benchmarked at million-row scale.",
+    "Module coverage is not whole-repository coverage; QGuard remains failed."
+  ],
+  "compact_ui_followup": {
+    "static_version": "20261029-schedule-compact-v1",
+    "scope": "frontend layout and run history navigation labels only",
+    "static_js_passed": 171,
+    "browser_errors": [],
+    "layout": {
+      "schedules-wide": {
+        "#scheduleListView": {
+          "x": 252,
+          "y": 148,
+          "width": 1080,
+          "height": 2029.875,
+          "scrollHeight": 2030
+        },
+        ".schedule-row": {
+          "x": 252,
+          "y": 237.1875,
+          "width": 1080,
+          "height": 92.484375,
+          "scrollHeight": 91
+        },
+        ".schedule-row-actions": {
+          "x": 1016,
+          "y": 266.921875,
+          "width": 316,
+          "height": 32,
+          "scrollHeight": 32
+        }
+      },
+      "schedule-result": {
+        "#scheduleRunDetail": {
+          "x": 228,
+          "y": 124,
+          "width": 1212,
+          "height": 776,
+          "scrollHeight": 776
+        },
+        "#scheduleRunContent": {
+          "x": 264,
+          "y": 289.578125,
+          "width": 960,
+          "height": 293.75,
+          "scrollHeight": 294
+        }
+      },
+      "schedule-result-mobile": {
+        "#scheduleRunDetail": {
+          "x": 0,
+          "y": 112,
+          "width": 390,
+          "height": 732,
+          "scrollHeight": 732
+        },
+        ".schedule-result-toolbar": {
+          "x": 16,
+          "y": 112,
+          "width": 358,
+          "height": 188.1875,
+          "scrollHeight": 187
+        },
+        ".schedule-result-toolbar .schedule-back": {
+          "x": 16,
+          "y": 129,
+          "width": 93.28125,
+          "height": 20.796875,
+          "scrollHeight": 21
+        }
+      }
+    },
+    "served_on_8766": true,
+    "backend_changes": false,
+    "database_migration_required": false,
+    "provider_api_calls": false,
+    "full_check": {
+      "exit_code": 0,
+      "python_tests_passed": 3300,
+      "warnings": 1
+    },
+    "superseded_by": "full_width_ui_followup"
+  },
+  "full_width_ui_followup": {
+    "static_version": "20261029-template-library-v1",
+    "layout": {
+      "schedules-wide": {
+        ".schedule-console": {
+          "x": 228,
+          "y": 60,
+          "width": 1692,
+          "height": 1020,
+          "scrollHeight": 1020
+        },
+        "#scheduleListView": {
+          "x": 252,
+          "y": 148,
+          "width": 1644,
+          "height": 1822.1875,
+          "scrollHeight": 1822
+        },
+        ".schedule-task-table": {
+          "x": 252,
+          "y": 237.1875,
+          "width": 1644,
+          "height": 1642,
+          "scrollHeight": 1642
+        },
+        ".schedule-row": {
+          "x": 252,
+          "y": 280.875,
+          "width": 1644,
+          "height": 79.890625,
+          "scrollHeight": 80
+        },
+        ".schedule-row-main": {
+          "x": 252,
+          "y": 280.875,
+          "width": 728.5625,
+          "height": 79.890625,
+          "scrollHeight": 79
+        },
+        ".schedule-row-plan": {
+          "x": 980.5625,
+          "y": 280.875,
+          "width": 427.4375,
+          "height": 79.890625,
+          "scrollHeight": 79
+        },
+        ".schedule-row-counts": {
+          "x": 1408,
+          "y": 280.875,
+          "width": 160,
+          "height": 79.890625,
+          "scrollHeight": 79
+        },
+        ".schedule-row-actions": {
+          "x": 1580,
+          "y": 304.8125,
+          "width": 316,
+          "height": 32,
+          "scrollHeight": 32
+        }
+      },
+      "schedules-mobile": {
+        "#scheduleListView": {
+          "x": 16,
+          "y": 131,
+          "width": 358,
+          "height": 510.234375,
+          "scrollHeight": 510
+        },
+        ".schedule-pagination": {
+          "x": 16,
+          "y": 533.4375,
+          "width": 358,
+          "height": 107.796875,
+          "scrollHeight": 107
+        }
+      },
+      "schedule-result-mobile": {
+        "#scheduleRunDetail": {
+          "x": 0,
+          "y": 112,
+          "width": 390,
+          "height": 732,
+          "scrollHeight": 732
+        },
+        ".schedule-result-toolbar": {
+          "x": 16,
+          "y": 112,
+          "width": 358,
+          "height": 188.1875,
+          "scrollHeight": 187
+        },
+        ".schedule-result-toolbar .schedule-back": {
+          "x": 16,
+          "y": 129,
+          "width": 93.28125,
+          "height": 20.796875,
+          "scrollHeight": 21
+        }
+      }
+    },
+    "browser_errors": [],
+    "static_js_passed": 178,
+    "provider_api_calls": false,
+    "database_migration_required": false,
+    "full_check": {
+      "exit_code": 0,
+      "python_tests_passed": 3300,
+      "warnings": 1,
+      "static_js_passed": 178,
+      "diff_check": "passed"
+    }
+  }
+}

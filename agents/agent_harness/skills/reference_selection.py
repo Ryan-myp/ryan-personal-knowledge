@@ -31,24 +31,24 @@ def reference_terms(
     return terms
 
 
-def _reference_body(value: str, request: str) -> str:
+def _reference_body(value: str, request: str) -> tuple[str, bool]:
     match = re.match(r"\A---\s*\n(.*?)\n---\s*\n", value, re.DOTALL)
     if not match:
-        return value
+        return value, False
     if match.end() > 4096:
-        return ""
+        return "", False
     try:
         metadata = yaml.safe_load(match.group(1))
     except yaml.YAMLError:
-        return ""
+        return "", False
     if not isinstance(metadata, dict):
-        return ""
+        return "", False
     scopes = metadata.get("reference_scope")
     if scopes is not None:
         if not isinstance(scopes, list) or not scopes or any(
             not isinstance(scope, str) or not scope.strip() for scope in scopes
         ):
-            return ""
+            return "", False
         normalized = request.casefold()
         if not any(
             re.search(
@@ -57,8 +57,8 @@ def _reference_body(value: str, request: str) -> str:
             )
             for scope in scopes
         ):
-            return ""
-    return value[match.end():]
+            return "", False
+    return value[match.end():], scopes is not None
 
 
 def select_reference_excerpts(
@@ -75,9 +75,11 @@ def select_reference_excerpts(
     terms = reference_terms(query)
     if not terms:
         return ""
-    ranked: list[tuple[int, str, str]] = []
+    ranked: list[tuple[bool, int, str, str]] = []
     for path, raw_content in documents.items():
-        content = _reference_body(str(raw_content or ""), str(scope_query if scope_query is not None else query))
+        content, scoped = _reference_body(
+            str(raw_content or ""), str(scope_query if scope_query is not None else query),
+        )
         if not content.strip():
             continue
         path_hits = len(terms & reference_terms(str(path)))
@@ -96,12 +98,12 @@ def select_reference_excerpts(
         )
         score = paragraph_score + path_hits
         if score:
-            ranked.append((score, str(path), excerpt))
-    ranked.sort(key=lambda item: (-item[0], item[1]))
+            ranked.append((not scoped, score, str(path), excerpt))
+    ranked.sort(key=lambda item: (item[0], -item[1], item[2]))
 
     blocks: list[str] = []
     remaining = max_chars
-    for index, (_score, path, excerpt) in enumerate(ranked[:max_documents]):
+    for index, (_generic, _score, path, excerpt) in enumerate(ranked[:max_documents]):
         slots_left = min(max_documents, len(ranked)) - index
         budget = max(1, remaining // max(slots_left, 1))
         block = f"[{path}]\n{excerpt}"[:budget]

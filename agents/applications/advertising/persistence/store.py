@@ -30,6 +30,7 @@ from .conversation_feedback_store import (
     review_conversation_feedback as update_feedback_review,
     save_conversation_feedback as persist_conversation_feedback,
 )
+from .feedback_review_pages import FeedbackReviewQuery, read_feedback_review_page
 from .semantic_index_store import (
     get_knowledge_semantic_index_metadata as query_semantic_index_metadata,
     is_knowledge_semantic_index_current as check_semantic_index_current,
@@ -44,6 +45,7 @@ from .session_store import SessionRepository
 from .knowledge_store import KnowledgeRepository
 from .workflow_store import WorkflowRepository
 from .errors import PersistenceConflictError
+from .schedule_pages import SchedulePageQuery, read_schedule_page
 from agents.agent_harness.core.memory import MemoryRecord
 
 logger = logging.getLogger(__name__)
@@ -1140,6 +1142,25 @@ class AdAgentStore:
         with self._lock:
             rows = self._get_conn().execute(query, params).fetchall()
             return [self._scheduled_from_row(row) for row in rows]
+
+    def page_scheduled_tasks(self, filters: SchedulePageQuery) -> dict[str, Any]:
+        with self._lock:
+            return read_schedule_page(self._get_conn(), filters)
+
+    def page_scheduled_task_runs(self, filters: SchedulePageQuery) -> dict[str, Any]:
+        with self._lock:
+            return read_schedule_page(self._get_conn(), filters, runs=True)
+
+    def get_scheduled_task_run(
+        self, schedule_id: str, run_id: str, *, tenant_id: str, user_id: str,
+    ) -> Optional[ScheduledTaskRunRecord]:
+        with self._lock:
+            row = self._get_conn().execute(
+                'SELECT * FROM scheduled_task_runs WHERE schedule_id = ? '
+                'AND schedule_run_id = ? AND tenant_id = ? AND user_id = ?',
+                (schedule_id, run_id, tenant_id, user_id),
+            ).fetchone()
+            return self._scheduled_run_from_row(row)
 
     def update_scheduled_task(
         self, schedule_id: str, *, status: Optional[str] = None,
@@ -2311,6 +2332,15 @@ class AdAgentStore:
     ) -> list[dict[str, str]]:
         return self._sessions.list_recent_user_messages(session_id, limit)
 
+    def list_conversation_preview_messages(
+        self, session_ids: list[str], *, user_id: str, tenant_id: str,
+        limit_per_session: int = 50,
+    ) -> dict[str, ConversationMessagePage]:
+        return self._sessions.list_conversation_preview_messages(
+            session_ids, user_id=user_id, tenant_id=tenant_id,
+            limit_per_session=limit_per_session,
+        )
+
     def list_conversation_message_page(
         self,
         session_id: str,
@@ -2367,6 +2397,10 @@ class AdAgentStore:
                 user_id=str(user_id),
                 tenant_id=str(tenant_id),
             )
+
+    def page_conversation_feedback_review_queue(self, filters: FeedbackReviewQuery) -> dict[str, Any]:
+        with self._lock:
+            return read_feedback_review_page(self._get_conn(), filters)
 
     def list_conversation_feedback_review_queue(
         self, *, tenant_id: str, status: str = "pending", limit: int = 50,

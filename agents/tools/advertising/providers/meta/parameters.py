@@ -5,12 +5,11 @@ from __future__ import annotations
 from typing import Any
 
 
-META_OBJECTIVES = [
-    "OUTCOME_SALES", "OUTCOME_LEADS", "OUTCOME_TRAFFIC", "OUTCOME_AWARENESS",
-    "OUTCOME_ENGAGEMENT", "OUTCOME_APP_PROMOTION",
-    "OUTCOME_MESSAGES", "APP_INSTALLS",
-    "PRODUCT_CATALOG_SALES", "CONVERSIONS", "TRAFFIC", "LINK_CLICKS",
-]
+from agents.tools.advertising.clients.meta_objectives import (
+    META_CANONICAL_OBJECTIVES, META_OBJECTIVE_ALIASES,
+)
+
+META_OBJECTIVES = [*META_CANONICAL_OBJECTIVES, *META_OBJECTIVE_ALIASES]
 META_OPTIMIZATION_GOALS = [
     "APP_INSTALLS", "OFFSITE_CONVERSIONS", "VALUE", "LINK_CLICKS",
     "LANDING_PAGE_VIEWS", "LEAD_GENERATION", "IMPRESSIONS", "REACH",
@@ -896,7 +895,7 @@ def meta_campaign_schema() -> dict[str, Any]:
             "account_id": _field("string", "Meta ad account ID"),
             "name": _field("string", "Campaign name", maxLength=400),
             "objective": _field(
-                "string", "Campaign objective", enum=META_OBJECTIVES,
+                "string", "Campaign objective", enum=META_OBJECTIVES, creation_selector=True,
                 option_aliases={
                     "OUTCOME_SALES": ["sales campaign", "product sales", "销售广告", "商品销售", "conversion campaign", "转化广告", "网站转化"],
                     "OUTCOME_LEADS": ["lead generation", "lead gen", "潜在客户", "线索获客"],
@@ -1580,7 +1579,32 @@ def meta_ad_format_catalog() -> list[dict[str, Any]]:
     source_document = "docs/ad-platform-hierarchy-guide-v5.md"
     return [
         {
+            "format_id": "awareness", "blueprint_ids": ["meta.awareness"],
+            "category": "awareness", "resource_type": "campaign", "coverage": "partial_dry_run",
+            "tool_names": ["meta_create_campaign", "meta_create_adset", "meta_create_awareness_ad"],
+            "payload_adapter": "MetaAPIClient.create_link_ad",
+            "dependencies": ["page_id", "image_hash_or_video_id", "targeting"],
+            "supported_fields": ["OUTCOME_AWARENESS", "REACH", "IMPRESSIONS"],
+            "gaps": ["本轮离线验证；账户资格、版位与素材仍需渠道校验"],
+            "source_document": source_document,
+        },
+        {
+            "format_id": "app_promotion",
+            "objective_values": ["APP_INSTALLS"],
+            "blueprint_ids": ["meta.app_promotion"],
+            "payload_adapter": "MetaAPIClient.create_app_promotion_ad",
+            "category": "app",
+            "resource_type": "campaign",
+            "coverage": "supported_dry_run",
+            "tool_names": ["meta_create_campaign", "meta_create_adset", "meta_create_app_promotion_ad"],
+            "dependencies": ["application_id", "object_store_url", "page_id", "image_hash_or_video_id"],
+            "supported_fields": ["OUTCOME_APP_PROMOTION", "APP_INSTALLS", "promoted_object", "media_type"],
+            "gaps": ["应用授权、素材与账户资格须在提交前验证"],
+            "source_document": source_document,
+        },
+        {
             "format_id": "traffic",
+            "blueprint_ids": ["meta.traffic_link"],
             "category": "traffic",
             "resource_type": "campaign",
             "coverage": "partial_dry_run",
@@ -1592,6 +1616,7 @@ def meta_ad_format_catalog() -> list[dict[str, Any]]:
         },
         {
             "format_id": "conversion",
+            "blueprint_ids": ["meta.conversion_link"],
             "category": "conversion",
             "resource_type": "campaign",
             "coverage": "partial_dry_run",
@@ -1603,6 +1628,7 @@ def meta_ad_format_catalog() -> list[dict[str, Any]]:
         },
         {
             "format_id": "lead",
+            "blueprint_ids": ["meta.lead_generation"],
             "category": "lead",
             "resource_type": "campaign",
             "coverage": "partial_dry_run",
@@ -1614,6 +1640,7 @@ def meta_ad_format_catalog() -> list[dict[str, Any]]:
         },
         {
             "format_id": "lead.instant_form",
+            "blueprint_ids": ["meta.lead_generation"],
             "category": "lead",
             "resource_type": "ad",
             "coverage": "supported_dry_run",
@@ -1626,6 +1653,7 @@ def meta_ad_format_catalog() -> list[dict[str, Any]]:
         },
         {
             "format_id": "engagement",
+            "blueprint_ids": ["meta.engagement"],
             "category": "engagement",
             "resource_type": "campaign",
             "coverage": "partial_dry_run",
@@ -1637,6 +1665,7 @@ def meta_ad_format_catalog() -> list[dict[str, Any]]:
         },
         {
             "format_id": "link_image",
+            "blueprint_ids": ["meta.traffic_link"],
             "category": "traffic",
             "resource_type": "ad",
             "coverage": "supported_dry_run",
@@ -1649,6 +1678,7 @@ def meta_ad_format_catalog() -> list[dict[str, Any]]:
         },
         {
             "format_id": "link_video",
+            "blueprint_ids": ["meta.engagement"],
             "category": "engagement",
             "resource_type": "ad",
             "coverage": "supported_dry_run",
@@ -1661,6 +1691,7 @@ def meta_ad_format_catalog() -> list[dict[str, Any]]:
         },
         {
             "format_id": "catalog",
+            "blueprint_ids": ["meta.catalog_sales"],
             "category": "catalog",
             "resource_type": "campaign",
             "coverage": "supported_dry_run",
@@ -1672,6 +1703,7 @@ def meta_ad_format_catalog() -> list[dict[str, Any]]:
         },
         {
             "format_id": "catalog.dynamic_product",
+            "blueprint_ids": ["meta.catalog_sales"],
             "category": "catalog",
             "resource_type": "ad",
             "coverage": "supported_dry_run",
@@ -1683,6 +1715,7 @@ def meta_ad_format_catalog() -> list[dict[str, Any]]:
         },
         {
             "format_id": "messaging",
+            "blueprint_ids": ["meta.messaging"],
             "category": "messaging",
             "resource_type": "campaign",
             "coverage": "partial_dry_run",
@@ -1694,6 +1727,7 @@ def meta_ad_format_catalog() -> list[dict[str, Any]]:
         },
         {
             "format_id": "messaging.click_to_message",
+            "blueprint_ids": ["meta.messaging"],
             "category": "messaging",
             "resource_type": "ad",
             "coverage": "supported_dry_run",

@@ -54,6 +54,19 @@ def test_report_requires_transport_and_live_tool_result(tmp_path):
     assert report["cases"][0]["verdict"] == "not_verified"
 
 
+def test_report_accepts_multiple_confirmed_accounts_for_one_provider(tmp_path):
+    memory = {
+        **MEMORY,
+        "scope": {"test_accounts": {"meta": ["1234", "5678"]}},
+    }
+    _case(tmp_path, account="5678")
+
+    report = build_report(tmp_path, memory)
+
+    assert report["read_verified"] == 1
+    assert report["cases"][0]["verdict"] == "read_verified"
+
+
 def test_report_rejects_out_of_scope_and_never_promotes_write_by_reply(tmp_path):
     _case(tmp_path, account="unconfirmed", tool="meta_create_campaign", write=True)
     report = build_report(tmp_path, MEMORY)

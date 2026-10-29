@@ -1,0 +1,450 @@
+{
+  "date": "2026-10-29",
+  "verification": "offline_contract_only",
+  "provider_api_calls": 0,
+  "objective_coverage": {
+    "google-ads": {
+      "objectives": [
+        {
+          "objective": "DEMAND_GEN",
+          "blueprint_ids": [
+            "google-ads.demand_gen_carousel",
+            "google-ads.demand_gen_multi_asset",
+            "google-ads.demand_gen_product",
+            "google-ads.demand_gen_video_responsive"
+          ],
+          "status": "guided_contract",
+          "limitations": [],
+          "verification": "offline_contract_only"
+        },
+        {
+          "objective": "DISPLAY",
+          "blueprint_ids": [
+            "google-ads.display"
+          ],
+          "status": "guided_contract",
+          "limitations": [],
+          "verification": "offline_contract_only"
+        },
+        {
+          "objective": "HOTEL",
+          "blueprint_ids": [
+            "google-ads.hotel"
+          ],
+          "status": "guided_contract",
+          "limitations": [],
+          "verification": "offline_contract_only"
+        },
+        {
+          "objective": "LOCAL",
+          "blueprint_ids": [
+            "google-ads.local"
+          ],
+          "status": "guided_contract",
+          "limitations": [],
+          "verification": "offline_contract_only"
+        },
+        {
+          "objective": "LOCAL_SERVICES",
+          "blueprint_ids": [],
+          "status": "restricted",
+          "limitations": [
+            {
+              "reason": "当前连接器为 v24；Local Services PMax 创建需 v26 参数合同，尚未接入。",
+              "source_url": "https://developers.google.com/google-ads/api/docs/campaigns/local-service-campaigns"
+            }
+          ],
+          "verification": "offline_contract_only"
+        },
+        {
+          "objective": "MULTI_CHANNEL",
+          "blueprint_ids": [
+            "google-ads.app"
+          ],
+          "status": "guided_contract",
+          "limitations": [],
+          "verification": "offline_contract_only"
+        },
+        {
+          "objective": "PERFORMANCE_MAX",
+          "blueprint_ids": [
+            "google-ads.performance_max"
+          ],
+          "status": "guided_contract",
+          "limitations": [],
+          "verification": "offline_contract_only"
+        },
+        {
+          "objective": "SEARCH",
+          "blueprint_ids": [
+            "google-ads.search"
+          ],
+          "status": "guided_contract",
+          "limitations": [],
+          "verification": "offline_contract_only"
+        },
+        {
+          "objective": "SHOPPING",
+          "blueprint_ids": [
+            "google-ads.shopping"
+          ],
+          "status": "guided_contract",
+          "limitations": [],
+          "verification": "offline_contract_only"
+        },
+        {
+          "objective": "SMART",
+          "blueprint_ids": [
+            "google-ads.smart"
+          ],
+          "status": "restricted",
+          "limitations": [
+            {
+              "reason": "Google 自 2026-09-23 起停止新建 Smart Campaign；请使用 Performance Max。",
+              "alternative": "PERFORMANCE_MAX",
+              "source_url": "https://developers.google.com/google-ads/api/docs/smart-campaigns/create-campaign"
+            }
+          ],
+          "verification": "offline_contract_only"
+        },
+        {
+          "objective": "TRAVEL",
+          "blueprint_ids": [
+            "google-ads.travel"
+          ],
+          "status": "guided_contract",
+          "limitations": [],
+          "verification": "offline_contract_only"
+        },
+        {
+          "objective": "VIDEO",
+          "blueprint_ids": [
+            "google-ads.video"
+          ],
+          "status": "restricted",
+          "limitations": [
+            {
+              "reason": "Google Ads API 不支持新建传统 Video Campaign；请使用 Demand Gen。",
+              "alternative": "DEMAND_GEN",
+              "source_url": "https://developers.google.com/google-ads/api/docs/video/overview"
+            }
+          ],
+          "verification": "offline_contract_only"
+        }
+      ],
+      "missing": []
+    },
+    "meta": {
+      "objectives": [
+        {
+          "objective": "APP_INSTALLS",
+          "blueprint_ids": [
+            "meta.app_promotion"
+          ],
+          "status": "guided_contract",
+          "limitations": [],
+          "verification": "offline_contract_only"
+        },
+        {
+          "objective": "CONVERSIONS",
+          "blueprint_ids": [
+            "meta.conversion_link"
+          ],
+          "status": "guided_contract",
+          "limitations": [],
+          "verification": "offline_contract_only"
+        },
+        {
+          "objective": "LINK_CLICKS",
+          "blueprint_ids": [
+            "meta.traffic_link"
+          ],
+          "status": "guided_contract",
+          "limitations": [],
+          "verification": "offline_contract_only"
+        },
+        {
+          "objective": "OUTCOME_APP_PROMOTION",
+          "blueprint_ids": [
+            "meta.app_promotion"
+          ],
+          "status": "guided_contract",
+          "limitations": [],
+          "verification": "offline_contract_only"
+        },
+        {
+          "objective": "OUTCOME_AWARENESS",
+          "blueprint_ids": [
+            "meta.awareness"
+          ],
+          "status": "guided_contract",
+          "limitations": [],
+          "verification": "offline_contract_only"
+        },
+        {
+          "objective": "OUTCOME_ENGAGEMENT",
+          "blueprint_ids": [
+            "meta.engagement",
+            "meta.messaging"
+          ],
+          "status": "guided_contract",
+          "limitations": [],
+          "verification": "offline_contract_only"
+        },
+        {
+          "objective": "OUTCOME_LEADS",
+          "blueprint_ids": [
+            "meta.lead_generation"
+          ],
+          "status": "guided_contract",
+          "limitations": [],
+          "verification": "offline_contract_only"
+        },
+        {
+          "objective": "OUTCOME_MESSAGES",
+          "blueprint_ids": [
+            "meta.messaging"
+          ],
+          "status": "guided_contract",
+          "limitations": [],
+          "verification": "offline_contract_only"
+        },
+        {
+          "objective": "OUTCOME_SALES",
+          "blueprint_ids": [
+            "meta.catalog_sales",
+            "meta.conversion_link"
+          ],
+          "status": "guided_contract",
+          "limitations": [],
+          "verification": "offline_contract_only"
+        },
+        {
+          "objective": "OUTCOME_TRAFFIC",
+          "blueprint_ids": [
+            "meta.traffic_link"
+          ],
+          "status": "guided_contract",
+          "limitations": [],
+          "verification": "offline_contract_only"
+        },
+        {
+          "objective": "PRODUCT_CATALOG_SALES",
+          "blueprint_ids": [
+            "meta.catalog_sales"
+          ],
+          "status": "guided_contract",
+          "limitations": [],
+          "verification": "offline_contract_only"
+        },
+        {
+          "objective": "TRAFFIC",
+          "blueprint_ids": [
+            "meta.traffic_link"
+          ],
+          "status": "guided_contract",
+          "limitations": [],
+          "verification": "offline_contract_only"
+        }
+      ],
+      "missing": []
+    },
+    "tiktok": {
+      "objectives": [
+        {
+          "objective": "APP_INSTALL",
+          "blueprint_ids": [],
+          "status": "restricted",
+          "limitations": [
+            {
+              "reason": "这些旧目标未接入向导；请改选 APP_PROMOTION、WEB_CONVERSIONS 或 Sales，并重新核对目的地和素材。",
+              "source_url": "https://business-api.tiktok.com/portal/docs?id=1739318962329602"
+            }
+          ],
+          "verification": "offline_contract_only"
+        },
+        {
+          "objective": "APP_PROMOTION",
+          "blueprint_ids": [
+            "tiktok.app_conversion_video"
+          ],
+          "status": "guided_contract",
+          "limitations": [],
+          "verification": "offline_contract_only"
+        },
+        {
+          "objective": "CATALOG_SALES",
+          "blueprint_ids": [],
+          "status": "restricted",
+          "limitations": [
+            {
+              "reason": "这些旧目标未接入向导；请改选 APP_PROMOTION、WEB_CONVERSIONS 或 Sales，并重新核对目的地和素材。",
+              "source_url": "https://business-api.tiktok.com/portal/docs?id=1739318962329602"
+            }
+          ],
+          "verification": "offline_contract_only"
+        },
+        {
+          "objective": "CONVERSIONS",
+          "blueprint_ids": [],
+          "status": "restricted",
+          "limitations": [
+            {
+              "reason": "这些旧目标未接入向导；请改选 APP_PROMOTION、WEB_CONVERSIONS 或 Sales，并重新核对目的地和素材。",
+              "source_url": "https://business-api.tiktok.com/portal/docs?id=1739318962329602"
+            }
+          ],
+          "verification": "offline_contract_only"
+        },
+        {
+          "objective": "ENGAGEMENT",
+          "blueprint_ids": [
+            "tiktok.spark"
+          ],
+          "status": "guided_contract",
+          "limitations": [],
+          "verification": "offline_contract_only"
+        },
+        {
+          "objective": "LEAD_GENERATION",
+          "blueprint_ids": [
+            "tiktok.lead_generation"
+          ],
+          "status": "guided_contract",
+          "limitations": [],
+          "verification": "offline_contract_only"
+        },
+        {
+          "objective": "PRODUCT_SALES",
+          "blueprint_ids": [
+            "tiktok.product_sales_video"
+          ],
+          "status": "guided_contract",
+          "limitations": [],
+          "verification": "offline_contract_only"
+        },
+        {
+          "objective": "REACH",
+          "blueprint_ids": [
+            "tiktok.spark"
+          ],
+          "status": "guided_contract",
+          "limitations": [],
+          "verification": "offline_contract_only"
+        },
+        {
+          "objective": "SALES",
+          "blueprint_ids": [
+            "tiktok.product_sales_video"
+          ],
+          "status": "guided_contract",
+          "limitations": [],
+          "verification": "offline_contract_only"
+        },
+        {
+          "objective": "SHOP_PURCHASES",
+          "blueprint_ids": [],
+          "status": "restricted",
+          "limitations": [
+            {
+              "reason": "这些旧目标未接入向导；请改选 APP_PROMOTION、WEB_CONVERSIONS 或 Sales，并重新核对目的地和素材。",
+              "source_url": "https://business-api.tiktok.com/portal/docs?id=1739318962329602"
+            }
+          ],
+          "verification": "offline_contract_only"
+        },
+        {
+          "objective": "TRAFFIC",
+          "blueprint_ids": [
+            "tiktok.traffic_video"
+          ],
+          "status": "guided_contract",
+          "limitations": [],
+          "verification": "offline_contract_only"
+        },
+        {
+          "objective": "VIDEO_VIEWS",
+          "blueprint_ids": [
+            "tiktok.spark"
+          ],
+          "status": "guided_contract",
+          "limitations": [],
+          "verification": "offline_contract_only"
+        },
+        {
+          "objective": "WEB_CONVERSIONS",
+          "blueprint_ids": [
+            "tiktok.web_conversions"
+          ],
+          "status": "guided_contract",
+          "limitations": [],
+          "verification": "offline_contract_only"
+        }
+      ],
+      "missing": []
+    }
+  },
+  "creation_issues": [],
+  "blueprint_count": 33,
+  "targeted_regressions": {
+    "passed": 88,
+    "new_objective_cases": 30,
+    "log": "/tmp/objective-targeted-final.log"
+  },
+  "static_js_tests": {
+    "passed": 213,
+    "failed": 0
+  },
+  "original_user_template_count": 14,
+  "offline_browser": {
+    "errors": [],
+    "screenshots_directory": "/tmp/objective-ui-final",
+    "checked_blueprints": [
+      "meta.awareness",
+      "tiktok.web_conversions",
+      "tiktok.lead_generation",
+      "google-ads.video"
+    ],
+    "external_provider_requests": 0,
+    "unimplemented_fixture_paths": [
+      "/knowledge/semantic-index/status",
+      "/memory",
+      "/feedback/trend"
+    ]
+  },
+  "qguard": {
+    "status": "failed",
+    "score": 0,
+    "findings": 4997,
+    "log": "/tmp/objective-qguard-final.log",
+    "note": "全仓存量及当前变更仍有告警；本轮未宣称质量门禁通过。"
+  },
+  "full_check": {
+    "command": "make ad-agent-check",
+    "exit_code": 0,
+    "python_tests_passed": 3332,
+    "python_tests_failed": 0,
+    "log": "/tmp/objective-full-final.log",
+    "includes": [
+      "compile",
+      "provider_audit",
+      "contract_snapshot",
+      "agent_tests",
+      "knowledge_quality",
+      "knowledge_audit",
+      "semantic_retrieval",
+      "diff_check"
+    ]
+  },
+  "service": {
+    "readiness_status": 200,
+    "user_templates": 14,
+    "original_templates_preserved": true,
+    "blueprints": {
+      "meta.awareness": "1.0.0",
+      "tiktok.lead_generation": "2.1.0",
+      "tiktok.web_conversions": "1.0.0"
+    },
+    "bind": "0.0.0.0:8766"
+  }
+}

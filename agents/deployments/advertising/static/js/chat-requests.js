@@ -7,63 +7,101 @@
             );
         }
 
-        async function streamChatRequest(requestParams) {
-            const response = await serviceFetch('/chat/stream', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Accept': 'text/event-stream' },
-                body: JSON.stringify(requestParams)
-            });
-            if (!response.ok) {
-                const text = await response.text();
-                let data = {};
-                try { data = text ? JSON.parse(text) : {}; } catch (_) { data = {}; }
-                throw new Error(data.detail || data.error || `请求失败（${response.status}）`);
-            }
-            if (!response.body) throw new Error('服务端未返回事件流');
+        function chatStreamUncertain(message) {
+            const error = new Error(message);
+            error.executionUncertain = true;
+            return error;
+        }
 
-            const reader = response.body.getReader();
-            const decoder = new TextDecoder();
-            let buffer = '';
-            let finalResult = null;
-            let streamError = '';
-            const consume = (block) => {
-                const line = block.split(/\r?\n/).find(item => item.startsWith('data:'));
-                if (!line) return;
-                try {
-                    const payload = JSON.parse(line.slice(5).trim());
-                    if (payload.run_id) activeDurableRunId = payload.run_id;
-                    const applied = applyExecutionEvent(payload);
-                    if (applied?.type === 'reply') finalResult = applied;
-                    if (applied?.type === 'error') {
-                        streamError = applied.error || applied.message || applied.safe_metadata?.reason || 'Agent 执行失败';
-                    }
-                } catch (_) {
-                    applyExecutionEvent({ type: 'error', status: 'failed', safe_metadata: { reason: 'invalid_event' } });
-                }
-            };
-            while (true) {
-                const { value, done } = await reader.read();
-                buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
-                const blocks = buffer.split(/\r?\n\r?\n/);
-                buffer = blocks.pop() || '';
-                blocks.forEach(consume);
-                if (done) break;
+        async function chatStreamDeadline(promise, controller, timeoutMs) {
+            let timer;
+            const deadline = new Promise((_, reject) => {
+                timer = setTimeout(() => {
+                    reject(chatStreamUncertain('等待执行进度超时'));
+                    controller.abort();
+                }, timeoutMs);
+            });
+            try { return await Promise.race([promise, deadline]); }
+            catch (error) {
+                if (error?.status || error?.executionUncertain) throw error;
+                throw chatStreamUncertain('执行连接中断');
             }
-            if (buffer.trim()) consume(buffer);
-            if (!finalResult) throw new Error(streamError || '事件流未返回最终回复');
-            if (finalResult.run_id) activeDurableRunId = finalResult.run_id;
-            return finalResult;
+            finally { clearTimeout(timer); }
+        }
+
+        function parseChatStreamEvent(block, maxEventChars) {
+            if (block.length > maxEventChars) throw chatStreamUncertain('执行事件超出接收上限');
+            const data = block.split(/\r?\n/)
+                .filter(line => line === 'data' || line.startsWith('data:'))
+                .map(line => line.slice(5).replace(/^ /, '')).join('\n');
+            if (!data.trim()) return null; // SSE comments/heartbeats carry no event.
+            let payload;
+            try { payload = JSON.parse(data); }
+            catch (_) { throw chatStreamUncertain('执行事件格式异常'); }
+            if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+                throw chatStreamUncertain('执行事件格式异常');
+            }
+            return payload;
+        }
+
+        async function streamChatRequest(requestParams, {idleTimeoutMs = 60000, maxEventChars = 4194304} = {}) {
+            const controller = new AbortController();
+            let reader;
+            try {
+                const response = await chatStreamDeadline(serviceFetch('/chat/stream', {
+                    method: 'POST', signal: controller.signal,
+                    headers: {'Content-Type': 'application/json', 'Accept': 'text/event-stream'},
+                    body: JSON.stringify(requestParams),
+                }), controller, idleTimeoutMs);
+                if (!response.ok) {
+                    await chatStreamDeadline(readServiceJSON(response), controller, idleTimeoutMs);
+                }
+                if (!response.body) throw chatStreamUncertain('服务端未返回事件流');
+                reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+                let streamError = '';
+                while (true) {
+                    const {value, done} = await chatStreamDeadline(reader.read(), controller, idleTimeoutMs);
+                    buffer += decoder.decode(value || new Uint8Array(), {stream: !done});
+                    const blocks = buffer.split(/\r?\n\r?\n/);
+                    buffer = blocks.pop() || '';
+                    if (done && buffer.trim()) { blocks.push(buffer); buffer = ''; }
+                    for (const block of blocks) {
+                        const payload = parseChatStreamEvent(block, maxEventChars);
+                        if (!payload) continue;
+                        if (payload.run_id) activeDurableRunId = payload.run_id;
+                        const applied = applyExecutionEvent(payload);
+                        // A reply is the authoritative terminal result. Do not wait for TCP EOF.
+                        if (applied?.type === 'reply') return applied;
+                        if (applied?.type === 'error') {
+                            streamError = applied.error || applied.message || applied.safe_metadata?.reason || 'Agent 执行失败';
+                        }
+                    }
+                    if (buffer.length > maxEventChars) throw chatStreamUncertain('执行事件超出接收上限');
+                    if (done) break;
+                }
+                if (streamError) throw new Error(streamError);
+                throw chatStreamUncertain('连接结束但未收到最终回复');
+            } finally {
+                if (reader) {
+                    reader.cancel().catch(error => console.warn('聊天事件流清理失败', error?.name || 'Error'));
+                    reader.releaseLock();
+                }
+                controller.abort();
+            }
         }
 
         function isChatTransportFailure(error) {
-            return error instanceof TypeError
+            return error?.executionUncertain === true || error instanceof TypeError
                 || /failed to fetch|load failed|networkerror|network request failed/i
                     .test(String(error?.message || error || ''));
         }
 
         function chatRequestFailureMessage(error) {
             if (isChatTransportFailure(error)) {
-                return '连接中断，暂时无法确认本次执行结果。请先查看最新执行轨迹；创建或更新操作不要直接重试，以免重复提交。';
+                const reason = error?.executionUncertain ? error.message : '连接中断';
+                return `${reason}，暂时无法确认本次执行结果。请先查看最新执行轨迹；创建或更新操作不要直接重试，以免重复提交。`;
             }
             return `请求失败：${String(error?.message || error || '请稍后重试。')}`;
         }
@@ -85,14 +123,15 @@
                 return '已打开广告创建草稿，尚未提交。请在卡片中补充标记项后继续。';
             }
 
-            if (data.status === 'failed') {
+            if (data.status === 'failed' || data.status === 'partially_failed') {
+                const prefix = data.status === 'partially_failed' ? '部分操作未完成' : '本次处理未完成';
                 const failedResult = [...(data.results || [])]
                     .reverse()
                     .find(item => item?.success === false && item?.error);
                 if (failedResult) {
-                    return `本次处理未完成。失败原因：${String(failedResult.error).slice(0, 500)}`;
+                    return `${prefix}。失败原因：${String(failedResult.error).slice(0, 500)}`;
                 }
-                return '本次处理未完成，但服务端没有返回失败说明。请先核实执行记录，再决定是否重试。';
+                return `${prefix}，但服务端没有返回失败说明。请先核实执行记录，再决定是否重试。`;
             }
             if (data.status === 'cancelled') {
                 return '已停止当前运行。已完成的操作不会自动撤销；如执行轨迹显示写操作状态不确定，请先核实平台状态再继续。';
@@ -880,20 +919,57 @@
             }
         }
 
-        async function apiFetch(url, options = {}) {
-            const response = await serviceFetch(url, options);
-            const text = await response.text();
-            let data = {};
-            try { data = text ? JSON.parse(text) : {}; } catch (_) { data = { detail: text }; }
-            if (!response.ok) {
-                if (response.status === 401 || response.status === 403) {
-                    showSkillNotice('当前共享服务身份没有执行此操作的权限。', true);
-                }
-                const error = new Error(data.detail || data.error || `请求失败（${response.status}）`);
-                error.status = response.status;
-                throw error;
+        function serviceResponseError(data, status) {
+            let message = data?.detail || data?.error;
+            if (Array.isArray(message)) {
+                // Validation input/ctx can contain credentials. Show field paths only.
+                const fields = message.slice(0, 5).map(item => Array.isArray(item?.loc) ? item.loc.join('.') : '').filter(Boolean);
+                message = `参数校验失败${fields.length ? `：${fields.join('、')}` : ''}`;
             }
+            const error = new Error(typeof message === 'string'
+                ? message.slice(0, 500) : `请求失败（${status}）`);
+            error.status = status;
+            return error;
+        }
+
+        async function readServiceJSON(response) {
+            const text = await response.text();
+            if (response.status === 204) return {};
+            let data;
+            try {
+                data = JSON.parse(text);
+            } catch (error) {
+                if (!response.ok) throw serviceResponseError(null, response.status);
+                throw new Error('服务响应格式异常，请刷新后重试。', {cause: error});
+            }
+            if (!response.ok) throw serviceResponseError(data, response.status);
+            if (!data || typeof data !== 'object') throw new Error('服务响应格式异常，请刷新后重试。');
             return data;
+        }
+
+        async function apiFetch(url, options = {}) {
+            const readOnly = ['GET', 'HEAD'].includes(String(options.method || 'GET').toUpperCase());
+            const {timeoutMs = readOnly ? 30000 : 120000, signal, ...requestOptions} = options;
+            const controller = new AbortController();
+            const cancel = () => controller.abort(signal.reason);
+            if (signal?.aborted) throw signal.reason;
+            signal?.addEventListener('abort', cancel, {once: true});
+            let timedOut = false;
+            const timer = setTimeout(() => { timedOut = true; controller.abort(); }, timeoutMs);
+            try {
+                const response = await serviceFetch(url, {...requestOptions, signal: controller.signal});
+                return await readServiceJSON(response);
+            } catch (error) {
+                if (timedOut) throw new Error(readOnly ? '读取超时，请重试。'
+                    : '请求超时，暂时无法确认操作结果。请刷新核实后再决定是否重试。');
+                if (!readOnly && !error.status && !signal?.aborted) {
+                    throw new Error('未能读取服务返回的结果，暂时无法确认操作结果。请刷新核实后再决定是否重试。', {cause:error});
+                }
+                throw error;
+            } finally {
+                clearTimeout(timer);
+                signal?.removeEventListener('abort', cancel);
+            }
         }
 
         async function submitAssistantFeedback(session, turnId, rating) {

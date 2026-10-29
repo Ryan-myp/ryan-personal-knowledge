@@ -76,7 +76,7 @@ def _evidence_age(value: Any, as_of: date) -> tuple[str | None, int | None]:
 
 def _case_summary(
     path: Path,
-    trusted_accounts: Mapping[str, str],
+    trusted_accounts: Mapping[str, Any],
     tools: Mapping[str, Mapping[str, Any]],
     http_events: Mapping[tuple[str, str], list[dict[str, Any]]],
 ) -> dict[str, Any]:
@@ -106,10 +106,21 @@ def _case_summary(
         "run_id": run_id,
         "verdict": "not_verified",
     }
+    configured_accounts = trusted_accounts.get(provider) if isinstance(provider, str) else None
+    allowed_accounts = (
+        {configured_accounts}
+        if isinstance(configured_accounts, str)
+        else {
+            str(item) for item in configured_accounts
+            if isinstance(item, str) and item
+        }
+        if isinstance(configured_accounts, list)
+        else set()
+    )
     if (
         not isinstance(provider, str)
         or provider not in trusted_accounts
-        or account != trusted_accounts[provider]
+        or account not in allowed_accounts
     ):
         row["verdict"] = "out_of_scope"
         return row

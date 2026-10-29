@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
-import re
 from typing import Any, Mapping, Optional
 
 from agents.tools.advertising.shared.domain.contracts import AdFormatCoverage
+from agents.tools.advertising.shared.domain.blueprint import (
+    AdCreationBlueprint,
+    BlueprintCascadeEngine,
+)
 
 
 class AdCreationCatalogServicesMixin:
@@ -110,10 +113,11 @@ class AdCreationCatalogServicesMixin:
             for template in templates_by_blueprint.get(blueprint_id, []):
                 values = template.get("values")
                 values = values if isinstance(values, Mapping) else {}
-                missing = [
-                    item["path"] for item in required_inputs
-                    if item["path"] not in values
-                ]
+                evaluated = BlueprintCascadeEngine().evaluate(
+                    AdCreationBlueprint.from_dict(blueprint), values,
+                )
+                required_paths = {item["path"] for item in required_inputs}
+                missing = [path for path in evaluated["missing_fields"] if path in required_paths]
                 template_account = str(template.get("account_id") or "")
                 account_score = (
                     100 if account_id and template_account == str(account_id)
@@ -161,46 +165,13 @@ class AdCreationCatalogServicesMixin:
             "ad_types": ad_types,
         }
 
-    @staticmethod
-    def _creation_format_tokens(value: Any) -> set[str]:
-        return {
-            token for token in re.split(
-                r"[^a-z0-9]+", str(value or "").casefold()
-            )
-            if token
-        }
-
     def _creation_blueprint_support(self, blueprint: Any) -> dict[str, Any]:
-        """Attach catalog evidence without inventing provider mappings."""
-        suffix = str(getattr(blueprint, "blueprint_id", "")).rsplit(".", 1)[-1]
-        blueprint_tokens = (
-            self._creation_format_tokens(suffix)
-            | self._creation_format_tokens(getattr(blueprint, "ad_format", ""))
-        )
-        candidates: list[tuple[int, Mapping[str, Any]]] = []
-        for entry in self.ad_format_catalogs.get(
-            str(getattr(blueprint, "provider", "")), []
-        ) or ():
-            if not isinstance(entry, Mapping):
-                continue
-            format_id = str(entry.get("format_id") or "")
-            category = str(entry.get("category") or "")
-            score = 0
-            if format_id.casefold() == suffix.casefold():
-                score = 100
-            elif format_id.casefold() == str(
-                getattr(blueprint, "ad_format", "")
-            ).casefold():
-                score = 100
-            elif category and category.casefold() == suffix.casefold():
-                score = 80
-            elif blueprint_tokens & (
-                self._creation_format_tokens(format_id)
-                | self._creation_format_tokens(category)
-            ):
-                score = 60
-            if score:
-                candidates.append((score, entry))
+        """Use provider-declared relationships; word overlap is not evidence."""
+        candidates = [
+            entry for entry in self.ad_format_catalogs.get(blueprint.provider, [])
+            if isinstance(entry, Mapping)
+            and blueprint.blueprint_id in entry.get("blueprint_ids", [])
+        ]
         if not candidates:
             return {
                 "level": "contract_only",
@@ -208,10 +179,19 @@ class AdCreationCatalogServicesMixin:
                 "catalog_match": False,
                 "gaps": ["尚未关联渠道广告类型目录"],
             }
-        _score, entry = sorted(
-            candidates,
-            key=lambda item: (-item[0], str(item[1].get("format_id"))),
-        )[0]
+        entry = sorted(candidates, key=lambda item: (
+            item.get("resource_type") != "campaign",
+            len(item.get("blueprint_ids", [])),
+            str(item.get("format_id")),
+        ))[0]
+        limitation = entry.get("creation_limitation")
+        if entry.get("creation_available") is False and limitation:
+            return {
+                "level": "platform_restricted", "label": "当前接口不支持新建",
+                "creation_available": False, "limitation": dict(limitation),
+                "catalog_match": True, "catalog_format": entry.get("format_id"),
+                "gaps": list(entry.get("gaps") or ())[:8],
+            }
         coverage = str(entry.get("coverage") or "contract_only")
         labels = {
             "supported_dry_run": "支持草稿校验",

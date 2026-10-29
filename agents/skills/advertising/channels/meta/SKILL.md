@@ -1,7 +1,7 @@
 ---
 name: meta-marketing-api-expert
 description: "Meta Ads 专家 Skill：负责账户与资产依赖、ODAX 目标、Ad Set 投放策略、素材/目录广告、Insights、Pixel/CAPI 和故障诊断"
-version: 2.1.0
+version: 2.3.0
 author: Ryan
 created: 2026-09-08
 tags: [meta, facebook, instagram, odax, advantage-plus, insights, pixel, capi, catalog]
@@ -13,6 +13,23 @@ aliases: [facebook, instagram, fb, meta ads]
 > 本 Skill 是 Meta 业务语义、参数依赖和安全 SOP 的 advisory context。它不注册 Tool、不保存
 > 认证材料、不直接调用 Graph API。所有动作必须由当前 Registry 的 Meta
 > Tool Source Tool 通过 schema、账户范围、权限、dry-run/live gate、确认、幂等和审计执行。
+
+## 当前目标与创建入口
+
+按当前 ODAX 目标选择蓝图。Awareness 已提供覆盖/展示优化的图片或视频链接广告链路。
+消息获客归入 Engagement，并进一步选择消息目的地与专用素材；旧模板的 OUTCOME_MESSAGES
+只作为兼容输入，由渠道适配器规范化，不能将其当作新的 Meta API 目标。
+六大目标有创建入口不代表每种版位、目的地、素材组合都已实测。使用蓝图支持标签、Tool schema
+和对应账户的执行账本区分离线合同、真实回读结果及账户资格限制。
+
+
+## 报表查询与连续追问
+
+- 调用前核对当前有效的 account、日期、Campaign ID 和状态条件，并把这些条件放入当前 Tool schema 支持的字段。用户已经给出的账户和日期不应在追问中丢失。
+- Campaign 报表按当前状态筛选时，使用 `meta_get_campaign_report.effective_status` 数组；例如用户只看暂停对象时传入 `PAUSED`。保留原来的 `date_preset` 或 `date_range`，不要改成 Campaign 列表查询，也不要只在回复中声称完成筛选。
+- `effective_status` 是查询时的有效状态，不是报表历史日期当天的状态快照。返回结果应区分指标发生时间与对象当前状态。
+- 核对结果中的 `report_context`、筛选条件和数据来源。`filters_executed: false` 或 `simulated: true` 表示没有平台实测数据，不能据此评价真实投放表现。
+- 不支持的 breakdown 或归因参数不能靠讲解补成已执行操作；以当前注册 schema 为准，不增加账户或资源查询来掩盖条件缺失。
 
 ## 先识别账户和资产边界
 

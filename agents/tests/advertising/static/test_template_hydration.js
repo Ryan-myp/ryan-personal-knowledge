@@ -14,7 +14,7 @@ function environment() {
     const context = {
         blueprintState: { items: [blueprint], templates: [], accountId: '' },
         blueprintDefaultValues: () => ({}),
-        document: { getElementById: () => null },
+        document: { getElementById: () => null, querySelector: () => null },
         blueprintToolFieldSchema: () => ({ schema: { type: 'string' } }),
         parsePresentedValue: (_field, value) => value,
     };
@@ -46,9 +46,12 @@ test('applying a complete template does not trigger a selector-change cascade', 
 
 test('initializing an untemplated blueprint also evaluates without a synthetic edit', () => {
     const { context, evaluated } = environment();
+    let notice='old template notice';
+    context.showBlueprintNotice=value=>{notice=value};
     context.selectBlueprint('example.complete');
     assert.deepEqual(evaluated, [null]);
     assert.equal(context.blueprintState.values['campaign.objective'], 'TRAFFIC');
+    assert.equal(notice,'');
 });
 
 test('an actual selector edit still evaluates the changed path and previous values', async () => {

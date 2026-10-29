@@ -1,4 +1,6 @@
 from agents.agent_harness import ModelTurn, ToolCall
+from agents.agent_harness.core.interfaces import ToolDefinition, ToolEffect, ToolSchema
+from agents.agent_harness.core.tool_selection import ToolSelector
 from agents.applications.advertising.composition.ad_application import AdvertisingComposition
 from agents.applications.advertising.composition.ad_application_assembly import AdApplicationAssembly
 from agents.agent_harness import TurnRequest
@@ -47,3 +49,32 @@ def test_interaction_tool_visibility_does_not_change_account_namespace_resolutio
     selected = AdApplicationAssembly._tool_selector(runtime, selector)(request, tools)
     assert {tool.name for tool in selected} == {"report", "agent_request_input"}
     assert request.context["_agent_tool_namespaces"] == ["example"]
+
+
+def test_process_comparison_with_an_image_does_not_offer_creation_or_clarification_tools():
+    create = ToolDefinition(
+        name="google_create_campaign",
+        skill="google-ads",
+        namespace="google-ads",
+        description="创建 Google Ads campaign",
+        input_schema=ToolSchema(properties={"name": {"type": "string"}}),
+        action="create",
+        resource_type="campaign",
+        effect_class=ToolEffect.EXTERNAL_WRITE,
+    )
+    ask = clarification_tool_source(
+        required_permission="ads.read",
+    ).list_bindings()[0].definition
+    tools = [create, ask]
+    runtime = SimpleNamespace(
+        registry=SimpleNamespace(list_all=lambda: tools),
+    )
+    selector = AdApplicationAssembly._tool_selector(runtime, ToolSelector())
+
+    for prompt in (
+        "看下比如用户说创建Google campaign，是这个流程不",
+        "我说广告创建，agent里面执行的流程，是不是跟这个图里面的一样",
+    ):
+        request = TurnRequest(user_input=prompt, context={})
+        assert selector(request, tools) == []
+        assert request.context.get("_agent_tool_choice_required") is not True

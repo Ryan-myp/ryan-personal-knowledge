@@ -1,0 +1,20 @@
+{
+  "configured_tool_call_limit": 32,
+  "failed_iterations": 0,
+  "format_version": 1,
+  "iterations": 10,
+  "latency_ms": {
+    "max": 1539.22,
+    "mean": 1118.15,
+    "min": 1032.01,
+    "p50": 1068.16,
+    "p95": 1539.22
+  },
+  "max_observed_tool_calls": 1,
+  "model_adapter": "trusted scripted benchmark fixture",
+  "network_called": false,
+  "note": "Harness smoke benchmark only; excludes model latency and Provider capacity",
+  "prompt_class": "offline_lookup",
+  "provider_calls": 0,
+  "total_ms": 11181.58
+}

@@ -74,6 +74,7 @@ def test_registered_provider_source_is_part_of_platform_dependencies():
         'advertising:shared-budget-analysis',
         'provider-module:example',
         'agent-platform:clarification',
+        'agent-platform:tool-discovery',
     }
     assert {
         tool.name for tool in runtime._platform_application.harness.tools.list_tools()
@@ -83,6 +84,7 @@ def test_registered_provider_source_is_part_of_platform_dependencies():
         'agent_readonly_recipe',
         'example_lookup',
         'agent_request_input',
+        'agent_discover_tools',
     }
 
 

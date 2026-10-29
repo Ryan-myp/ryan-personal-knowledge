@@ -1,0 +1,110 @@
+{
+  "schema_version": "agent-regression-report/v1",
+  "mode": "model_backed_offline_providers",
+  "complete": true,
+  "completed_cases": 4,
+  "provider_e2e": false,
+  "total": 4,
+  "passed": 1,
+  "failed": 3,
+  "ungraded": 0,
+  "error": 0,
+  "cases": [
+    {
+      "id": "holdout-budget-retraction",
+      "status": "failed",
+      "failures": [
+        "reply_contains:0"
+      ],
+      "checks": 6,
+      "tool_call_count": 1,
+      "tool_names": [
+        "agent_request_input"
+      ],
+      "phase_ms": {
+        "run_wall": 95672.121,
+        "tool_duration_sum": 8.662,
+        "model": 95127.47,
+        "model_prepare": 489.54,
+        "context_build": 126.236,
+        "run_event_persistence": 5.928
+      },
+      "duration_ms": 96417.41
+    },
+    {
+      "id": "holdout-report-filter-followup",
+      "status": "failed",
+      "failures": [
+        "required_tool:meta_get_campaign_report"
+      ],
+      "checks": 6,
+      "tool_call_count": 1,
+      "tool_names": [
+        "meta_get_campaign_report"
+      ],
+      "phase_ms": {
+        "run_wall": 181081.696,
+        "tool_duration_sum": 11.569,
+        "model": 180162.54,
+        "model_prepare": 868.66,
+        "context_build": 275.107,
+        "run_event_persistence": 6.533
+      },
+      "duration_ms": 181655.692
+    },
+    {
+      "id": "holdout-filter-refines-current-campaign-query",
+      "status": "passed",
+      "failures": [],
+      "checks": 6,
+      "tool_call_count": 1,
+      "tool_names": [
+        "tiktok_list_campaigns"
+      ],
+      "phase_ms": {
+        "run_wall": 285336.57,
+        "tool_duration_sum": 5.55,
+        "model": 223718.17,
+        "model_prepare": 1578.28,
+        "context_build": 250.939,
+        "run_event_persistence": 8.792
+      },
+      "duration_ms": 285835.898
+    },
+    {
+      "id": "holdout-topic-switch-does-not-reuse-provider-scope",
+      "status": "failed",
+      "failures": [
+        "required_tool:agent_knowledge_search"
+      ],
+      "checks": 6,
+      "tool_call_count": 0,
+      "tool_names": [],
+      "phase_ms": {
+        "run_wall": 156979.946,
+        "tool_duration_sum": 4.875,
+        "model": 156024.97,
+        "model_prepare": 923.98,
+        "context_build": 272.28,
+        "run_event_persistence": 5.924
+      },
+      "duration_ms": 157482.79
+    }
+  ],
+  "gate_passed": false,
+  "latency_samples": 4,
+  "latency_p50_ms": 157482.79,
+  "latency_p95_ms": 285835.898,
+  "release_ready": false,
+  "release_blockers": [
+    "release_gate_not_configured"
+  ],
+  "phase_p95_ms": {
+    "run_wall": 285336.57,
+    "tool_duration_sum": 11.569,
+    "model": 223718.17,
+    "model_prepare": 1578.28,
+    "context_build": 275.107,
+    "run_event_persistence": 8.792
+  }
+}

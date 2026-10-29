@@ -635,7 +635,7 @@
                 } else if (paused && queue.length) {
                     hint.textContent = '当前队列已暂停，可移除消息或点击“继续发送”';
                 } else {
-                    hint.textContent = '按 Enter 发送，Shift+Enter 换行；可添加图片或视频';
+                    hint.textContent = 'Enter 发送 · Shift+Enter 换行 · 支持图片、视频和文档';
                 }
             }
         }
@@ -1127,6 +1127,14 @@
         }
 
         // New chat
+        function renderWelcomePage() {
+            const template = document.getElementById('welcomeTemplate');
+            const container = document.getElementById('chatContainer');
+            if (template?.content && container) {
+                container.replaceChildren(template.content.cloneNode(true));
+            }
+        }
+
         function newChat() {
             if (isSending) {
                 showHistoryNotice('当前对话仍在运行。可以先停止或等它完成，再新建对话。');
@@ -1159,40 +1167,11 @@
             if (typeof resetCreationWorkbench === 'function') resetCreationWorkbench();
             resetExecutionTrace();
             renderConversationHistory();
-            document.getElementById('chatContainer').innerHTML = `
-                <div class="welcome-page" id="welcomePage">
-                    <div class="welcome-icon">🤖</div>
-                    <h1 class="welcome-title">把投放问题，交给一个懂执行的 Agent。</h1>
-                    <p class="welcome-desc" id="welcomeModeDescription">从账户查询、效果分析到广告创建，先在安全的 dry-run 环境里看清每一步，再决定是否执行。</p>
-
-                    <div class="feature-grid">
-                        <div class="feature-card" onclick="setInput('帮我列出 Meta 账户')">
-                            <div class="icon">📘</div>
-                            <div class="title">查看账户</div>
-                            <div class="desc">账户与 Campaign 概览</div>
-                        </div>
-                        <div class="feature-card" onclick="setInput('创建 TikTok 广告系列')">
-                            <div class="icon">🎵</div>
-                            <div class="title">创建 Campaign</div>
-                            <div class="desc">从蓝图开始配置广告</div>
-                        </div>
-                        <div class="feature-card" onclick="setInput('查询 Google Ads 报表')">
-                            <div class="icon">🔍</div>
-                            <div class="title">分析报表</div>
-                            <div class="desc">读懂渠道效果与趋势</div>
-                        </div>
-                        <div class="feature-card" onclick="setInput('跨渠道预算优化')">
-                            <div class="icon">⚡</div>
-                            <div class="title">优化预算</div>
-                            <div class="desc">比较渠道，找到增长空间</div>
-                        </div>
-                    </div>
-                </div>
-            `;
+            renderWelcomePage();
         }
 
         document.addEventListener('click', (event) => {
-            if (!event.target.closest('.global-actions') && !event.target.closest('.workspace-nav') && !event.target.closest('.workspace-popover') && !event.target.closest('.knowledge-overlay') && !event.target.closest('.blueprint-overlay') && !event.target.closest('.monitoring-overlay') && !event.target.closest('#scheduleOverlay') && !event.target.closest('#memoryOverlay') && !event.target.closest('.mcp-overlay') && !event.target.closest('.system-ops-wrap')) {
+            if (!(event.composedPath?.() || []).some(node => node.classList?.contains('management-workspace')) && !event.target.closest('.management-workspace') && !event.target.closest('.global-actions') && !event.target.closest('.workspace-nav') && !event.target.closest('.workspace-popover') && !event.target.closest('.knowledge-overlay') && !event.target.closest('.blueprint-overlay') && !event.target.closest('.monitoring-overlay') && !event.target.closest('#scheduleOverlay') && !event.target.closest('#memoryOverlay') && !event.target.closest('.mcp-overlay') && !event.target.closest('.system-ops-wrap')) {
                 closeWorkspacePopovers();
             }
         });
@@ -1256,6 +1235,7 @@
         });
 
         // Initialize
+        renderWelcomePage();
         initializeTheme();
         resetExecutionTrace();
         refreshWorkspaceMode();

@@ -1,7 +1,7 @@
 ---
 name: account-diagnostics
 description: "基于当前账户报表和可追溯证据进行广告账户审计、效果诊断与数据解读"
-version: "1.4.0"
+version: "1.5.0"
 namespace: advertising
 triggers:
   - [账户诊断, 账户审计, 广告账户体检, 广告账户审计, 广告账户做审计, 账户表现诊断, account audit, account diagnosis, performance diagnosis, performance audit]

@@ -41,6 +41,63 @@ def test_runner_reports_errors_without_echoing_private_exception_message():
     assert "private credential value" not in str(report)
 
 
+def test_runner_retains_failure_state_without_copying_private_content():
+    report = run_suite([
+        RegressionCase(id="scope", input="report", assertions={"required_tools": ["read_report"]}),
+    ], lambda _case: {
+        "reply": "PRIVATE account selection detail", "status": "awaiting_input", "needs_input": True,
+        "tool_executions": [{"tool": "read_report", "success": False, "state": "failed"}],
+    }, mode="fixture_contract")
+    assert report["cases"][0]["runtime_state"] == {"status": "awaiting_input", "needs_input": True}
+    assert report["cases"][0]["execution_states"] == ["failed"]
+    assert report["cases"][0]["tool_execution_evidence"] == [{
+        "tool": "read_report", "success": False, "state": "failed",
+    }]
+    assert "PRIVATE" not in str(report)
+
+
+def test_interrupted_suite_preserves_completed_cases_without_a_passing_report(tmp_path, capsys):
+    from scripts.advertising.run_conversation_regressions import RegressionProgressWriter
+
+    path = tmp_path / "progress.json"
+    cases = [RegressionCase(
+        id=name, input="private user input", assertions={"reply_nonempty": True},
+    ) for name in ("first", "second")]
+
+    def execute(case):
+        if case.id == "second":
+            raise KeyboardInterrupt()
+        return {"reply": "done"}
+
+    writer = RegressionProgressWriter(path, total=2, mode="fixture_contract")
+    with pytest.raises(KeyboardInterrupt):
+        run_suite(cases, execute, mode="fixture_contract", on_case_complete=writer.record)
+
+    partial = json.loads(path.read_text())
+    assert partial["complete"] is False
+    assert partial["gate_passed"] is False
+    assert partial["release_ready"] is False
+    assert partial["completed_cases"] == 1
+    assert [row["id"] for row in partial["cases"]] == ["first"]
+    assert "private user input" not in path.read_text() + capsys.readouterr().err
+
+
+def test_progress_report_replace_failure_preserves_previous_file_and_cleans_temp(tmp_path, monkeypatch):
+    from scripts.advertising.run_conversation_regressions import _write_report
+
+    target = tmp_path / "report.json"
+    target.write_text("previous report")
+
+    def unavailable(*_args):
+        raise OSError("disk failure")
+
+    monkeypatch.setattr(Path, "replace", unavailable)
+    with pytest.raises(OSError):
+        _write_report(target, "new report")
+    assert target.read_text() == "previous report"
+    assert list(tmp_path.iterdir()) == [target]
+
+
 def test_runner_reports_bounded_tool_names_for_flaky_model_cases():
     report = run_suite(
         [RegressionCase(

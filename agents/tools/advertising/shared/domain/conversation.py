@@ -8,6 +8,7 @@ from typing import Any, Mapping, Sequence
 from urllib.parse import quote, urlsplit, urlunsplit
 
 from agents.agent_harness import redact_for_persistence
+from agents.agent_harness.model_limits import ModelInputLimitError, ModelOutputLimitError
 
 
 _FAILED_STATUSES = {"failed", "partially_failed", "recovery_required", "unknown", "cancelled"}
@@ -16,6 +17,8 @@ _MODEL_ERRORS = {
     "model_timeout": "模型响应超时，本次请求未完成。这不代表广告账户没有数据。",
     "model_not_configured": "模型服务未配置，本次请求无法执行。",
     "model_token_budget_exceeded": "本次请求超出模型上下文或输出预算，执行未完成。",
+    ModelInputLimitError.safe_reason_code: ModelInputLimitError.public_reply,
+    ModelOutputLimitError.safe_reason_code: ModelOutputLimitError.public_reply,
 }
 _READ_ACTIONS = frozenset({"get", "list", "read", "search", "query", "fetch", "retrieve"})
 _WRITE_ACTIONS = frozenset({
@@ -242,6 +245,20 @@ def _records_operation_kind(records: Sequence[Any]) -> str:
     return "read"
 
 
+def _with_execution_notice(text: str, records: Sequence[Any]) -> str:
+    operation_kind = _records_operation_kind(records)
+    if operation_kind == "write":
+        return text + "已有工具执行记录；创建或更新操作不要直接重试，请先核实实际结果。"
+    if operation_kind == "read":
+        return text + "已有查询执行记录，请查看执行轨迹核实结果。"
+    if operation_kind == "unknown":
+        return text + (
+            "已有工具执行记录，但操作类型信息不足，无法确认是否发生外部写入；"
+            "请先核对执行轨迹，确认前不要直接重试该 Tool。"
+        )
+    return text
+
+
 def _with_tool_failure(
     reply: str,
     failure: tuple[str, str],
@@ -310,23 +327,15 @@ def visible_run_reply(result: Mapping[str, Any]) -> str:
                 return _with_tool_failure(reply, failure)
             if _is_generic_failure_reply(reply):
                 return f"本次请求执行失败。失败原因：{failure_reason}。"
+            if generic_error_reply and reply.strip().startswith(generic_error_reply):
+                return _with_execution_notice(reply, records)
             return reply
         text = _MODEL_ERRORS.get(
             error, f"本次请求执行失败。失败原因：{failure_reason}。",
         )
         if should_show_failure and failure:
             return _with_tool_failure(text, failure)
-        operation_kind = _records_operation_kind(records)
-        if operation_kind == "write":
-            text += "已有工具执行记录；创建或更新操作不要直接重试，请先核实实际结果。"
-        elif operation_kind == "read":
-            text += "已有查询执行记录，请查看执行轨迹核实结果。"
-        elif operation_kind == "unknown":
-            text += (
-                "已有工具执行记录，但操作类型信息不足，无法确认是否发生外部写入；"
-                "请先核对执行轨迹，确认前不要直接重试该 Tool。"
-            )
-        return text
+        return _with_execution_notice(text, records)
     if should_show_failure and failure:
         return _with_tool_failure(reply, failure)
     if reply.strip():

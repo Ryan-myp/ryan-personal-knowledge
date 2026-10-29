@@ -34,6 +34,15 @@ class AdTaskRuntimeFacade:
     def list_schedules(self, **kwargs: Any) -> list[dict[str, Any]]:
         return self.task_services.list_schedules(**kwargs)
 
+    def page_schedules(self, filters: Any) -> dict[str, Any]:
+        return self.task_services.page_schedules(filters)
+
+    def page_schedule_runs(self, filters: Any) -> dict[str, Any]:
+        return self.task_services.page_schedule_runs(filters)
+
+    def get_schedule_run(self, schedule_id: str, run_id: str, **scope: str) -> Optional[dict]:
+        return self.task_services.get_schedule_run(schedule_id, run_id, **scope)
+
     def get_schedule(
         self, schedule_id: str, *, user_id: str, tenant_id: str
     ) -> Optional[dict[str, Any]]:
@@ -146,6 +155,9 @@ class AdConversationRuntimeFacade:
             *args, **kwargs
         )
 
+    def page_conversation_feedback_review_queue(self, filters: Any) -> dict[str, Any]:
+        return self.conversation_services.page_conversation_feedback_review_queue(filters)
+
     def list_conversation_feedback_review_queue(
         self, *args: Any, **kwargs: Any,
     ) -> list[dict[str, Any]]:
@@ -199,6 +211,11 @@ class AdConversationRuntimeFacade:
         self, *args: Any, **kwargs: Any
     ) -> Optional[dict[str, Any]]:
         return self.conversation_services.get_latest_run(*args, **kwargs)
+
+    def get_latest_run_status(
+        self, *args: Any, **kwargs: Any
+    ) -> Optional[dict[str, str]]:
+        return self.conversation_services.get_latest_run_status(*args, **kwargs)
 
     def get_run_events(
         self, *args: Any, **kwargs: Any

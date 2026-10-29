@@ -22,6 +22,8 @@ from .redaction import redact_for_persistence
 from .reliability import ToolCircuitBreaker
 from .runtime_kernel import TurnRequest
 from .tool_result_projection import model_tool_content
+from .tool_output import bound_tool_output, compact_tool_value, serialize_tool_value
+from .tool_discovery import is_discovery_tool
 
 
 TOOL_CANCELLATION_MODES = frozenset({
@@ -154,31 +156,6 @@ class ToolCallContext:
 class ToolExecutionCoordinator:
     """Execute a model Tool plan without embedding business knowledge."""
 
-    _TRUNCATION_PRIORITY = {
-        "type": 0,
-        "kind": 1,
-        "question": 2,
-        "prompt": 3,
-        "needs_input": 4,
-        "needs_confirmation": 5,
-        "confirmation_payload": 6,
-        "payload": 7,
-        "success": 0,
-        "error": 1,
-        "data_status": 2,
-        "execution_status": 3,
-        "effect_state": 4,
-        "requires_reconciliation": 5,
-        "query_summary": 6,
-        "total_count": 6,
-        "total": 7,
-        "count": 8,
-        "has_more": 9,
-        "next_page": 10,
-        "page_info": 11,
-        "data": 12,
-    }
-
     def __init__(
         self,
         *,
@@ -263,6 +240,13 @@ class ToolExecutionCoordinator:
             return False
         return self._tool_replay_safe(getattr(binding, "definition", None))
 
+    @staticmethod
+    def _circuit_key(request: TurnRequest, tool_name: str) -> str:
+        identity = json.dumps([
+            request.tenant_id, request.user_id, request.execution_mode, tool_name,
+        ], ensure_ascii=False, separators=(",", ":"))
+        return hashlib.sha256(identity.encode("utf-8")).hexdigest()
+
     @classmethod
     def _tool_is_write(cls, definition: Any) -> bool:
         effect = cls._tool_value(
@@ -274,15 +258,6 @@ class ToolExecutionCoordinator:
         return str(effect or "").strip().lower() in {
             "write", "external_write", "internal_write",
         }
-
-    @staticmethod
-    def _serialized_tool_value(value: Any) -> str:
-        try:
-            return json.dumps(
-                value, ensure_ascii=False, sort_keys=True, default=str,
-            )
-        except (TypeError, ValueError):
-            return json.dumps(str(value), ensure_ascii=False)
 
     def _replay_cache_key(
         self,
@@ -315,90 +290,8 @@ class ToolExecutionCoordinator:
             "execution_mode": request.execution_mode or "dry_run",
             "invocation": invocation_key,
         }
-        serialized = self._serialized_tool_value(identity).encode("utf-8")
+        serialized = serialize_tool_value(identity).encode("utf-8")
         return hashlib.sha256(serialized).hexdigest()
-
-    def _truncate_tool_text(self, value: str, budget: int) -> str:
-        marker = "\n...[tool output truncated]"
-        low, high = 0, len(value)
-        best = ""
-        while low <= high:
-            middle = (low + high) // 2
-            suffix = marker if middle < len(value) else ""
-            candidate = value[:middle] + suffix
-            if len(self._serialized_tool_value(candidate)) <= budget:
-                best = candidate
-                low = middle + 1
-            else:
-                high = middle - 1
-        return best
-
-    def _compact_tool_value(
-        self,
-        value: Any,
-        budget: int,
-        path: str,
-    ) -> tuple[Any, list[str]]:
-        if len(self._serialized_tool_value(value)) <= budget:
-            return value, []
-        if isinstance(value, str):
-            return self._truncate_tool_text(value, budget), [path or "$"]
-        if isinstance(value, Mapping):
-            result: dict[str, Any] = {}
-            truncated: list[str] = []
-            current_size = 2
-            keys = sorted(
-                value,
-                key=lambda key: (
-                    self._TRUNCATION_PRIORITY.get(str(key).lower(), 100),
-                    str(key).lower(),
-                ),
-            )
-            for key in keys:
-                field = str(key)
-                field_path = f"{path}.{field}" if path else field
-                key_size = len(self._serialized_tool_value(field))
-                field_overhead = key_size + 2 + (2 if result else 0)
-                child_budget = budget - current_size - field_overhead
-                if child_budget < 2:
-                    truncated.append(field_path)
-                    continue
-                child, child_truncated = self._compact_tool_value(
-                    value[key], child_budget, field_path,
-                )
-                child_size = len(self._serialized_tool_value(child))
-                if current_size + field_overhead + child_size > budget:
-                    truncated.append(field_path)
-                    continue
-                result[field] = child
-                current_size += field_overhead + child_size
-                truncated.extend(child_truncated)
-            return result, truncated
-        if isinstance(value, (list, tuple)):
-            result = []
-            truncated: list[str] = []
-            current_size = 2
-            for index, child_value in enumerate(value):
-                child_path = f"{path}[{index}]" if path else f"[{index}]"
-                child_budget = budget - current_size - (2 if result else 0)
-                if child_budget < 2:
-                    truncated.append(path or "$")
-                    break
-                child, child_truncated = self._compact_tool_value(
-                    child_value, child_budget, child_path,
-                )
-                child_size = len(self._serialized_tool_value(child))
-                extra_size = child_size + (2 if result else 0)
-                if current_size + extra_size > budget:
-                    truncated.append(path or "$")
-                    break
-                result.append(child)
-                current_size += extra_size
-                truncated.extend(child_truncated)
-            if len(result) < len(value) and (path or "$") not in truncated:
-                truncated.append(path or "$")
-            return result, truncated
-        return self._truncate_tool_text(str(value), budget), [path or "$"]
 
     def _query_content(
         self, value: Any, definition: Any,
@@ -418,56 +311,23 @@ class ToolExecutionCoordinator:
         )))
         if limit < 2:
             raise ValueError("max_output_bytes must be at least two bytes")
-        if len(self._serialized_tool_value(value).encode("utf-8")) <= limit:
+        if len(serialize_tool_value(value).encode("utf-8")) <= limit:
             return value
-        bounded, paths = self._compact_tool_value(value, max(2, limit // 4 - 64), "data")
+        bounded, paths = compact_tool_value(value, max(2, limit // 4 - 64), "data")
         retained = dict(bounded) if isinstance(bounded, Mapping) else {"items": bounded}
         retained["output_truncated"] = True
         retained["truncated_fields"] = list(dict.fromkeys(paths))[:1]
-        if len(self._serialized_tool_value(retained).encode("utf-8")) > limit:
+        if len(serialize_tool_value(retained).encode("utf-8")) > limit:
             marker = {"output_truncated": True}
-            return marker if len(self._serialized_tool_value(marker)) <= limit else {}
+            return marker if len(serialize_tool_value(marker)) <= limit else {}
         return retained
 
     def _bound_tool_value(self, value: Any) -> Any:
-        text = (
-            value
-            if isinstance(value, str)
-            else self._serialized_tool_value(value)
-        )
-        if len(text) <= self.max_tool_result_chars:
-            return value
-        if isinstance(value, str):
-            return self._truncate_tool_text(value, self.max_tool_result_chars)
-
-        max_paths = min(8, max(1, self.max_tool_result_chars // 512))
-        max_path_chars = 32 if self.max_tool_result_chars < 512 else 96
-        marker_reserve = len(self._serialized_tool_value({
-            "output_truncated": True,
-            "truncated_fields": ["x" * max_path_chars] * max_paths,
-        }))
-        content_budget = max(2, self.max_tool_result_chars - marker_reserve)
-        bounded, truncated = self._compact_tool_value(
-            value, content_budget, "",
-        )
-        paths = list(dict.fromkeys(truncated))[:max_paths]
-        paths = [path[:max_path_chars] for path in paths] or ["$"]
-        if isinstance(bounded, Mapping):
-            result = dict(bounded)
-            result["output_truncated"] = True
-            result["truncated_fields"] = paths
-            return result
-        if isinstance(value, (list, tuple)):
-            return {
-                "items": bounded,
-                "output_truncated": True,
-                "truncated_fields": paths,
-            }
-        return bounded
+        return bound_tool_output(value, self.max_tool_result_chars)
 
     def _bound_interaction_value(self, value: Any) -> tuple[Any, bool]:
         """Keep complete interaction contracts separate from model context limits."""
-        if len(self._serialized_tool_value(value)) <= self.max_interaction_chars:
+        if len(serialize_tool_value(value)) <= self.max_interaction_chars:
             return value, False
         return {
             "type": "interaction_error",
@@ -773,13 +633,14 @@ class ToolExecutionCoordinator:
                 return result
             call = context.tool_call
         invocation_returned = False
+        circuit_key = self._circuit_key(request, call.name)
         try:
             if self.tool_catalog is None:
                 raise KeyError(f"Tool '{call.name}' not found")
             if binding is None:
                 binding = self.tool_catalog.get_binding(call.name)
             definition = getattr(binding, "definition", None)
-            if not self.tool_circuit.allow(call.name):
+            if not self.tool_circuit.allow(circuit_key):
                 raise ToolCircuitOpenError("Tool temporarily unavailable")
             output, retry_count, coalesced = self._invoke_tool(
                 binding,
@@ -792,7 +653,9 @@ class ToolExecutionCoordinator:
             invocation_returned = True
             interrupted = self.interrupt_reason(request)
             if interrupted is None:
-                self.tool_circuit.record_success(call.name)
+                self.tool_circuit.record_success(circuit_key)
+            else:
+                self.tool_circuit.abandon_probe(circuit_key)
             safe_output = redact_for_persistence(output)
             output_data = (
                 safe_output.get("data")
@@ -927,7 +790,9 @@ class ToolExecutionCoordinator:
                 })
         except Exception as error:
             if not isinstance(error, (ToolCapacityError, ToolCircuitOpenError)):
-                self.tool_circuit.record_failure(call.name)
+                self.tool_circuit.record_failure(circuit_key)
+            elif isinstance(error, ToolCapacityError):
+                self.tool_circuit.abandon_probe(circuit_key)
             cause = error.error if isinstance(error, ToolInvocationError) else error
             invalid_output = isinstance(cause, ToolOutputContractError)
             effect_unknown = (
@@ -986,6 +851,11 @@ class ToolExecutionCoordinator:
                 }
             if isinstance(override, Mapping):
                 result = {**result, **dict(override)}
+        # Only registered metadata may classify a control action. Provider
+        # payloads and model arguments cannot hide business outcomes this way.
+        result["execution_role"] = (
+            "control" if is_discovery_tool(context.tool_definition) else "business"
+        )
         return result
 
     def _emit_tool_end(

@@ -187,6 +187,15 @@ class AdTaskServices(AdTaskOperationalServicesMixin):
     def list_schedules(self, **kwargs: Any) -> list[dict[str, Any]]:
         return self.runtime.scheduling_service.list(**kwargs)
 
+    def page_schedules(self, filters: Any) -> dict[str, Any]:
+        return self.runtime.scheduling_service.page(filters)
+
+    def page_schedule_runs(self, filters: Any) -> dict[str, Any]:
+        return self.runtime.scheduling_service.runs_page(filters)
+
+    def get_schedule_run(self, schedule_id: str, run_id: str, **scope: str) -> Optional[dict]:
+        return self.runtime.scheduling_service.get_run(schedule_id, run_id, **scope)
+
     def get_schedule(self, schedule_id: str, *, user_id: str, tenant_id: str) -> Optional[dict[str, Any]]:
         return self.runtime.scheduling_service.get(
             schedule_id, user_id=user_id, tenant_id=tenant_id

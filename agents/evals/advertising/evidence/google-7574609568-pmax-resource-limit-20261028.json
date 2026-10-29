@@ -1,0 +1,32 @@
+{
+  "schema_version": "provider-live-e2e/v1",
+  "verified_at": "2026-10-28",
+  "provider": "google-ads",
+  "test_account": "7574609568",
+  "campaign_type": "PERFORMANCE_MAX",
+  "template_key": "google.test.7574609568.performance-max",
+  "campaign_name": "E2E 7574609568 PMax 20261028",
+  "execution_mode": "live",
+  "create_attempt": {
+    "case_id": "google-7574609568-pmax-live",
+    "tool": "google_create_campaign",
+    "http_status": 400,
+    "provider_error_code": "resourceCountLimitExceededError",
+    "failed_operation": "mutate_operations.campaign_operation",
+    "message": "The request would cause a limit on the number of allowed resources of this type to be exceeded."
+  },
+  "readback": {
+    "campaign_exact_name_case": "google-7574609568-pmax-reconcile-campaign",
+    "campaign_exact_name_matches": 0,
+    "budget_exact_name_case": "google-7574609568-pmax-reconcile-budget-exact",
+    "budget_name": "Budget for E2E 7574609568 PMax 20261028",
+    "budget_exact_name_matches": 0
+  },
+  "result": {
+    "campaign_created": false,
+    "budget_created": false,
+    "asset_group_create_requested": false,
+    "delivery_status": "no resources created"
+  },
+  "scope_note": "The same account-level campaign resource limit blocks the remaining Google campaign-type creation checks until the account limit is resolved. No retry was issued."
+}

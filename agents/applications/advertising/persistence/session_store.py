@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Optional, List
 from .models import ConversationMessagePage, ConversationMessageRecord
 from .conversation_pagination import list_conversation_message_page as query_conversation_message_page
+from .conversation_previews import list_conversation_preview_messages as query_conversation_previews
 
 
 class SessionRepository:
@@ -208,6 +209,16 @@ class SessionRepository:
                 (str(session_id), min(max(1, int(limit)), 128)),
             ).fetchall()
             return [dict(row) for row in reversed(rows)]
+
+    def list_conversation_preview_messages(
+        self, session_ids: list[str], *, user_id: str, tenant_id: str,
+        limit_per_session: int = 50,
+    ) -> dict[str, ConversationMessagePage]:
+        with self._lock:
+            return query_conversation_previews(
+                self._get_conn(), session_ids, user_id=user_id,
+                tenant_id=tenant_id, limit_per_session=limit_per_session,
+            )
 
     def list_conversation_message_page(
         self,

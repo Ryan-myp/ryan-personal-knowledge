@@ -169,13 +169,14 @@ def test_circuit_rejection_releases_unused_reservation_and_runs_audit():
         ToolBinding(DEFINITION, lambda *_: executions.append("write") or {"success": True}),
     ]))
     try:
-        app.agent._tool_circuit.record_failure("write_record")
+        circuit_key = app.agent._tool_executor._circuit_key(_context().request, "write_record")
+        app.agent._tool_circuit.record_failure(circuit_key)
         blocked = app.runtime.run(_context().request)
         assert not executions
         assert blocked.data["tool_results"][0]["runtime_signals"]["tool_circuit_open"]
         assert policy._reservations_by_call == {}
         assert audits[-1]["decision"] == "failed"
-        app.agent._tool_circuit.record_success("write_record")
+        app.agent._tool_circuit.record_success(circuit_key)
         app.runtime.run(_context("retry").request)
         assert executions == ["write"]
     finally:

@@ -23,6 +23,20 @@ from .namespace import normalize_namespace
 logger = logging.getLogger(__name__)
 
 
+def _unique_json_key(value: Any) -> tuple:
+    if isinstance(value, dict):
+        return ("object", tuple(sorted(
+            (key, _unique_json_key(child)) for key, child in value.items()
+        )))
+    if isinstance(value, list):
+        return ("array", tuple(_unique_json_key(child) for child in value))
+    if type(value) in (int, float):
+        return ("number", value)
+    if value is None or type(value) in (str, bool):
+        return (type(value).__name__, value)
+    raise ValueError("uniqueItems requires JSON-compatible values")
+
+
 class SimpleToolRegistry(ToolRegistry):
     """
     简单的工具注册表实现。
@@ -718,6 +732,14 @@ def validate_tool_input(
                 pass
 
         if isinstance(value, list):
+            if field_schema.get("uniqueItems") is True:
+                try:
+                    unique = len({_unique_json_key(item) for item in value}) == len(value)
+                except (TypeError, ValueError, RecursionError):
+                    errors.append(f"Field '{path}' must contain JSON-compatible items")
+                else:
+                    if not unique:
+                        errors.append(f"Field '{path}' must contain unique items")
             item_schema = field_schema.get("items")
             if isinstance(item_schema, dict):
                 for index, item in enumerate(value):

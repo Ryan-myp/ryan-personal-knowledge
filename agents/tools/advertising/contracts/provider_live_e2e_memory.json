@@ -1,15 +1,31 @@
 {
   "schema_version": "1.0.0",
-  "updated_at": "2026-10-16",
-  "purpose": "Versioned regression memory for test-account live campaign creation, update, and readback. Template values are the parameter source of truth; this ledger locks each template value set by SHA-256 and records evidence without duplicating account data.",
+  "updated_at": "2026-10-28",
+  "purpose": "Account-scoped regression memory for live campaign E2E. Each template is locked by SHA-256 and each confirmed test account has an independent record; observations contain redacted outcomes and readback IDs only.",
   "scope": {
     "providers": {
-      "google-ads": ["PERFORMANCE_MAX", "SHOPPING", "APP"],
-      "meta": ["TRAFFIC", "CATALOG_SALES", "CONVERSION", "APP_PROMOTION"],
-      "tiktok": ["TRAFFIC", "PRODUCT_SALES", "APP_PROMOTION"]
+      "google-ads": [
+        "PERFORMANCE_MAX",
+        "SHOPPING",
+        "APP"
+      ],
+      "meta": [
+        "TRAFFIC",
+        "CATALOG_SALES",
+        "CONVERSION",
+        "APP_PROMOTION"
+      ],
+      "tiktok": [
+        "TRAFFIC",
+        "PRODUCT_SALES",
+        "APP_PROMOTION"
+      ]
     },
     "test_accounts": {
-      "google-ads": "9055507554",
+      "google-ads": [
+        "9055507554",
+        "7574609568"
+      ],
       "meta": "2806375919473667",
       "tiktok": "7397068114548195329"
     },
@@ -985,12 +1001,164 @@
         }
       ],
       "known_limitations": "Real MMP attribution is not verified because the two URLs are synthetic AppsFlyer-format demo placeholders. The paused-demo platform API accepted and returned both URLs; do not enable delivery until they are replaced with MMP-generated values."
+    },
+    {
+      "provider": "google-ads",
+      "campaign_type": "PERFORMANCE_MAX",
+      "template_key": "google.test.7574609568.performance-max",
+      "blueprint_id": "google-ads.performance_max",
+      "blueprint_version": "1.1.0",
+      "template_values_sha256": "75da997320e94c3f25208712f966241ff6aaed0ddb9fc0e2a62812b22b374893",
+      "test_account": "7574609568",
+      "verification_state": "blocked_by_provider",
+      "last_verified_at": "2026-10-28",
+      "creation_status": "PAUSED",
+      "prior_live_write_observed": false,
+      "known_live_hierarchies": [],
+      "critical_fields": [
+        "campaign.advertising_channel_type",
+        "campaign.bidding_strategy",
+        "campaign.status",
+        "asset_group.final_urls",
+        "asset_group.headlines",
+        "asset_group.images",
+        "asset_group.logos",
+        "asset_group.status",
+        "listing_group_filter.filter_type",
+        "listing_group_filter.listing_source"
+      ],
+      "expected_status_values": {
+        "campaign.status": "PAUSED",
+        "asset_group.status": "PAUSED"
+      },
+      "coverage": {
+        "campaign": "provider_rejected",
+        "asset_group": "not_run",
+        "creative_assets": "not_run",
+        "listing_group_filter": "not_run"
+      },
+      "evidence_refs": [
+        {
+          "evidence_level": "template_contract",
+          "case_ref": "agents/applications/advertising/contracts/builtin_creation_templates.json#google.test.7574609568.performance-max"
+        },
+        {
+          "evidence_level": "live_chat_and_provider",
+          "case_ref": "agents/evals/advertising/evidence/google-7574609568-pmax-resource-limit-20261028.json"
+        }
+      ],
+      "remaining_gap": "Google Ads rejected the live Campaign create with resourceCountLimitExceededError for the account campaign resource limit. Exact-name Campaign and CampaignBudget readbacks both returned zero; no child write was sent. Do not retry until the account-level limit is resolved."
+    },
+    {
+      "provider": "google-ads",
+      "campaign_type": "SHOPPING",
+      "template_key": "google.test.7574609568.shopping",
+      "blueprint_id": "google-ads.shopping",
+      "blueprint_version": "1.1.0",
+      "template_values_sha256": "8fde4d4cc98defabd2bd656ada51224e9885741fea298e9c96086ed9aa119157",
+      "test_account": "7574609568",
+      "verification_state": "blocked_by_provider",
+      "last_verified_at": "2026-10-28",
+      "creation_status": "PAUSED",
+      "prior_live_write_observed": false,
+      "known_live_hierarchies": [],
+      "critical_fields": [
+        "campaign.shopping_setting.merchant_id",
+        "campaign.shopping_setting.campaign_priority",
+        "campaign.shopping_setting.enable_local",
+        "campaign.status",
+        "ad_group.type",
+        "ad_group.cpc_bid_micros",
+        "ad_group.status",
+        "product_group.partition_type",
+        "product_group.product_group_type",
+        "product_group.cpc_bid_micros",
+        "product_group.status",
+        "ad.status"
+      ],
+      "expected_status_values": {
+        "campaign.status": "PAUSED",
+        "ad_group.status": "PAUSED",
+        "product_group.status": "PAUSED",
+        "ad.status": "PAUSED"
+      },
+      "coverage": {
+        "campaign": "not_run",
+        "ad_group": "not_run",
+        "product_group_create_and_read": "not_run",
+        "product_group_update": "not_run",
+        "product_ad": "not_run"
+      },
+      "evidence_refs": [
+        {
+          "evidence_level": "template_contract",
+          "case_ref": "agents/applications/advertising/contracts/builtin_creation_templates.json#google.test.7574609568.shopping"
+        },
+        {
+          "evidence_level": "live_chat_and_provider",
+          "case_ref": "agents/evals/advertising/evidence/google-7574609568-pmax-resource-limit-20261028.json"
+        }
+      ],
+      "remaining_gap": "This campaign type was not created: the same account-level campaign resource limit was returned by the PMax create attempt. Do not attempt Google campaign creation on this account until the limit is resolved."
+    },
+    {
+      "provider": "google-ads",
+      "campaign_type": "APP",
+      "template_key": "google.test.7574609568.app",
+      "blueprint_id": "google-ads.app",
+      "blueprint_version": "1.4.0",
+      "template_values_sha256": "73bc6cddbce54bc7d6d48f314d0e9fa8faedc2855bc0079fbaecffbe2de7c9e4",
+      "test_account": "7574609568",
+      "verification_state": "blocked_by_provider",
+      "last_verified_at": "2026-10-28",
+      "creation_status": "PAUSED",
+      "prior_live_write_observed": false,
+      "known_live_hierarchies": [],
+      "critical_fields": [
+        "campaign.app_campaign_setting",
+        "campaign.bidding_strategy",
+        "campaign.selective_optimization",
+        "campaign.target_cpa_micros",
+        "campaign.status",
+        "ad_group.status",
+        "ad.headlines",
+        "ad.descriptions",
+        "ad.images",
+        "ad.status"
+      ],
+      "expected_status_values": {
+        "campaign.status": "PAUSED",
+        "ad_group.status": "PAUSED",
+        "ad.status": "ENABLED"
+      },
+      "coverage": {
+        "campaign": "not_run",
+        "ad_group": "not_run",
+        "app_ad_create_paused": "not_run",
+        "app_ad_create_and_readback": "not_run"
+      },
+      "evidence_refs": [
+        {
+          "evidence_level": "template_contract",
+          "case_ref": "agents/applications/advertising/contracts/builtin_creation_templates.json#google.test.7574609568.app"
+        },
+        {
+          "evidence_level": "live_chat_and_provider",
+          "case_ref": "agents/evals/advertising/evidence/google-7574609568-pmax-resource-limit-20261028.json"
+        }
+      ],
+      "remaining_gap": "This campaign type was not created: the same account-level campaign resource limit was returned by the PMax create attempt. Do not attempt Google campaign creation on this account until the limit is resolved."
     }
   ],
   "known_findings": [
     {
       "id": "tiktok_smart_plus_recorder_schema",
-      "applies_to": [{"provider": "tiktok", "campaign_type": "TRAFFIC"}],
+      "applies_to": [
+        {
+          "provider": "tiktok",
+          "campaign_type": "TRAFFIC"
+        }
+      ],
       "status": "resolved",
       "root_cause": "The long-lived 8770 service had loaded an older E2E ProviderRecorder. It treated the Smart+ Ad create endpoint as the legacy creatives[] shape instead of validating top-level operation_status=DISABLE and the Smart+ creative_list payload.",
       "fix": "Special-case the Smart+ Ad endpoint in the recorder and restart the isolated E2E service after changing recorder code.",
@@ -1002,7 +1170,12 @@
     },
     {
       "id": "tiktok_lookup_provider_502",
-      "applies_to": [{"provider": "tiktok", "campaign_type": "TRAFFIC"}],
+      "applies_to": [
+        {
+          "provider": "tiktok",
+          "campaign_type": "TRAFFIC"
+        }
+      ],
       "status": "resolved",
       "root_cause": "The initial signed-selection attempt hit transient TikTok read/lookup failures before any Ad create request. The existing Campaign and Ad Group remained intact; after lookup recovered, a single child-only /chat call created the Ad.",
       "fix": "Retry only the failed read/selection lookup with bounded backoff, then resume the missing child Tool using fresh session-bound selection tokens. Never replay successful parent creates.",
@@ -1018,7 +1191,12 @@
     },
     {
       "id": "tiktok_smart_plus_ad_creative_identity",
-      "applies_to": [{"provider": "tiktok", "campaign_type": "TRAFFIC"}],
+      "applies_to": [
+        {
+          "provider": "tiktok",
+          "campaign_type": "TRAFFIC"
+        }
+      ],
       "status": "resolved",
       "root_cause": "TikTok's standard ad/get list can return a Smart+ row whose ad_id and operation_status describe the linked creative, while smart_plus_ad_id and smart_plus/ad/get identify the delivery Ad. The stale list row also kept the old creative label after the Ad name was updated.",
       "fix": "Use smart_plus_ad_id as canonical ad_id; preserve a different raw ad_id as smart_plus_creative_id and its status as creative_operation_status. When a standard list contains Smart+ rows, refresh from smart_plus/ad/get and prefer its current Ad name and delivery status.",
@@ -1035,7 +1213,12 @@
     },
     {
       "id": "tiktok_smart_plus_update_status_injection",
-      "applies_to": [{"provider": "tiktok", "campaign_type": "TRAFFIC"}],
+      "applies_to": [
+        {
+          "provider": "tiktok",
+          "campaign_type": "TRAFFIC"
+        }
+      ],
       "status": "resolved",
       "root_cause": "When asked to rename an Ad Group while keeping delivery paused, the model added updates.status=DISABLE beside updates.name. The local conditional contract correctly rejected the mixed content/status update before Provider I/O.",
       "fix": "The Smart+ update Tool descriptions now say content updates include only requested fields; status/operation_status is included only for an explicit status-change request and must be a separate call. A precise child-only /chat retry updated the existing name successfully.",
@@ -1052,7 +1235,12 @@
     },
     {
       "id": "tiktok_transient_ads_list_connection",
-      "applies_to": [{"provider": "tiktok", "campaign_type": "TRAFFIC"}],
+      "applies_to": [
+        {
+          "provider": "tiktok",
+          "campaign_type": "TRAFFIC"
+        }
+      ],
       "status": "resolved",
       "root_cause": "One live Ad list request encountered repeated transport ConnectionError responses. No write was involved; a later single read retry succeeded and returned the updated Ad from the Smart+ list endpoint.",
       "fix": "Retry only the read once after a short delay, then verify the exact Ad through get. Do not repeat any create or update request.",
@@ -1067,16 +1255,46 @@
     {
       "id": "chat_recovery_input_shape",
       "applies_to": [
-        {"provider": "google-ads", "campaign_type": "PERFORMANCE_MAX"},
-        {"provider": "google-ads", "campaign_type": "SHOPPING"},
-        {"provider": "google-ads", "campaign_type": "APP"},
-        {"provider": "meta", "campaign_type": "TRAFFIC"},
-        {"provider": "meta", "campaign_type": "CATALOG_SALES"},
-        {"provider": "meta", "campaign_type": "CONVERSION"},
-        {"provider": "meta", "campaign_type": "APP_PROMOTION"},
-        {"provider": "tiktok", "campaign_type": "TRAFFIC"},
-        {"provider": "tiktok", "campaign_type": "PRODUCT_SALES"},
-        {"provider": "tiktok", "campaign_type": "APP_PROMOTION"}
+        {
+          "provider": "google-ads",
+          "campaign_type": "PERFORMANCE_MAX"
+        },
+        {
+          "provider": "google-ads",
+          "campaign_type": "SHOPPING"
+        },
+        {
+          "provider": "google-ads",
+          "campaign_type": "APP"
+        },
+        {
+          "provider": "meta",
+          "campaign_type": "TRAFFIC"
+        },
+        {
+          "provider": "meta",
+          "campaign_type": "CATALOG_SALES"
+        },
+        {
+          "provider": "meta",
+          "campaign_type": "CONVERSION"
+        },
+        {
+          "provider": "meta",
+          "campaign_type": "APP_PROMOTION"
+        },
+        {
+          "provider": "tiktok",
+          "campaign_type": "TRAFFIC"
+        },
+        {
+          "provider": "tiktok",
+          "campaign_type": "PRODUCT_SALES"
+        },
+        {
+          "provider": "tiktok",
+          "campaign_type": "APP_PROMOTION"
+        }
       ],
       "status": "resolved",
       "root_cause": "A targeted child Tool request carried creation_blueprint_id, which reactivated the full blueprint form and required unrelated Campaign/Ad Group fields. Earlier flat parameters also failed because the input builder expects Tool-name-scoped values.",
@@ -1090,7 +1308,10 @@
     {
       "id": "tiktok_app_ad_template_media_and_tracking",
       "applies_to": [
-        {"provider": "tiktok", "campaign_type": "APP_PROMOTION"}
+        {
+          "provider": "tiktok",
+          "campaign_type": "APP_PROMOTION"
+        }
       ],
       "status": "resolved",
       "root_cause": "The first child-only request omitted the required App cover image. A generic example.com click/impression pair was rejected with `Incorrect URL format`, and omitting both URLs was rejected with `Make sure your click tracking and impression URLs are entered before publishing`. The later request labelled corrected still explicitly sent the old Singapore identity_id 15efada4-8fb9-54aa-b5c6-3b82529b947d, so its Singapore readback did not test the updated template.",
@@ -1122,7 +1343,12 @@
     },
     {
       "id": "google_app_ad_pause_limit",
-      "applies_to": [{"provider": "google-ads", "campaign_type": "APP"}],
+      "applies_to": [
+        {
+          "provider": "google-ads",
+          "campaign_type": "APP"
+        }
+      ],
       "status": "provider_limited",
       "root_cause": "Google Ads rejected pausing the tested App Ad type with the provider validation error `Cannot pause an adgroup ad with this ad type.`",
       "fix": "Set the App Ad to ENABLED because v24 rejects PAUSED for this ad type; keep Campaign and Ad Group PAUSED and verify both parents immediately before creation.",
@@ -1134,30 +1360,81 @@
     },
     {
       "id": "meta_app_template_argument_resolution",
-      "applies_to": [{"provider": "meta", "campaign_type": "APP_PROMOTION"}],
+      "applies_to": [
+        {
+          "provider": "meta",
+          "campaign_type": "APP_PROMOTION"
+        }
+      ],
       "status": "resolved",
       "root_cause": "The 2026-10-16 saved template evidence records only tool_argument_resolution_error_type=ValueError; it does not retain the exception message or failing field path. The exact cause is therefore not proven.",
       "fix": "The historical cause remains unknown. Current template arguments resolve for all three levels in a regression and full dry-run; the three paused levels were independently created and read through child-only live recovery on 2026-10-26. The native one-shot live template is still not verified.",
       "next_action": "Keep the existing paused App hierarchy for updates and reads. Verify a fresh native one-shot template separately only after checking the partial-write guard; never recreate a successful parent in recovery.",
-      "regression_tests": ["test_meta_app_template_resolves_current_three_level_arguments"]
+      "regression_tests": [
+        "test_meta_app_template_resolves_current_three_level_arguments"
+      ]
     },
     {
       "id": "meta_app_partial_card_replay",
-      "applies_to": [{"provider": "meta", "campaign_type": "APP_PROMOTION"}],
+      "applies_to": [
+        {
+          "provider": "meta",
+          "campaign_type": "APP_PROMOTION"
+        }
+      ],
       "status": "resolved",
       "root_cause": "The live template created a paused Campaign and returned a ready card. The test driver submitted the full card again, replaying Campaign creation and hitting duplicate-write protection instead of resuming missing children.",
       "fix": "The E2E template driver stops after any successful live resource creation, records the partial hierarchy, and requires child-only resume with independent readback.",
       "next_action": "Do not submit the full creation card after a partial live write; resume only missing children under the existing paused parent.",
-      "regression_tests": ["test_template_workflow_never_resubmits_card_after_partial_live_creation"]
+      "regression_tests": [
+        "test_template_workflow_never_resubmits_card_after_partial_live_creation"
+      ]
     },
     {
       "id": "tiktok_product_sales_product_selection",
-      "applies_to": [{"provider": "tiktok", "campaign_type": "PRODUCT_SALES"}],
+      "applies_to": [
+        {
+          "provider": "tiktok",
+          "campaign_type": "PRODUCT_SALES"
+        }
+      ],
       "status": "provider_limited",
       "root_cause": "The paused Product Sales Campaign and Ad Group were created and read back. BC_AUTH_TT video/identity was rejected as mismatched; a verified CUSTOMIZED_USER identity and complete test tracking values advanced to Provider Invalid product selection. The referenced Catalog returned zero Product Sets on 2026-10-26.",
       "fix": "No Product Set or Catalog write is authorized in this test. The Ad is not created. The two paused parents remain available for child-only recovery after the test advertiser provides a valid Product Set or other Provider-approved product selection.",
       "next_action": "Obtain a real Product Set for the test account from its owner, validate the Catalog/Product Set read-only, then attempt only the missing DISABLE Ad once. Replace synthetic tracking URLs before ever enabling delivery.",
-      "regression_tests": ["test_product_sales_memory_requires_real_product_selection_before_ad_retry"]
+      "regression_tests": [
+        "test_product_sales_memory_requires_real_product_selection_before_ad_retry"
+      ]
+    },
+    {
+      "id": "google_7574609568_campaign_resource_limit",
+      "applies_to": [
+        {
+          "provider": "google-ads",
+          "campaign_type": "PERFORMANCE_MAX",
+          "test_account": "7574609568"
+        },
+        {
+          "provider": "google-ads",
+          "campaign_type": "SHOPPING",
+          "test_account": "7574609568"
+        },
+        {
+          "provider": "google-ads",
+          "campaign_type": "APP",
+          "test_account": "7574609568"
+        }
+      ],
+      "status": "provider_limited",
+      "root_cause": "Google Ads returned resourceCountLimitExceededError on the campaign operation for account 7574609568.",
+      "fix": "Do not retry this PMax create or start Shopping/App campaign creates on account 7574609568 while the account campaign resource limit remains.",
+      "next_action": "Resolve the Google Ads account campaign resource limit, then re-run a single paused create through the controlled E2E flow. Reconcile by exact Campaign and budget name before any retry.",
+      "evidence_refs": [
+        "agents/evals/advertising/evidence/google-7574609568-pmax-resource-limit-20261028.json"
+      ],
+      "regression_tests": [
+        "test_google_7574609568_campaign_limit_blocks_creation_for_that_account_only"
+      ]
     }
   ]
 }

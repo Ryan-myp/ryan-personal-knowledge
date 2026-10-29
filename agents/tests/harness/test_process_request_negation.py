@@ -52,6 +52,21 @@ def test_process_explanation_can_still_be_combined_with_an_explicit_query():
     assert "list_accounts" in [item["name"] for item in selected]
 
 
+@pytest.mark.parametrize("prompt", [
+    "看下比如用户说创建Google campaign，是这个流程不",
+    "我说广告创建，agent里面执行的流程，是不是跟这个图里面的一样",
+])
+def test_process_comparison_question_does_not_route_mentioned_actions(prompt):
+    assert ToolSelector().select_relevant(prompt, tools()) == []
+
+
+def test_explicit_create_command_stays_routable_when_followed_by_process_question():
+    selected = ToolSelector().select_relevant(
+        "帮我创建广告，然后告诉我这个流程是不是跟图片一致", tools(),
+    )
+    assert "create_record" in [item["name"] for item in selected]
+
+
 def test_negative_action_scope_does_not_leak_across_separate_clauses():
     selector = ToolSelector()
     assert selector.is_read_only_request("不要创建记录，然后查询账户", tools())

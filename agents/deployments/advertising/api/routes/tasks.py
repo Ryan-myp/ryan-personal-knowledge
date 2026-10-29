@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import Optional
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Header, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
@@ -18,6 +19,23 @@ from agents.deployments.advertising.api.models import (
 from agents.applications.advertising.operations.scheduling_service import (
     ScheduleBusyError,
 )
+from agents.applications.advertising.persistence.schedule_pages import SchedulePageQuery
+
+
+def _utc_filter(value: Optional[datetime]) -> Optional[str]:
+    if value is None:
+        return None
+    return value.replace(tzinfo=value.tzinfo or timezone.utc).astimezone(timezone.utc).isoformat()
+
+
+async def _schedule_page(handler, principal, **values):
+    try:
+        filters = SchedulePageQuery(
+            tenant_id=principal.tenant_id, user_id=principal.user_id, **values,
+        )
+        return await run_in_threadpool(handler, filters)
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
 
 
 def create_tasks_router(context: ApiContext) -> APIRouter:
@@ -217,6 +235,8 @@ def create_tasks_router(context: ApiContext) -> APIRouter:
         x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
         status: Optional[str] = Query(None, max_length=200),
         limit: int = Query(100, ge=1, le=500),
+        page: Optional[int] = Query(None, ge=1, le=10000),
+        q: str = Query('', max_length=200),
     ):
         principal = context.authorize_request(x_api_key, http_request)
         context.require_permission(principal, "ads.read")
@@ -227,6 +247,11 @@ def create_tasks_router(context: ApiContext) -> APIRouter:
             [item.strip() for item in status.split(",") if item.strip()]
             if status else None
         )
+        if page is not None or q:
+            return await _schedule_page(
+                runtime.page_schedules, principal, page=page or 1,
+                limit=limit, statuses=tuple(statuses or ()), search=q,
+            )
         schedules = await run_in_threadpool(
             runtime.list_schedules,
             user_id=principal.user_id,
@@ -282,6 +307,7 @@ def create_tasks_router(context: ApiContext) -> APIRouter:
         schedule_id: str,
         http_request: Request,
         x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+        include_runs: bool = Query(True),
     ):
         principal = context.authorize_request(x_api_key, http_request)
         context.require_permission(principal, "ads.read")
@@ -296,6 +322,8 @@ def create_tasks_router(context: ApiContext) -> APIRouter:
         )
         if not schedule:
             raise HTTPException(status_code=404, detail="schedule not found")
+        if not include_runs:
+            return {"schedule": schedule}
         runs = await run_in_threadpool(
             runtime.list_schedule_runs,
             schedule_id=schedule_id,
@@ -340,11 +368,16 @@ def create_tasks_router(context: ApiContext) -> APIRouter:
         return {"schedule": schedule}
 
     @router.get("/schedules/{schedule_id}/runs", tags=["schedules"])
-    async def list_schedule_runs(
+    async def list_schedule_runs_for_task(
         schedule_id: str,
         http_request: Request,
         x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
         limit: int = Query(100, ge=1, le=500),
+        page: Optional[int] = Query(None, ge=1, le=10000),
+        status: Optional[str] = Query(None, max_length=200),
+        q: str = Query('', max_length=200),
+        since: Optional[datetime] = Query(None),
+        until: Optional[datetime] = Query(None),
     ):
         principal = context.authorize_request(x_api_key, http_request)
         context.require_permission(principal, "ads.read")
@@ -359,6 +392,13 @@ def create_tasks_router(context: ApiContext) -> APIRouter:
         )
         if not schedule:
             raise HTTPException(status_code=404, detail="schedule not found")
+        if page is not None or status or q or since or until:
+            return await _schedule_page(
+                runtime.page_schedule_runs, principal, schedule_id=schedule_id,
+                page=page or 1, limit=limit, search=q,
+                statuses=tuple(item.strip() for item in (status or '').split(',') if item.strip()),
+                since=_utc_filter(since), until=_utc_filter(until),
+            )
         runs = await run_in_threadpool(
             runtime.list_schedule_runs,
             schedule_id=schedule_id,
@@ -367,6 +407,24 @@ def create_tasks_router(context: ApiContext) -> APIRouter:
             limit=limit,
         )
         return {"runs": runs}
+
+    @router.get("/schedules/{schedule_id}/runs/{run_id}", tags=["schedules"])
+    async def get_schedule_run(
+        schedule_id: str, run_id: str, http_request: Request,
+        x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+    ):
+        principal = context.authorize_request(x_api_key, http_request)
+        context.require_permission(principal, "ads.read")
+        runtime = context.runtime()
+        if not runtime:
+            raise HTTPException(status_code=503, detail="服务未初始化")
+        record = await run_in_threadpool(
+            runtime.get_schedule_run, schedule_id, run_id,
+            tenant_id=principal.tenant_id, user_id=principal.user_id,
+        )
+        if record is None:
+            raise HTTPException(status_code=404, detail="schedule run not found")
+        return {"run": record}
 
     @router.post("/schedules/{schedule_id}/pause", tags=["schedules"])
     async def pause_schedule(

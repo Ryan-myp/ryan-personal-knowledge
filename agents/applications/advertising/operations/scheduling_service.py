@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from typing import Any, Callable, Mapping, Optional
 
 from agents.agent_platform.infrastructure.durable import CronExpression, next_run_at, validate_timezone
+from agents.applications.advertising.persistence.schedule_pages import SchedulePageQuery
 
 
 class ScheduleBusyError(RuntimeError):
@@ -102,6 +103,22 @@ class SchedulingService:
             tenant_id=tenant_id, user_id=user_id, statuses=statuses, limit=limit,
         )
         return [record.to_dict() for record in records]
+
+    def page(self, filters: SchedulePageQuery) -> dict[str, Any]:
+        if self.store is None:
+            raise RuntimeError('scheduled task persistence is not configured')
+        return self.redact(self.store.page_scheduled_tasks(filters))
+
+    def runs_page(self, filters: SchedulePageQuery) -> dict[str, Any]:
+        if self.store is None:
+            raise RuntimeError('scheduled task persistence is not configured')
+        return self.redact(self.store.page_scheduled_task_runs(filters))
+
+    def get_run(self, schedule_id: str, run_id: str, **scope: str) -> Optional[dict]:
+        if self.store is None:
+            return None
+        record = self.store.get_scheduled_task_run(schedule_id, run_id, **scope)
+        return self.redact(record.to_dict()) if record else None
 
     def get(self, schedule_id: str, *, user_id: str, tenant_id: str) -> Optional[dict[str, Any]]:
         if self.store is None:

@@ -121,8 +121,9 @@
 
         function renderTraceDetail(node) {
             const detail = document.getElementById('traceDetail');
+            detail.hidden = !node;
             if (!node) {
-                detail.innerHTML = '<div class="trace-detail-empty">选择一个步骤查看格式化的输入 / 输出摘要</div>';
+                detail.innerHTML = '';
                 return;
             }
             detail.innerHTML = `
@@ -160,6 +161,7 @@
             flow.classList.remove('has-nodes');
             flow.style.removeProperty('--trace-line-end');
             const visibleNodes = traceState.nodes.filter(traceNodeMatchesFilter);
+            document.getElementById('agentWorkbench')?.setAttribute('data-has-events', String(Boolean(traceState.nodes.length || traceState.events.length)));
             const filterSummary = document.getElementById('traceFilterSummary');
             if (filterSummary) filterSummary.textContent = traceFilter.platform === 'all' && traceFilter.status === 'all' && traceFilter.kind === 'all'
                 ? '当前显示全部节点'
@@ -173,8 +175,10 @@
                 const empty = document.createElement('div');
                 empty.className = 'trace-empty';
                 empty.innerHTML = traceState.status === 'running'
-                    ? '<div><strong>等待 Agent 事件</strong>Runtime 正在生成本回合真实执行计划…</div>'
-                    : '<div><strong>本回合未产生 Tool 执行</strong>发送请求后，这里只显示真实计划与 Tool 状态。</div>';
+                    ? '<div><strong>正在准备执行</strong>收到执行事件后，将在这里显示进度。</div>'
+                    : traceState.events.length
+                        ? '<div><strong>暂无独立执行步骤</strong>本次记录可在底部执行动态中查看。</div>'
+                        : '<div><strong>还没有执行记录</strong>发送任务后，可在这里查看处理步骤、工具调用与结果。</div>';
                 flow.appendChild(empty);
             } else if (!visibleNodes.length) {
                 const empty = document.createElement('div');
@@ -216,17 +220,33 @@
                     ticker.appendChild(row);
                 }
             }
+            renderActivitySummary();
             renderTraceDetail(traceState.nodes.find(node => node.id === traceState.selectedId));
+        }
+
+        function renderActivitySummary() {
+            const latest = traceState.events.at(-1);
+            const idle = !latest && traceState.status === 'unknown';
+            const status = document.getElementById('activityStatus');
+            const summary = document.getElementById('activitySummary');
+            const count = document.getElementById('activityCount');
+            if (status) status.textContent = idle ? '尚未开始' : traceStatusLabel(traceState.status);
+            if (summary) summary.textContent = latest
+                ? traceEventLabel(latest) : '任务运行后，这里会显示执行动态';
+            if (count) count.textContent = latest ? `最近 ${Math.min(5, traceState.events.length)} 条` : '';
+            document.getElementById('activityDock')?.setAttribute('data-status', idle ? 'idle' : traceState.status);
         }
 
         function updateTraceHeader(status, subtitle) {
             const label = document.getElementById('traceStatus');
             const dot = document.querySelector('.trace-live-dot');
             const sub = document.getElementById('traceSubtitle');
-            if (label) label.textContent = traceStatusLabel(status);
+            const idle = status === 'unknown' && !traceState.events.length && !traceState.nodes.length;
+            if (label) label.textContent = idle ? '尚未开始' : traceStatusLabel(status);
             if (sub) sub.textContent = subtitle || '等待下一次 Agent 回合';
             if (dot) dot.classList.toggle('idle', status === 'planned' || status === 'unknown' || status === 'succeeded' || status === 'failed');
             traceState.status = status;
+            renderActivitySummary();
         }
 
         function resetExecutionTrace() {
@@ -242,7 +262,7 @@
                 document.body.classList.remove('workbench-open', 'trace-collapsed', 'trace-expanded');
                 document.querySelector('.right-panel')?.classList.remove('trace-collapsed');
             }
-            updateTraceHeader('unknown', '等待下一次 Agent 回合');
+            updateTraceHeader('unknown', '任务的处理步骤与执行结果');
             renderExecutionTrace();
         }
 

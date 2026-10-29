@@ -4,14 +4,17 @@ from __future__ import annotations
 
 import threading
 import hashlib
-from collections import OrderedDict
+import re
+from collections import Counter, OrderedDict
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Mapping, Protocol, Sequence
 
 from .reference_selection import reference_terms, select_reference_excerpts
-from .metadata import immutable_metadata, read_skill_text, skill_identity
+from .metadata import (
+    immutable_metadata, instruction_body, instruction_budget, read_skill_text, skill_identity,
+)
 from ..redaction import redact_for_persistence
 
 
@@ -197,7 +200,7 @@ class InMemorySkillCatalog:
     ) -> None:
         if type(max_cached_contexts) is not int or max_cached_contexts <= 0:
             raise ValueError("Skill context cache capacity must be a positive integer")
-        if max_context_chars <= 0 or max_skills <= 0:
+        if any(type(value) is not int or value <= 0 for value in (max_context_chars, max_skills)):
             raise ValueError("Skill catalog limits must be positive")
         self.max_context_chars = int(max_context_chars)
         self.max_skills = int(max_skills)
@@ -266,26 +269,88 @@ class InMemorySkillCatalog:
     def _score(self, skill: SkillBinding, terms: set[str]) -> int:
         haystack = self._selection_text[skill.name]
         identity_score = sum(1 for term in terms if term and term in haystack)
-        reference_score = len(terms & self._reference_index[skill.name])
-        return identity_score * 3 + reference_score
+        name_score = len(terms & reference_terms(skill.name, stopwords=()))
+        return identity_score * 3 + name_score * 12
+
+    def _select_skills(
+        self, terms: set[str], allowed_names: set[str] | None, preferred: set[str], user_input: str,
+    ) -> list[SkillBinding]:
+        candidates = [skill for skill in self._skills.values()
+                      if allowed_names is None or skill.name in allowed_names]
+        preferred = preferred | {skill.name for skill in candidates
+                                  if self._trigger_matches(skill, user_input)}
+        # Repeated boilerplate in references is not evidence of topic relevance.
+        # Compute frequency only inside the request's allowed source scope.
+        frequency = Counter(term for skill in candidates
+                            for term in terms & self._reference_index[skill.name])
+        rare_terms = {term for term, count in frequency.items()
+                      if count <= max(1, len(candidates) // 4)}
+        scored = []
+        for skill in candidates:
+            reference_score = len(rare_terms & self._reference_index[skill.name])
+            if reference_score < min(2, len(terms)):
+                reference_score = 0
+            scored.append((self._score(skill, terms) + reference_score, skill))
+        threshold = max(1, max((score for score, _ in scored), default=0) * 0.6)
+        eligible = [(score, skill) for score, skill in scored
+                    if score >= threshold or skill.name in preferred
+                    or skill.metadata.get("always_on") is True]
+        eligible.sort(key=lambda item: (
+            item[1].metadata.get("always_on") is not True,
+            item[1].name not in preferred, -item[0], item[1].name,
+        ))
+        return [skill for _, skill in eligible[:self.max_skills]]
+
+    @staticmethod
+    def _trigger_matches(skill: SkillBinding, user_input: str) -> bool:
+        keywords = skill.metadata.get("selection_keywords", ())
+        if not isinstance(keywords, (tuple, list)):
+            return False
+        return any(
+            re.search(r"(?<![a-z0-9_])" + re.escape(keyword.casefold()) + r"(?![a-z0-9_])",
+                      str(user_input).casefold())
+            for keyword in keywords[:128] if isinstance(keyword, str) and keyword.strip()
+        )
+
+    def build_tool_context(
+        self, user_input: str, tools: Sequence[Any], *, source_ids: Sequence[str] | None = None,
+    ) -> str:
+        """Prioritize explicit Tool/Skill bindings without granting capabilities."""
+        preferred = set()
+        for tool in tools:
+            refs = (
+                tool.get("skill_refs", ()) if isinstance(tool, Mapping)
+                else getattr(tool, "skill_refs", ())
+            )
+            name = (
+                tool.get("skill", "") if isinstance(tool, Mapping)
+                else getattr(tool, "skill", "")
+            )
+            preferred.update(str(ref) for ref in refs or ())
+            if name:
+                preferred.add(str(name))
+        return self.build_context(user_input, source_ids=source_ids, skill_refs=tuple(preferred))
 
     def build_context(
         self,
         user_input: str,
         *,
         source_ids: Sequence[str] | None = None,
+        skill_refs: Sequence[str] = (),
     ) -> str:
         terms = reference_terms(user_input, stopwords=())
         allowed_sources = (
             {str(item).strip() for item in source_ids if str(item).strip()}
             if source_ids is not None else None
         )
+        preferred = {str(item).strip() for item in skill_refs if str(item).strip()}
         with self._lock:
             revision = self._revision
             cache_key = (
                 revision,
                 hashlib.sha256(str(user_input or "").encode("utf-8", errors="surrogatepass")).digest(),
                 tuple(sorted(allowed_sources)) if allowed_sources is not None else None,
+                tuple(sorted(preferred)),
             )
             if cache_key in self._context_cache:
                 self._context_cache.move_to_end(cache_key)
@@ -298,14 +363,7 @@ class InMemorySkillCatalog:
                 }
                 if allowed_sources is not None else None
             )
-            skills = sorted(
-                (
-                    skill for skill in self._skills.values()
-                    if (allowed_names is None or skill.name in allowed_names)
-                    and (skill.metadata.get("always_on") is True or self._score(skill, terms) > 0)
-                ),
-                key=lambda item: (-self._score(item, terms), item.name),
-            )[:self.max_skills]
+            skills = self._select_skills(terms, allowed_names, preferred, user_input)
         context = self._render_context(skills, user_input)
         with self._lock:
             if revision == self._revision:
@@ -317,11 +375,13 @@ class InMemorySkillCatalog:
     def _render_context(self, skills: Sequence[SkillBinding], user_input: str) -> str:
         chunks: list[str] = []
         remaining = self.max_context_chars
-        for skill in skills:
+        minimum_share = min(256, remaining // max(1, 2 * len(skills)))
+        for index, skill in enumerate(skills):
             separator_chars = int(bool(chunks))
             remaining -= separator_chars
             if remaining <= 0:
                 break
+            budget = min(3600, instruction_budget(remaining, len(skills) - index, minimum_share))
             header = f"## Skill: {skill.name} (v{skill.version})\n"
             reference_text = select_reference_excerpts(
                 "\n".join((
@@ -334,7 +394,7 @@ class InMemorySkillCatalog:
                 scope_query=user_input,
                 max_chars=min(
                     _MAX_REFERENCE_CONTEXT_CHARS,
-                    max(0, remaining // 3),
+                    max(0, budget // 2),
                 ),
             )
             reference_block = ""
@@ -345,14 +405,14 @@ class InMemorySkillCatalog:
                     "or account scope.\n"
                     + reference_text
                 )
-            instruction_budget = max(
-                0, remaining - len(header) - len(reference_block)
+            body_budget = max(
+                0, budget - len(header) - len(reference_block)
             )
             chunk = (
                 header
-                + skill.instructions.strip()[:instruction_budget]
+                + instruction_body(skill.instructions)[:body_budget]
                 + reference_block
-            )[:remaining]
+            )[:budget]
             if not chunk:
                 break
             chunks.append(chunk)

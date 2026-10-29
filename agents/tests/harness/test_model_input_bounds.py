@@ -7,6 +7,58 @@ import pytest
 from agents.agent_harness import AgentApplication, AgentMessage, ModelTurn, TurnRequest
 
 
+def test_transcript_eviction_does_not_leave_an_old_tool_exchange_without_its_user():
+    from agents.agent_harness import StaticToolSource, ToolBinding, ToolCall
+
+    class Model:
+        def complete(self, messages, _tools, _request):
+            if messages[-1].role == "user" and messages[-1].content == "first":
+                return ModelTurn(tool_calls=(ToolCall("read", "lookup", {}),))
+            return "done"
+
+    app = AgentApplication.create(model=Model(), max_transcript_messages=5)
+    app.register_tool_source(StaticToolSource("read", [ToolBinding(
+        {"name": "lookup", "effect_class": "read"}, lambda *_: {"success": True},
+    )]))
+    try:
+        app.prompt("first", session_id="bounded")
+        app.prompt("new task", session_id="bounded")
+        messages = app.agent._state_for("bounded").snapshot()
+        assert [(row.role, row.content) for row in messages] == [
+            ("user", "new task"), ("assistant", "done"),
+        ]
+    finally:
+        app.close()
+
+
+def test_current_turn_overflow_preserves_goal_and_executed_results_then_recovers():
+    from agents.agent_harness import StaticToolSource, ToolBinding, ToolCall
+
+    class Model:
+        def complete(self, messages, _tools, _request):
+            if messages[-1].role == "user" and messages[-1].content == "big task":
+                return ModelTurn(tool_calls=tuple(
+                    ToolCall(f"read-{index}", "lookup", {"index": index})
+                    for index in range(3)
+                ))
+            return "done"
+
+    app = AgentApplication.create(model=Model(), max_transcript_messages=4)
+    app.register_tool_source(StaticToolSource("read", [ToolBinding(
+        {"name": "lookup", "effect_class": "read"}, lambda *_: {"success": True},
+    )]))
+    try:
+        result = app.prompt("big task", session_id="bounded")
+        assert result.data["error"] == "model_input_limit_exceeded"
+        assert len(result.data["tool_results"]) == 3
+        assert any(row.role == "user" and row.content == "big task"
+                   for row in app.agent._state_for("bounded").messages)
+        assert app.prompt("new task", session_id="bounded").status.value == "succeeded"
+        assert len(app.agent._state_for("bounded").messages) <= 4
+    finally:
+        app.close()
+
+
 def test_input_window_evicts_whole_old_turns_without_mutating_the_transcript():
     from agents.agent_harness.model_limits import bound_model_messages, model_input_chars
 

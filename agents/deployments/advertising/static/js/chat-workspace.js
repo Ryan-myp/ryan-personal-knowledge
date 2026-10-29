@@ -2,6 +2,79 @@
         let scheduleRefreshSequence = 0;
         let scheduleActionsPending = new Set();
         let schedulesById = new Map();
+        let scheduleRunsById = new Map();
+        let scheduleResultSequence = 0;
+        let scheduleEditSequence = 0;
+
+        function scheduleDisplayTime(value) {
+            const date = new Date(value);
+            return value && !Number.isNaN(date.getTime())
+                ? date.toLocaleString('zh-CN', {hour12:false}) : '—';
+        }
+
+        function scheduleResultText(result, status) {
+            const response = result.response || result.message;
+            if (typeof response === 'string' && response.trim()) return response;
+            const messages = Array.isArray(result.messages) ? result.messages : [];
+            const final = [...messages].reverse().find(item => item.role === 'assistant'
+                && typeof item.content === 'string' && item.content.trim());
+            if (final) return final.content;
+            const tools = messages.filter(item => item.role === 'tool').length;
+            if (['queued', 'running'].includes(status)) return '任务仍在执行，可刷新查看最新结果。';
+            return `本次执行未生成最终文字答复。${tools ? `已保存 ${tools} 条工具执行记录，可在技术详情中查看。` : '请查看执行状态和错误原因。'}`;
+        }
+
+        function closeScheduleRun() {
+            scheduleResultSequence += 1;
+            const panel = document.getElementById('scheduleRunDetail');
+            if (panel) panel.hidden = true;
+        }
+
+        async function loadScheduleRunResult(run) {
+            if (run.task_id) {
+                try { return await apiFetch(`/tasks/${encodeURIComponent(run.task_id)}`); }
+                catch (error) { if (error.status !== 404) throw error; }
+            }
+            if (run.result || !run.schedule_id) return run;
+            const detail = await apiFetch(`/schedules/${encodeURIComponent(run.schedule_id)}/runs/${encodeURIComponent(run.schedule_run_id)}`);
+            return detail.run;
+        }
+
+        async function showScheduleRun(runId) {
+            const run = scheduleRunsById.get(String(runId));
+            if (!run) return;
+            const sequence = ++scheduleResultSequence;
+            const panel = document.getElementById('scheduleRunDetail');
+            const content = document.getElementById('scheduleRunContent');
+            const status = document.getElementById('scheduleRunDetailStatus');
+            const error = document.getElementById('scheduleRunError');
+            const conversation = document.getElementById('scheduleRunConversation');
+            panel.hidden = false;
+            content.textContent = '正在读取执行结果…';
+            error.textContent = '';
+            conversation.hidden = true;
+            status.textContent = `${scheduleStatusLabel(run.status)} · ${scheduleDisplayTime(run.scheduled_for)}`;
+            document.getElementById('scheduleRunTechnical').open = false;
+            document.getElementById('scheduleRunRaw').textContent = '';
+            try {
+                const task = await loadScheduleRunResult(run);
+                if (sequence !== scheduleResultSequence) return;
+                const result = task.result || run.result || {};
+                status.textContent = `${scheduleStatusLabel(task.status || run.status)} · ${scheduleDisplayTime(run.scheduled_for)}`;
+                error.textContent = task.error || run.error || '';
+                content.innerHTML = formatContent(scheduleResultText(result, task.status || run.status).slice(0, 60000));
+                document.getElementById('scheduleRunRaw').textContent = JSON.stringify({task_id:run.task_id, result}, null, 2).slice(0, 60000);
+                const sessionId = result.session_id || task.payload?.session_id;
+                conversation.hidden = !sessionId;
+                conversation.onclick = () => { closeSchedules(); loadConversation(sessionId); };
+                document.getElementById('scheduleRunDetailRefresh').onclick = () => showScheduleRun(runId);
+            } catch (failure) {
+                if (sequence !== scheduleResultSequence) return;
+                content.textContent = '执行结果读取失败，请重试。';
+                error.textContent = failure.message || '未知错误';
+                document.getElementById('scheduleRunDetailRefresh').onclick = () => showScheduleRun(runId);
+            }
+        }
 
         function stopScheduleRefresh() {
             scheduleRefreshSequence += 1;
@@ -9,7 +82,16 @@
             scheduleRefreshTimer = null;
         }
 
+        function toggleWorkspaceNavigation() {
+            const open = document.body.classList.toggle('navigation-open');
+            document.getElementById('workspaceNavigationToggle')?.setAttribute('aria-expanded', String(open));
+        }
+
         function closeWorkspacePopovers() {
+            document.body?.classList.remove('navigation-open');
+            document.getElementById('workspaceNavigationToggle')?.setAttribute('aria-expanded', 'false');
+            if (typeof closeSkillManager === 'function') closeSkillManager();
+            if (typeof closeAgentSettings === 'function') closeAgentSettings();
             for (const [popoverId, buttonId] of [['modePopover', 'modeToggleButton'], ['filterPopover', 'filterToggleButton']]) {
                 document.getElementById(popoverId)?.classList.remove('active');
                 const button = document.getElementById(buttonId);
@@ -29,6 +111,7 @@
             document.getElementById('monitoringOverlay')?.setAttribute('aria-hidden', 'true');
             document.getElementById('feedbackTrendOverlay')?.classList.remove('active');
             document.getElementById('feedbackTrendOverlay')?.setAttribute('aria-hidden', 'true');
+            if (typeof closeFeedbackTrend === 'function') closeFeedbackTrend();
             document.getElementById('scheduleOverlay')?.classList.remove('active');
             document.getElementById('scheduleOverlay')?.setAttribute('aria-hidden', 'true');
             closeScheduleEditor();
@@ -39,6 +122,7 @@
             if (monitoringRefreshTimer) window.clearTimeout(monitoringRefreshTimer);
             monitoringRefreshTimer = null;
             stopScheduleRefresh();
+            closeScheduleRun();
         }
 
         function toggleSystemOpsMenu() {
@@ -46,8 +130,13 @@
             const button = document.getElementById('systemOpsButton');
             if (!menu || !button) return;
             const open = menu.classList.contains('active');
+            const navigationOpen = document.body?.classList.contains('navigation-open');
             closeWorkspacePopovers();
             if (!open) {
+                if (navigationOpen) {
+                    document.body.classList.add('navigation-open');
+                    document.getElementById('workspaceNavigationToggle')?.setAttribute('aria-expanded', 'true');
+                }
                 menu.classList.add('active');
                 button.classList.add('active');
                 button.setAttribute('aria-expanded', 'true');
@@ -68,7 +157,7 @@
         }
 
         function monitoringStatusLabel(status) {
-            return ({ queued: '排队中', running: '运行中', cancelling: '取消中', paused: '已暂停', succeeded: '已成功', failed: '失败', cancelled: '已取消', recovery_required: '需恢复' })[status] || status;
+            return ({ queued: '排队中', running: '运行中', cancelling: '取消中', paused: '已暂停', succeeded: '已成功', failed: '失败', cancelled: '已取消', skipped: '已跳过', recovery_required: '需恢复' })[status] || status;
         }
 
         function monitoringSetStatus(status, text) {
@@ -230,13 +319,42 @@
             if (badge) { badge.hidden = !badgeCount; badge.textContent = badgeCount > 99 ? '99+' : String(badgeCount); }
         }
 
+        async function fetchServiceReadiness() {
+            const response = await serviceFetch('/readyz');
+            if (!response.ok && response.status !== 503) {
+                throw new Error(`服务健康读取失败（HTTP ${response.status}）`);
+            }
+            const report = await response.json();
+            if (!report || !['ready', 'not_ready'].includes(report.status) || !report.checks) {
+                throw new Error('服务健康返回格式不完整，请刷新重试。');
+            }
+            return report;
+        }
+
+        function renderServiceHealth(report) {
+            const labels = {
+                runtime: 'Agent Runtime', llm: '文本模型配置', tool_registry: 'Tool 注册表',
+                supervisor: '后台任务服务', deployment: '部署依赖',
+                deployment_health: '部署依赖', persistence: '持久化存储', workers: '后台任务服务',
+            };
+            document.getElementById('monitoringHealthChecks').innerHTML = Object.entries(report.checks)
+                .map(([key, value]) => `<div class="service-health-row"><span>${escapeHtml(labels[key] || key)}</span><strong class="${value === true ? 'ready' : 'not-ready'}">${value === true ? '就绪' : value === false ? '未就绪' : '未知'}</strong></div>`).join('');
+            monitoringSetStatus(report.status === 'ready' ? 'healthy' : 'critical', report.status === 'ready'
+                ? '服务已就绪，可以接收请求' : '服务尚未就绪，请检查下方未通过的项目');
+            document.getElementById('monitoringUpdated').textContent = `更新于 ${new Date().toLocaleTimeString('zh-CN')}`;
+        }
+
         async function loadMonitoring(schedule = false) {
+            if (monitoringRefreshTimer) window.clearTimeout(monitoringRefreshTimer);
+            monitoringRefreshTimer = null;
             const token = ++monitoringRequestToken;
             if (!document.getElementById('monitoringOverlay')?.classList.contains('active')) return;
             try {
-                const snapshot = await apiFetch('/monitoring/overview');
-                if (token !== monitoringRequestToken) return;
-                renderMonitoring(snapshot);
+                const health = document.getElementById('monitoringOverlay').dataset.monitoringView === 'health';
+                const snapshot = await (health ? fetchServiceReadiness() : apiFetch('/monitoring/overview'));
+                if (token !== monitoringRequestToken || !document.getElementById('monitoringOverlay')?.classList.contains('active')) return;
+                if (health) renderServiceHealth(snapshot);
+                else renderMonitoring(snapshot);
             } catch (error) {
                 if (token !== monitoringRequestToken) return;
                 const message = error?.status === 404
@@ -247,22 +365,32 @@
                 monitoringSetStatus('critical', message);
                 document.getElementById('monitoringUpdated').textContent = '读取失败';
             } finally {
-                if (schedule && document.getElementById('monitoringOverlay')?.classList.contains('active')) {
+                if (schedule && token === monitoringRequestToken && document.getElementById('monitoringOverlay')?.classList.contains('active')) {
                     monitoringRefreshTimer = window.setTimeout(() => loadMonitoring(true), 15000);
                 }
             }
         }
 
-        function openMonitoring() {
+        function openMonitoring(view = 'overview') {
             closeWorkspacePopovers();
             const overlay = document.getElementById('monitoringOverlay');
             if (!overlay) return;
+            const titles = {overview: '运行监控', health: '服务健康', events: '事件投递'};
+            const selectedView = titles[view] ? view : 'overview';
+            overlay.dataset.monitoringView = selectedView;
+            document.getElementById('monitoringConsoleTitle').textContent = titles[selectedView];
+            for (const name of Object.keys(titles)) {
+                document.getElementById(`monitoringTab-${name}`)?.setAttribute('aria-pressed', String(name === selectedView));
+            }
+            monitoringSetStatus('loading', '正在读取最新状态…');
+            document.getElementById('monitoringHealthChecks').textContent = '正在检查服务依赖…';
             overlay.classList.add('active');
             overlay.setAttribute('aria-hidden', 'false');
             loadMonitoring(true);
         }
 
         function closeMonitoring() {
+            monitoringRequestToken++;
             document.getElementById('monitoringOverlay')?.classList.remove('active');
             document.getElementById('monitoringOverlay')?.setAttribute('aria-hidden', 'true');
             if (monitoringRefreshTimer) window.clearTimeout(monitoringRefreshTimer);
@@ -271,81 +399,12 @@
 
         function scheduleStatusLabel(status) {
             return ({
-                active: '运行中', paused: '已暂停', disabled: '已停用',
+                active: '已启用', paused: '已暂停', disabled: '已停用',
                 queued: '排队中', running: '执行中', succeeded: '成功',
                 failed: '失败', partially_failed: '部分失败',
                 awaiting_input: '等待补充', recovery_required: '需核实',
-                cancelled: '已取消',
+                cancelled: '已取消', skipped: '已跳过',
             })[status] || status || '—';
-        }
-
-        function renderSchedules(data) {
-            const schedules = Array.isArray(data.schedules) ? data.schedules : [];
-            const metrics = data.metrics || {};
-            const runStatuses = metrics.runs_by_status || {};
-            const runs = Array.isArray(data.runs) ? data.runs : [];
-            const latestRuns = new Map();
-            schedulesById = new Map(
-                schedules.map(item => [String(item.schedule_id || ''), item]),
-            );
-            for (const run of runs) {
-                if (run?.schedule_id && !latestRuns.has(run.schedule_id)) {
-                    latestRuns.set(run.schedule_id, run);
-                }
-            }
-            document.getElementById('scheduleTotal').textContent = monitoringNumber(schedules.length);
-            document.getElementById('scheduleQueued').textContent = monitoringNumber(runStatuses.queued || 0);
-            document.getElementById('scheduleRunning').textContent = monitoringNumber(runStatuses.running || 0);
-            document.getElementById('scheduleFailed').textContent = monitoringNumber(runStatuses.failed || 0);
-            const list = document.getElementById('scheduleList');
-            list.innerHTML = schedules.length ? schedules.map(item => {
-                const run = latestRuns.get(item.schedule_id);
-                const runPending = ['queued', 'running'].includes(run?.status);
-                const actionPending = scheduleActionsPending.has(item.schedule_id);
-                const runStatus = run ? `
-                    <small class="schedule-run-status">
-                        最近执行 <span class="schedule-status ${escapeHtml(run.status || '')}">${scheduleStatusLabel(run.status)}</span>
-                        ${run.task_id ? `Task ${escapeHtml(run.task_id)}` : ''}
-                        ${run.error ? `<span class="schedule-run-error">${escapeHtml(run.error)}</span>` : ''}
-                    </small>` : '';
-                return `
-                <article class="schedule-row ${item.status === 'paused' ? 'paused' : ''}">
-                    <div class="schedule-row-main"><div class="schedule-row-title"><strong>${escapeHtml(item.name || '未命名任务')}</strong><span class="schedule-status ${escapeHtml(item.status || '')}">${scheduleStatusLabel(item.status)}</span></div><p>${escapeHtml(item.prompt || '')}</p><small>${escapeHtml(item.cron_expression || '')} · ${escapeHtml(item.timezone || '')} · 下次 ${escapeHtml(item.next_run_at || '—')}</small>${runStatus}</div>
-                    <div class="schedule-row-stats"><span>成功 <strong>${monitoringNumber(item.success_count || 0)}</strong></span><span>失败 <strong>${monitoringNumber(item.failure_count || 0)}</strong></span><span>总计 <strong>${monitoringNumber(item.run_count || 0)}</strong></span></div>
-                    <div class="schedule-row-actions"><button type="button" onclick="editSchedule('${escapeHtml(item.schedule_id)}')">编辑</button><button type="button" onclick="scheduleAction('${escapeHtml(item.schedule_id)}','${item.status === 'paused' ? 'resume' : 'pause'}',this)">${item.status === 'paused' ? '恢复' : '暂停'}</button><button type="button" ${runPending || actionPending ? 'disabled aria-busy="true"' : ''} onclick="scheduleAction('${escapeHtml(item.schedule_id)}','run-now',this)">${actionPending ? '提交中…' : runPending ? scheduleStatusLabel(run.status) : '立即执行'}</button><button class="danger" type="button" onclick="scheduleAction('${escapeHtml(item.schedule_id)}','delete',this)">删除</button></div>
-                </article>`;
-            }).join('') : '<div class="monitoring-empty">还没有定时任务。可以直接在 Chat 中说“每天 09:00 分析 account 下的 campaign performance”。</div>';
-            document.getElementById('scheduleRunRows').innerHTML = runs.length ? runs.map(run => `<tr><td>${escapeHtml(run.scheduled_for || '—')}</td><td>${escapeHtml(run.schedule_id || '—')}</td><td><span class="schedule-status ${escapeHtml(run.status || '')}">${scheduleStatusLabel(run.status)}</span></td><td>${escapeHtml(run.task_id || '—')}</td><td>${escapeHtml(run.error || '—')}</td></tr>`).join('') : '<tr><td colspan="5" class="monitoring-empty">暂无触发记录</td></tr>';
-            document.getElementById('scheduleUpdated').textContent = `更新于 ${new Date().toLocaleTimeString('zh-CN')}`;
-        }
-
-        async function loadSchedules() {
-            const sequence = ++scheduleRefreshSequence;
-            try {
-                const [items, monitoring, runData] = await Promise.all([
-                    apiFetch('/schedules?limit=100'),
-                    apiFetch('/monitoring/overview'),
-                    apiFetch('/schedule-runs?limit=100').catch(() => ({ runs: [] })),
-                ]);
-                if (sequence !== scheduleRefreshSequence) return;
-                const runs = Array.isArray(runData.runs) ? runData.runs : [];
-                runs.sort((a, b) => String(b.scheduled_for || '').localeCompare(String(a.scheduled_for || '')));
-                renderSchedules({ schedules: items.schedules || [], metrics: monitoring.schedules || {}, runs: runs.slice(0, 50) });
-                const overlayOpen = document.getElementById('scheduleOverlay')?.classList.contains('active');
-                const hasPendingRun = runs.some(run => ['queued', 'running'].includes(run.status));
-                if (overlayOpen && hasPendingRun) {
-                    if (scheduleRefreshTimer) window.clearTimeout(scheduleRefreshTimer);
-                    scheduleRefreshTimer = window.setTimeout(() => {
-                        scheduleRefreshTimer = null;
-                        loadSchedules();
-                    }, 1500);
-                } else {
-                    stopScheduleRefresh();
-                }
-            } catch (error) {
-                if (sequence !== scheduleRefreshSequence) return;
-                document.getElementById('scheduleList').innerHTML = `<div class="monitoring-empty">${escapeHtml(error.message || '定时任务读取失败')}</div>`;
-            }
         }
 
         async function scheduleAction(scheduleId, action, button = null) {
@@ -366,7 +425,8 @@
                     ? `/schedules/${encodeURIComponent(scheduleId)}`
                     : `/schedules/${encodeURIComponent(scheduleId)}/${action}`;
                 await apiFetch(endpoint, { method: action === 'delete' ? 'DELETE' : 'POST' });
-                await loadSchedules();
+                if (action === 'delete' && schedulePages.selectedId === scheduleId) await showScheduleList();
+                else await loadSchedules();
             } catch (error) { window.alert(`${labels[action] || '操作'}失败：${error.message || '请稍后重试'}`); }
             finally {
                 if (action === 'run-now') {
@@ -380,9 +440,19 @@
             }
         }
 
-        function editSchedule(scheduleId) {
-            const schedule = schedulesById.get(String(scheduleId || ''));
+        async function editSchedule(scheduleId) {
+            const sequence = ++scheduleEditSequence;
+            let schedule = schedulesById.get(String(scheduleId || ''));
             if (!schedule) return;
+            if (typeof schedule.prompt !== 'string') {
+                try {
+                    schedule = (await apiFetch(`/schedules/${encodeURIComponent(scheduleId)}?include_runs=false`)).schedule;
+                } catch (error) {
+                    if (sequence === scheduleEditSequence) window.alert(`任务读取失败：${error.message || '请重试'}`);
+                    return;
+                }
+            }
+            if (!schedule || sequence !== scheduleEditSequence) return;
             document.getElementById('scheduleEditId').value = schedule.schedule_id || '';
             document.getElementById('scheduleEditName').value = schedule.name || '';
             document.getElementById('scheduleEditPrompt').value = schedule.prompt || '';
@@ -396,6 +466,7 @@
         }
 
         function closeScheduleEditor() {
+            scheduleEditSequence += 1;
             const overlay = document.getElementById('scheduleEditOverlay');
             overlay?.classList.remove('active');
             overlay?.setAttribute('aria-hidden', 'true');
@@ -437,10 +508,12 @@
             const overlay = document.getElementById('scheduleOverlay');
             if (!overlay) return;
             overlay.classList.add('active'); overlay.setAttribute('aria-hidden', 'false');
-            loadSchedules();
+            showScheduleList();
         }
 
         function closeSchedules() {
+            closeScheduleRun();
+            closeScheduleEditor();
             document.getElementById('scheduleOverlay')?.classList.remove('active');
             document.getElementById('scheduleOverlay')?.setAttribute('aria-hidden', 'true');
             stopScheduleRefresh();
@@ -476,6 +549,15 @@
                 const button = document.getElementById(buttonId);
                 button?.classList.add('active');
                 button?.setAttribute('aria-expanded', 'true');
+                const rect = button?.getBoundingClientRect();
+                if (rect) {
+                    const width = Math.min(380, window.innerWidth - 24);
+                    popover.style.width = `${width}px`;
+                    popover.style.left = `${Math.max(12, Math.min(rect.left, window.innerWidth - width - 12))}px`;
+                    popover.style.right = 'auto';
+                    popover.style.top = popoverId === 'modePopover' ? 'auto' : `${rect.bottom + 8}px`;
+                    popover.style.bottom = popoverId === 'modePopover' ? `${window.innerHeight - rect.top + 8}px` : 'auto';
+                }
             }
         }
 
@@ -513,14 +595,6 @@
                 description.textContent = '只生成计划与预览，不修改线上广告账户。';
                 if (toggleLabel) toggleLabel.textContent = 'dry-run';
                 if (toggleIcon) toggleIcon.textContent = '◈';
-            }
-            const welcomeDescription = document.getElementById('welcomeModeDescription');
-            if (welcomeDescription) {
-                welcomeDescription.textContent = liveExecutable
-                    ? '从账户查询、效果分析到广告创建，当前处于受控 live 模式；写操作仍需确认并通过全部安全门禁。'
-                    : liveSelected
-                        ? `live 写入当前不可用：${workspaceMode.liveReason || '服务端未开放 live 写入'}。服务端门禁不会因此放行写操作。`
-                        : '从账户查询、效果分析到广告创建，先在安全的 dry-run 环境里看清每一步，再决定是否执行。';
             }
             const blueprintModeBadge = document.querySelector('.blueprint-dry-run-badge');
             if (blueprintModeBadge) {
@@ -668,7 +742,8 @@
                 overlay.setAttribute('aria-hidden', 'false');
                 document.getElementById('knowledgeNavButton')?.classList.add('active');
                 document.getElementById('knowledgeNavButton')?.setAttribute('aria-expanded', 'true');
-                loadKnowledgeCatalog();
+                showResourceList('knowledge');
+                if (!knowledgeState.items.length) loadKnowledgeCatalog();
                 loadManagedKnowledgeDocuments();
                 loadKnowledgeSemanticIndexStatus();
             }

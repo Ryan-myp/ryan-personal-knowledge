@@ -60,11 +60,12 @@ def test_tiktok_blueprint_is_json_and_references_registered_tools():
         "tiktok.lead_generation",
         "tiktok.product_sales_video",
         "tiktok.traffic_video",
+        "tiktok.web_conversions",
     }
     assert all(item["selector"]["dimension"] == "objective" for item in items)
     versions = {item["id"]: item["version"] for item in items}
     assert versions["tiktok.app_conversion_video"] == "3.0.3"
-    assert versions["tiktok.lead_generation"] == "2.0.2"
+    assert versions["tiktok.lead_generation"] == "2.1.0"
     assert versions["tiktok.product_sales_video"] == "2.3.0"
     assert versions["tiktok.traffic_video"] == "3.3.0"
     assert runtime.creation_blueprints.get("tiktok.app_conversion_video") is not None
@@ -113,7 +114,7 @@ def test_creation_blueprint_support_does_not_claim_unverified_tiktok_formats():
         for item in runtime.creation_blueprints.list(provider="tiktok")
     }
     assert {item["format_id"] for item in formats if item["coverage"] == "declared_only"} == {
-        "brand.topview", "brand.takeover",
+        "brand.topview", "brand.takeover", "legacy_objectives",
     }
     assert "topview" not in blueprint_suffixes
     assert "takeover" not in blueprint_suffixes
@@ -143,14 +144,14 @@ def test_tiktok_lead_blueprint_uses_smart_plus_and_requires_instant_page():
     blueprint = runtime.creation_blueprints.get("tiktok.lead_generation")
 
     assert blueprint is not None
-    assert blueprint.version == "2.0.2"
+    assert blueprint.version == "2.1.0"
     assert blueprint.tools == (
         "tiktok_smart_plus_create_campaign",
         "tiktok_smart_plus_create_adgroup",
         "tiktok_smart_plus_create_ad",
     )
     fields = {field["path"]: field for field in blueprint.fields}
-    assert fields["ad.page_list"]["required"] is True
+    assert fields["ad.page_list"]["required_when"] == {"field": "ad_group.promotion_target_type", "equals": "INSTANT_PAGE"}
     assert fields["ad.page_list"]["manual_entry"]["source"] == "provider_instant_page"
 
 
@@ -1604,9 +1605,9 @@ def test_creation_selector_publishes_scoped_accounts_and_templates():
         "value": "7397068114548195329",
         "label": "账户 7397068114548195329",
     }]
-    assert len(card["template_options"]) == 4
+    assert len([item for item in card["template_options"] if item.get("account_id")]) == 4
     assert {
-        item["account_id"] for item in card["template_options"]
+        item["account_id"] for item in card["template_options"] if item.get("account_id")
     } == {"7397068114548195329"}
     assert all(item["source"] == "builtin" for item in card["template_options"])
 
@@ -2026,7 +2027,7 @@ def test_google_app_test_template_prefills_required_campaign_configuration():
         assert card["template_id"] == template["template_id"]
         assert card["account_id"] == "9055507554"
         assert model.initial_tool_choice == "required"
-        assert model.tool_names == ("google_ads_get_creation_template",)
+        assert model.tool_names == ("google_ads_get_creation_template", "agent_discover_tools")
         assert template["template_id"] in model.prompt
         assert values["campaign.advertising_channel_type"] == "MULTI_CHANNEL"
         assert values["campaign.advertising_channel_sub_type"] == "APP_CAMPAIGN"
@@ -2300,7 +2301,7 @@ def test_google_template_schema_changes_publish_contract_version_1_7():
         ):
             definition, _handler = runtime.registry.get(tool_name)
             assert definition.contract_version == {
-                "google_create_campaign": "1.5.1",
+                "google_create_campaign": "1.6.0",
                 "google_create_app_ad": "1.7.0",
             }.get(tool_name, "1.5.0")
     finally:
@@ -2348,7 +2349,7 @@ def test_all_builtin_test_account_templates_seed_their_declared_creation_cards()
         persistence_store=AdAgentStore(":memory:"),
     )
     runtime.whitelist_validator.allowed_accounts = {
-        "google-ads": ["9055507554"],
+        "google-ads": ["9055507554", "7574609568"],
         "meta": ["2806375919473667"],
         "tiktok": ["7397068114548195329"],
     }
@@ -2399,8 +2400,9 @@ def test_all_builtin_test_account_templates_seed_their_declared_creation_cards()
         definitions = [
             item for item in load_builtin_template_definitions()
             if item["provider"] in runtime.whitelist_validator.allowed_accounts
+            and item.get("scope_type", "account") == "account"
         ]
-        assert len(definitions) == 11
+        assert len(definitions) == 14
         selected_template_ids = []
 
         for index, definition in enumerate(definitions):
@@ -2463,7 +2465,7 @@ def test_all_builtin_test_account_templates_seed_their_declared_creation_cards()
                 (definition["provider"].replace("-", "_") + "_get_creation_template",)
                 if definition.get("required_input_fields") else tuple(blueprint.tools)
             )
-            assert call_record["tool_names"] == expected
+            assert call_record["tool_names"] == (*expected, "agent_discover_tools")
             assert template_id in call_record["prompt"]
     finally:
         runtime.close(wait=True)

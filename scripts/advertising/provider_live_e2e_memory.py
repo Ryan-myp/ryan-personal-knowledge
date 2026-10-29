@@ -131,6 +131,31 @@ def _normalize_resources(resources: Any) -> list[dict[str, str]]:
     return normalized
 
 
+def _configured_test_accounts(value: Any) -> set[str]:
+    """Normalize the backward-compatible single-account and multi-account scopes."""
+    values = [value] if isinstance(value, str) else value
+    if not isinstance(values, list) or not values:
+        raise ValueError("live E2E test-account scope must be a non-empty string or list")
+    accounts = [str(item).strip() for item in values]
+    if any(not account for account in accounts) or len(set(accounts)) != len(accounts):
+        raise ValueError("live E2E test-account scope contains blank or duplicate IDs")
+    return set(accounts)
+
+
+def _finding_applies_to(
+    finding: dict[str, Any], *, provider: str, campaign_type: str,
+    account_id: str,
+) -> bool:
+    """Match type-wide findings and optional account-scoped findings."""
+    return any(
+        isinstance(scope, dict)
+        and scope.get("provider") == provider
+        and scope.get("campaign_type") == campaign_type
+        and scope.get("test_account") in (None, account_id)
+        for scope in finding.get("applies_to", [])
+    )
+
+
 def _append_jsonl(path: Path, row: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = (json.dumps(row, ensure_ascii=False, separators=(",", ":")) + "\n").encode(
@@ -187,9 +212,12 @@ def append_live_e2e_observation(
     )
     if record is None:
         raise ValueError(f"template has no durable live E2E memory: {template_id}")
+    account_scope = _configured_test_accounts(
+        memory["scope"]["test_accounts"].get(provider)
+    )
     if (
         record.get("provider") != provider
-        or memory["scope"]["test_accounts"].get(provider) != account_id
+        or account_id not in account_scope
         or record.get("test_account") != account_id
     ):
         raise ValueError("live E2E observation is outside the confirmed test account")
@@ -456,7 +484,7 @@ def load_live_e2e_memory(repository_root: Path) -> dict[str, Any]:
     declared_types = scope.get("providers")
     if not isinstance(declared_types, dict):
         raise ValueError("live E2E memory has no declared campaign type scope")
-    expected_pairs = set()
+    expected_scopes = set()
     for provider, campaign_types in declared_types.items():
         if (
             provider not in test_accounts
@@ -464,21 +492,31 @@ def load_live_e2e_memory(repository_root: Path) -> dict[str, Any]:
             or not campaign_types
         ):
             raise ValueError("live E2E memory has an invalid declared campaign type scope")
-        expected_pairs.update((provider, campaign_type) for campaign_type in campaign_types)
+        expected_scopes.update(
+            (provider, campaign_type, account_id)
+            for campaign_type in campaign_types
+            for account_id in _configured_test_accounts(test_accounts[provider])
+        )
     for exclusion in scope.get("excluded", []):
         if isinstance(exclusion, dict):
-            expected_pairs.discard(
-                (exclusion.get("provider"), exclusion.get("campaign_type"))
+            excluded_pair = (
+                exclusion.get("provider"), exclusion.get("campaign_type")
             )
+            excluded_account = exclusion.get("test_account")
+            expected_scopes = {
+                item for item in expected_scopes
+                if (item[0], item[1]) != excluded_pair
+                or (excluded_account and item[2] != excluded_account)
+            }
 
-    actual_pairs = {
-        (record.get("provider"), record.get("campaign_type"))
+    actual_scopes = {
+        (record.get("provider"), record.get("campaign_type"), record.get("test_account"))
         for record in rows
         if isinstance(record, dict)
     }
-    if len(actual_pairs) != len(rows) or actual_pairs != expected_pairs:
+    if len(actual_scopes) != len(rows) or actual_scopes != expected_scopes:
         raise ValueError(
-            "live E2E memory does not cover the declared campaign type scope"
+            "live E2E memory does not cover the declared campaign type scope for each account"
         )
 
     seen_keys = set()
@@ -491,11 +529,8 @@ def load_live_e2e_memory(repository_root: Path) -> dict[str, Any]:
         if template is None:
             raise ValueError(f"live E2E template is missing: {key}")
         provider = record.get("provider")
-        trusted_account = test_accounts.get(provider)
-        if (
-            not isinstance(trusted_account, str)
-            or record.get("test_account") != trusted_account
-        ):
+        trusted_accounts = _configured_test_accounts(test_accounts.get(provider))
+        if record.get("test_account") not in trusted_accounts:
             raise ValueError(f"live E2E test account metadata drift: {key}")
         if (
             provider != template.get("provider")
@@ -503,7 +538,7 @@ def load_live_e2e_memory(repository_root: Path) -> dict[str, Any]:
             or record.get("blueprint_version") != template.get("blueprint_version")
         ):
             raise ValueError(f"live E2E template metadata drift: {key}")
-        if template.get("account_id") != trusted_account:
+        if template.get("account_id") != record.get("test_account"):
             raise ValueError(f"live E2E template test account scope drift: {key}")
         if record.get("template_values_sha256") != _template_digest(
             template.get("values")
@@ -525,11 +560,21 @@ def load_live_e2e_memory(repository_root: Path) -> dict[str, Any]:
                 raise ValueError(f"live E2E resource IDs are incomplete: {key}")
             if live_resources.get("delivery_status") != record.get("creation_status"):
                 raise ValueError(f"live E2E resource status drift: {key}")
-        if record.get("prior_live_write_observed") is not True:
+        prior_live_write = record.get("prior_live_write_observed")
+        if not isinstance(prior_live_write, bool):
             raise ValueError(f"live E2E write history must be explicit: {key}")
         hierarchies = record.get("known_live_hierarchies")
-        if not isinstance(hierarchies, list) or not hierarchies:
+        if not isinstance(hierarchies, list):
+            raise ValueError(f"live E2E resource history must be a list: {key}")
+        if prior_live_write and not hierarchies:
             raise ValueError(f"live E2E resource history is missing: {key}")
+        if not prior_live_write and (
+            hierarchies
+            or record.get("verification_state") not in {
+                "not_run", "blocked_by_provider",
+            }
+        ):
+            raise ValueError(f"unstarted live E2E template has unexpected write history: {key}")
         for hierarchy in hierarchies:
             if not isinstance(hierarchy, dict) or not hierarchy.get("evidence_ref"):
                 raise ValueError(f"live E2E resource history lacks evidence: {key}")
@@ -564,9 +609,33 @@ def load_live_e2e_memory(repository_root: Path) -> dict[str, Any]:
             not isinstance(scope, dict)
             or (scope.get("provider"), scope.get("campaign_type"))
             not in scoped_campaign_types
+            or (
+                scope.get("test_account") is not None
+                and scope.get("test_account")
+                not in _configured_test_accounts(
+                    test_accounts.get(scope.get("provider"))
+                )
+            )
             for scope in finding["applies_to"]
         ):
             raise ValueError("live E2E finding scope references an unsupported type")
+
+    for record in rows:
+        if record.get("verification_state") != "blocked_by_provider":
+            continue
+        if not any(
+            finding.get("status") == "provider_limited"
+            and _finding_applies_to(
+                finding,
+                provider=record["provider"],
+                campaign_type=record["campaign_type"],
+                account_id=record["test_account"],
+            )
+            for finding in findings
+        ):
+            raise ValueError(
+                "provider-blocked live E2E template needs a matching scoped finding"
+            )
 
     for observation in _read_observations(root):
         record = next(
@@ -640,11 +709,11 @@ def resolve_template_memory(
     known_findings = [
         finding
         for finding in memory.get("known_findings", [])
-        if any(
-            scope.get("provider") == provider
-            and scope.get("campaign_type") == record.get("campaign_type")
-            for scope in finding.get("applies_to", [])
-            if isinstance(scope, dict)
+        if _finding_applies_to(
+            finding,
+            provider=provider,
+            campaign_type=record.get("campaign_type"),
+            account_id=account_id,
         )
     ]
     return {
@@ -770,11 +839,11 @@ def build_live_e2e_memory_report(
         known_findings = [
             finding
             for finding in memory.get("known_findings", [])
-            if any(
-                scope.get("provider") == provider_name
-                and scope.get("campaign_type") == record.get("campaign_type")
-                for scope in finding.get("applies_to", [])
-                if isinstance(scope, dict)
+            if _finding_applies_to(
+                finding,
+                provider=provider_name,
+                campaign_type=record.get("campaign_type"),
+                account_id=record["test_account"],
             )
         ]
         entry = {

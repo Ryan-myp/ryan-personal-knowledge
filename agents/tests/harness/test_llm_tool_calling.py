@@ -711,6 +711,64 @@ def test_llm_client_rejects_a_tool_not_in_the_active_catalog(caplog):
     assert "delete_everything" not in caplog.text
 
 
+def test_catalog_repair_uses_the_single_registered_knowledge_tool_by_exact_name():
+    tools = [binding.definition for binding in knowledge_search_tool_source(
+        provider=object(), required_permission="ads.read",
+    ).list_bindings()]
+    completions = _QueuedCompletions(*[
+        SimpleNamespace(choices=[SimpleNamespace(
+            message=SimpleNamespace(content="", tool_calls=[SimpleNamespace(
+                id=f"call-{index}", function=SimpleNamespace(name=name, arguments=json.dumps(arguments)),
+            )]), finish_reason="tool_calls",
+        )], usage=None)
+        for index, (name, arguments) in enumerate((
+            ("unregistered_knowledge_lookup", {"query": "rejected input"}),
+            ("agent_knowledge_search", {"query": "bidding concepts"}),
+        ))
+    ])
+    client = LLMClient(model="test-model", api_key="test-only")
+    client._client = SimpleNamespace(chat=SimpleNamespace(completions=completions))
+
+    result = client.complete(
+        [AgentMessage.user("查询知识库的竞价原理")], tools,
+        TurnRequest(user_input="查询知识库的竞价原理", initial_tool_choice="required"),
+    )
+
+    assert result.tool_calls[0].name == "agent_knowledge_search"
+    assert completions.requests[1]["tool_choice"] == {
+        "type": "function", "function": {"name": "agent_knowledge_search"},
+    }
+    assert "rejected input" not in str(completions.requests[1])
+
+
+def test_catalog_repair_uses_runtime_discovery_before_business_or_web_tools():
+    from agents.agent_platform.tools.discovery import tool_discovery_source
+
+    discovery = tool_discovery_source(required_permission="read").list_bindings()[0].definition
+    completions = _QueuedCompletions(*[
+        SimpleNamespace(choices=[SimpleNamespace(
+            message=SimpleNamespace(content="", tool_calls=[SimpleNamespace(
+                id=f"call-{index}", function=SimpleNamespace(name=name, arguments=json.dumps(arguments)),
+            )]), finish_reason="tool_calls",
+        )], usage=None)
+        for index, (name, arguments) in enumerate((
+            ("get_unloaded_child", {"id": "must-not-forward"}),
+            (discovery.name, {"query": "child detail"}),
+        ))
+    ])
+    client = LLMClient(model="test-model", api_key="test-only")
+    client._client = SimpleNamespace(chat=SimpleNamespace(completions=completions))
+    result = client.complete(
+        [AgentMessage.user("查看父级及子级明细")], [_tool(), discovery],
+        TurnRequest("查看父级及子级明细"),
+    )
+    assert result.tool_calls[0].name == discovery.name
+    assert completions.requests[1]["tool_choice"] == {
+        "type": "function", "function": {"name": discovery.name},
+    }
+    assert "must-not-forward" not in str(completions.requests[1])
+
+
 def test_llm_client_retries_unknown_tool_once_without_executing_it():
     rejected = SimpleNamespace(
         content="",

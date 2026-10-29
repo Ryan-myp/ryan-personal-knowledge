@@ -32,7 +32,8 @@ def _chat_page_javascript() -> str:
     """Read the bootstrap and split bundles as one browser contract."""
     names = [
         "chat.js", "chat-markdown.js", "chat-queue.js", "chat-state.js",
-        "chat-workbench.js", "chat-workspace.js", "chat-knowledge.js",
+        "chat-catalog-loading.js", "chat-resource-catalogs.js", "chat-management-catalogs.js", "chat-mcp.js",
+        "chat-workbench.js", "chat-workspace.js", "chat-schedules.js", "chat-knowledge.js",
         "chat-feedback.js",
         "chat-media.js",
         "chat-trace.js", "chat-requests.js", "chat-blueprint-core.js",
@@ -52,7 +53,7 @@ def _chat_page_styles() -> str:
     names = [
         "chat.css", "chat-foundation.css", "chat-workspaces.css",
         "chat-creation.css", "chat-overrides.css", "chat-media.css",
-        "chat-feedback.css",
+        "chat-feedback.css", "chat-management.css", "chat-catalogs.css",
     ]
     return "\n".join(
         (api_server.STATIC_PATH / "css" / name).read_text(encoding="utf-8")
@@ -520,6 +521,145 @@ def test_chat_document_upload_is_identity_scoped_and_reaches_the_model_runtime(t
     assert document.filename == "report.csv"
     assert document.media_type == "text/csv"
     assert "Spring | 125.5" in document.extracted_text
+
+
+@pytest.mark.parametrize("stream", [False, True])
+def test_pending_chat_continuation_restores_recent_user_attachments(
+    tmp_path, stream,
+):
+    principal = RequestPrincipal(
+        user_id="continuation-user",
+        tenant_id="continuation-tenant",
+        permissions=frozenset({"ads.read"}),
+    )
+
+    class Runtime:
+        def __init__(self):
+            self.calls = []
+            self.messages = []
+            self.pending = False
+
+        def run(self, **kwargs):
+            self.calls.append(kwargs)
+            self.messages = [{
+                "role": "user",
+                "content": kwargs["user_input"],
+                "attachments": [
+                    media.to_metadata() for media in kwargs["input_media"]
+                ],
+            }]
+            self.pending = True
+            return {
+                "run_id": f"run-{len(self.calls)}",
+                "session_id": "continuation-session",
+                "turn_id": f"turn-{len(self.calls)}",
+                "status": "awaiting_input",
+                "needs_input": True,
+                "reply": "请补充说明。",
+                "results": [],
+            }
+
+        def get_latest_run(self, **kwargs):
+            assert kwargs["user_id"] == "continuation-user"
+            assert kwargs["tenant_id"] == "continuation-tenant"
+            return {"status": "awaiting_input"} if self.pending else None
+
+        def get_conversation(self, **kwargs):
+            assert kwargs["user_id"] == "continuation-user"
+            assert kwargs["tenant_id"] == "continuation-tenant"
+            assert kwargs["session_id"] == "continuation-session"
+            return {"messages": self.messages}
+
+    runtime = Runtime()
+    context = ApiContext(
+        runtime_getter=lambda: runtime,
+        authorize_request=lambda *_args: principal,
+        require_permission=lambda *_args: None,
+        activate_tenant_skills=lambda _principal: None,
+        sync_tenant_extensions=lambda _principal: None,
+        safe_exception_text=lambda error: str(error),
+        redact=lambda value: value,
+        chat_media_store_getter=lambda: ChatMediaStore(tmp_path),
+    )
+    app = FastAPI()
+    app.include_router(create_chat_router(context))
+    png = (
+        b"\x89PNG\r\n\x1a\n"
+        b"\x00\x00\x00\rIHDR"
+        b"\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00"
+    )
+
+    with TestClient(app) as client:
+        uploaded = client.post(
+            "/chat/media?session_id=continuation-session&filename=flow.png",
+            content=png,
+            headers={"Content-Type": "image/png"},
+        )
+        assert uploaded.status_code == 201, uploaded.text
+        media_id = uploaded.json()["id"]
+        first = client.post("/chat", json={
+            "user_input": "请看图里的流程",
+            "session_id": "continuation-session",
+            "media_ids": [media_id],
+        })
+        assert first.status_code == 200, first.text
+
+        path = "/chat/stream" if stream else "/chat"
+        second = client.post(path, json={
+            "user_input": "我指的是图里的这个创建流程",
+            "session_id": "continuation-session",
+        })
+
+    assert second.status_code == 200, second.text
+    assert len(runtime.calls) == 2
+    assert [item.attachment_id for item in runtime.calls[1]["input_media"]] == [
+        media_id,
+    ]
+
+
+def test_chat_does_not_restore_attachment_without_pending_input(tmp_path):
+    principal = RequestPrincipal(
+        user_id="continuation-user",
+        tenant_id="continuation-tenant",
+        permissions=frozenset({"ads.read"}),
+    )
+
+    class Runtime:
+        def __init__(self):
+            self.calls = []
+
+        def get_latest_run(self, **_kwargs):
+            return {"status": "succeeded"}
+
+        def get_conversation(self, **_kwargs):
+            raise AssertionError("completed runs must not load old attachment history")
+
+        def run(self, **kwargs):
+            self.calls.append(kwargs)
+            return {"success": True, "reply": "已处理", "results": []}
+
+    runtime = Runtime()
+    context = ApiContext(
+        runtime_getter=lambda: runtime,
+        authorize_request=lambda *_args: principal,
+        require_permission=lambda *_args: None,
+        activate_tenant_skills=lambda _principal: None,
+        sync_tenant_extensions=lambda _principal: None,
+        safe_exception_text=lambda error: str(error),
+        redact=lambda value: value,
+        chat_media_store_getter=lambda: ChatMediaStore(tmp_path),
+    )
+    app = FastAPI()
+    app.include_router(create_chat_router(context))
+
+    with TestClient(app) as client:
+        response = client.post("/chat", json={
+            "user_input": "继续",
+            "session_id": "continuation-session",
+        })
+
+    assert response.status_code == 200, response.text
+    assert runtime.calls[0]["input_media"] == ()
 
 
 def test_chat_stream_preserves_media_gallery_in_reply_ui(tmp_path):
@@ -1294,7 +1434,7 @@ def test_skill_management_ui_covers_standard_package_lifecycle(fake_server):
         "Skills 管理", "SKILL.md", "references/", "scripts/", "assets/", "evals/",
         "保存为新版本", "ZIP 导入", "Skill-up 评测", "发布 / 回滚", "下线",
         "/skills?limit=200", "/versions/archive", "/evaluate", "/evaluations/",
-        "X-API-Key", "let streamError = ''", "streamError || '事件流未返回最终回复'",
+        "X-API-Key", "streamChatRequest", "chatStreamUncertain",
             "最近对话", "服务已连接", "grid-template-columns: 228px minmax(0, 1fr) minmax(450px, 460px)",
         "global-action-label", "知识库", "/sessions?limit=50",
         "/sessions/${encodeURIComponent(targetSessionId)}?limit=10",
@@ -1311,8 +1451,9 @@ def test_skill_management_ui_covers_standard_package_lifecycle(fake_server):
         "knowledgeOverlay", "knowledge-console", "内置 · 只读", "复制为新版本",
         "/skills/builtin/", "managed_skills", "builtin_skills",
         "knowledgeFileInput", "handleKnowledgeFileUpload", "/knowledge/raw",
-        "waitForKnowledgeIngest", "view-hidden", "返回目录",
-        "knowledgeCatalogToggle", "knowledge-reader-actions", "复制为我的草稿", "编辑文档", "管理文档",
+        "waitForKnowledgeIngest", "view-hidden", "返回知识列表",
+        "knowledgeCatalog", "knowledge-reader-actions", "复制为我的草稿", "编辑文档", "全文检索",
+        "skillsCatalog", "mcpCatalog", "resourceCatalogPage", "resumeResourceDraft",
         "knowledge-table-wrap", "knowledge-task", "knowledge-render-v3",
         "themeToggleButton", "light-theme", "ad-agent-theme", "toggleTheme",
         "executionModeSelect", "/settings/execution-mode", "live_mode_available",
@@ -1795,6 +1936,46 @@ def test_feedback_trend_uses_authenticated_scope_and_supported_windows(
         "user_id": "gateway-user",
         "tenant_id": "tenant-a",
     }]
+
+
+def test_feedback_review_pages_enforce_permission_scope_and_valid_filters(monkeypatch, fake_server):
+    monkeypatch.setenv('AD_AGENT_API_KEY_PRINCIPALS', json.dumps({
+        'review-key': {'user_id': 'reviewer', 'tenant_id': 'tenant-a', 'permissions': ['feedback.review']},
+        'read-key': {'user_id': 'reader', 'tenant_id': 'tenant-a', 'permissions': ['ads.read']},
+    }))
+    calls = []
+
+    def page_feedback(filters):
+        calls.append(filters)
+        return {'items': [{'reason': 'access_token=private-value'}],
+                'pagination': {'page': 2, 'limit': 10, 'total': 15, 'pages': 2}}
+
+    fake_server.page_conversation_feedback_review_queue = page_feedback
+    with TestClient(api_server.app) as client:
+        headers = {'X-API-Key': 'review-key'}
+        response = client.get('/feedback/review', headers=headers, params={
+            'page': 2, 'limit': 10, 'status': 'all', 'q': '预算', 'tenant_id': 'other',
+            'since': '2026-10-01T08:00:00+08:00',
+        })
+        assert response.status_code == 200
+        assert response.json()['pagination']['total'] == 15
+        assert 'private-value' not in response.text
+        assert calls[0].tenant_id == 'tenant-a'
+        assert calls[0].search == '预算'
+        assert calls[0].page == 2
+        assert calls[0].since == '2026-10-01T00:00:00+00:00'
+        denied = client.get('/feedback/review?page=1', headers={'X-API-Key': 'read-key'})
+        assert denied.status_code == 403
+        for params in [{'page': 0}, {'page': 10001}, {'limit': 101}, {'status': 'invalid'},
+                       {'q': 'x'*201}, {'since': 'not-a-date'},
+                       {'since': '2026-10-03', 'until': '2026-10-02'}]:
+            assert client.get('/feedback/review', params=params, headers=headers).status_code == 422
+        assert len(calls) == 1
+
+        def unavailable(filters):
+            raise RuntimeError('store unavailable')
+        fake_server.page_conversation_feedback_review_queue = unavailable
+        assert client.get('/feedback/review?page=1', headers=headers).status_code == 503
 
 
 def test_feedback_review_requires_permission_and_exports_only_curated_cases(
@@ -2314,7 +2495,8 @@ def test_chat_template_busts_cached_assets_after_conversation_ui_changes():
     assert css_version is not None
     assert js_version is not None
     assert css_version.group(1) == js_version.group(1)
-    assert f"?v={js_version.group(1)}" in bootstrap
+    assert f"const version = '{js_version.group(1)}'" in bootstrap
+    assert "?v=${version}" in bootstrap
 
 
 def test_chat_template_uses_shared_access_without_service_key_ui():
@@ -3041,6 +3223,46 @@ def test_schedule_patch_uses_authenticated_scope_and_returns_updated_record(
     )]
 
 
+def test_schedule_pages_and_detail_use_principal_scope(fake_server, monkeypatch):
+    monkeypatch.setenv('AD_AGENT_API_KEY_PRINCIPALS', json.dumps({
+        'test-key': {'user_id':'operator', 'tenant_id':'tenant', 'permissions':['ads.read']},
+    }))
+    calls = []
+    fake_server.page_schedules = lambda filters: calls.append(filters) or {
+        'schedules': [], 'pagination': {'page': filters.page, 'total': 0},
+    }
+    fake_server.page_schedule_runs = lambda filters: calls.append(filters) or {'runs': []}
+    fake_server.get_schedule = lambda schedule_id, **scope: (
+        {'schedule_id': schedule_id, 'name':'Task'} if schedule_id == 'mine' else None
+    )
+    fake_server.list_schedule_runs = lambda **kwargs: pytest.fail('unexpected eager run load')
+    fake_server.get_schedule_run = lambda schedule_id, run_id, **scope: (
+        calls.append((schedule_id, run_id, scope)) or {'schedule_run_id':run_id}
+    )
+    headers = {'X-API-Key':'test-key'}
+    with TestClient(api_server.app) as client:
+        response = client.get('/schedules?page=2&limit=10&q=日报&status=paused&tenant_id=other', headers=headers)
+        assert response.status_code == 200
+        filters = calls[-1]
+        assert (filters.tenant_id, filters.user_id, filters.page, filters.search) == (
+            'tenant', 'operator', 2, '日报',
+        )
+        assert filters.statuses == ('paused',)
+        response = client.get('/schedules/mine?include_runs=false', headers=headers)
+        assert response.status_code == 200 and 'runs' not in response.json()
+        response = client.get('/schedules/mine/runs?page=1&status=failed&since=2026-10-01T08:00:00%2B08:00', headers=headers)
+        assert response.status_code == 200
+        assert calls[-1].since == '2026-10-01T00:00:00+00:00'
+        assert calls[-1].schedule_id == 'mine'
+        count = len(calls)
+        assert client.get('/schedules/other/runs?page=1', headers=headers).status_code == 404
+        assert len(calls) == count
+        assert client.get('/schedules?page=0', headers=headers).status_code == 422
+        assert client.get('/schedules/mine/runs?page=1&since=invalid', headers=headers).status_code == 422
+        assert client.get('/schedules/mine/runs/r-1', headers=headers).status_code == 200
+        assert calls[-1] == ('mine', 'r-1', {'tenant_id':'tenant','user_id':'operator'})
+
+
 def test_chat_progress_and_schedule_ui_node_contracts():
     javascript_tests = [
         Path(__file__).parent / "static" / "test_chat_trace_progress.js",
@@ -3361,7 +3583,7 @@ def test_managed_skill_api_versions_and_publishing_are_tenant_scoped(monkeypatch
         assert any(item["source"] == "builtin" for item in response.json()["builtin_skills"])
 
         response = client.get(
-            "/skills/builtin/google-ads-api-expert/versions/2.0.3",
+            "/skills/builtin/google-ads-api-expert/versions/2.1.0",
             headers=headers,
         )
         assert response.status_code == 200

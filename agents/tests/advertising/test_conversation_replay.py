@@ -7,7 +7,10 @@ from pathlib import Path
 import pytest
 
 from agents.applications.advertising.composition.ad_application import AdvertisingComposition
-from agents.applications.advertising.persistence.models import ConversationMessageRecord
+from agents.applications.advertising.persistence.models import (
+    ConversationMessageRecord,
+    ExecutionRunRecord,
+)
 from agents.applications.advertising.persistence.store import AdAgentStore
 from agents.tools.advertising.shared.domain.conversation import (
     project_conversation_messages, visible_run_reply,
@@ -745,6 +748,36 @@ def test_malformed_optional_ui_is_not_used_as_conversation_content():
     assert visible_run_reply({"ui": "not a card"}) == ""
 
 
+def test_context_limit_after_write_keeps_execution_notice_with_nonempty_runtime_reply():
+    from agents.agent_harness.model_limits import ModelInputLimitError
+
+    reply = visible_run_reply({
+        "status": "failed", "error": "model_input_limit_exceeded",
+        "reply": ModelInputLimitError.public_reply,
+        "results": [{"tool": "create_record", "action": "create", "success": True}],
+    })
+
+    assert ModelInputLimitError.public_reply in reply
+    assert "已有工具执行记录" in reply
+    assert "不要直接重试" in reply
+
+
+def test_context_limit_after_read_preserves_the_actual_query_result():
+    from agents.agent_harness.model_limits import ModelInputLimitError
+
+    reply = visible_run_reply({
+        "status": "failed", "error": "model_input_limit_exceeded",
+        "reply": ModelInputLimitError.public_reply,
+        "results": [{
+            "tool": "query_records", "action": "list", "success": True,
+            "data": {"items": [{"id": "verified-result", "name": "Example"}]},
+        }],
+    })
+
+    assert "verified-result" in reply
+    assert "查询已成功" in reply
+
+
 @pytest.fixture
 def runtime():
     owner = AdvertisingComposition(
@@ -829,6 +862,31 @@ def test_conversation_history_pages_complete_turns_from_newest_to_oldest(runtime
             "paged-history", user_id="operator", tenant_id="tenant",
             limit=2, before_message_id="missing-cursor",
         )
+
+
+def test_latest_run_status_is_scoped_and_does_not_load_event_history(runtime, monkeypatch):
+    runtime.persistence_store.create_execution_run(ExecutionRunRecord(
+        run_id="pending-media-run",
+        session_id="pending-media-session",
+        turn_id="pending-media-turn",
+        user_id="operator",
+        tenant_id="tenant",
+        status="awaiting_input",
+    ))
+    monkeypatch.setattr(
+        runtime._session_manager,
+        "list_execution_run_events",
+        lambda *_args, **_kwargs: pytest.fail("status lookup must not load events"),
+    )
+
+    status = runtime.get_latest_run_status(
+        "pending-media-session", user_id="operator", tenant_id="tenant",
+    )
+
+    assert status == {"status": "awaiting_input"}
+    assert runtime.get_latest_run_status(
+        "pending-media-session", user_id="other", tenant_id="tenant",
+    ) is None
 
 
 def test_a_failure_before_the_first_model_assistant_is_still_persisted(runtime):

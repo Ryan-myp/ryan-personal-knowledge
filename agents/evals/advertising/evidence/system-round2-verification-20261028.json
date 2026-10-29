@@ -1,0 +1,56 @@
+{
+  "schema_version": "system-round-verification/v1",
+  "date": "2026-10-28",
+  "scope": "offline_harness_context_and_catalog_followups",
+  "full_project_check": {
+    "command": "make ad-agent-check",
+    "exit_code": 0,
+    "tests_passed": 3256,
+    "tests_failed": 0,
+    "warnings": 1,
+    "test_duration_seconds": 305.49,
+    "compilation_passed": true,
+    "capability_audit_passed": true,
+    "tool_contract_snapshot_passed": true,
+    "validated_tools": 321,
+    "knowledge_check_passed": true,
+    "knowledge_pages": 85
+  },
+  "targeted_regression": {
+    "routing_templates_and_context_cases_passed": 155,
+    "final_compaction_and_cleanup_cases_passed": 27,
+    "final_compilation_passed": true,
+    "new_compaction_module_line_coverage_percent": 96,
+    "coverage_tracer": "python_fallback",
+    "coverage_applies_to_whole_system": false
+  },
+  "incremental_quality": {
+    "scope": "all_changed_python_sources_vs_HEAD_including_prior_rounds",
+    "files_scanned": 41,
+    "baseline_findings": 503,
+    "current_findings": 500,
+    "new_findings": 0,
+    "gate_passed": true
+  },
+  "whole_repository_quality": {
+    "files_scanned": 760,
+    "findings": 4990,
+    "score": 0.0,
+    "gate_passed": false
+  },
+  "performance_evidence": "system-round2-context-performance-20261028.json",
+  "git_diff_check_passed": true,
+  "validation_limits": {
+    "advertising_provider_calls": 0,
+    "real_model_calls": 0,
+    "provider_e2e": false,
+    "open_domain_intent_accuracy_assessed": false,
+    "production_concurrency_assessed": false
+  },
+  "delivery": {
+    "database_migration": false,
+    "committed": false,
+    "pushed": false,
+    "service_restarted": false
+  }
+}

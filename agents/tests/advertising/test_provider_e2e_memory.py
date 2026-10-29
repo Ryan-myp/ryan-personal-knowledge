@@ -66,11 +66,23 @@ def test_live_e2e_memory_is_complete_and_bound_to_current_templates():
     }
     rows = memory["campaign_types"]
     actual = {
-        (row["provider"], row["campaign_type"]): row["template_key"]
+        (row["provider"], row["campaign_type"], row["test_account"]): row["template_key"]
         for row in rows
     }
+    expected = {
+        (provider, campaign_type, templates[key]["account_id"]): key
+        for (provider, campaign_type), key in EXPECTED_TEMPLATES.items()
+    }
+    expected.update({
+        ("google-ads", "PERFORMANCE_MAX", "7574609568"):
+            "google.test.7574609568.performance-max",
+        ("google-ads", "SHOPPING", "7574609568"):
+            "google.test.7574609568.shopping",
+        ("google-ads", "APP", "7574609568"):
+            "google.test.7574609568.app",
+    })
 
-    assert actual == EXPECTED_TEMPLATES
+    assert actual == expected
     assert memory["scope"]["excluded"] == [
         {
             "provider": "tiktok",
@@ -92,9 +104,19 @@ def test_live_e2e_memory_is_complete_and_bound_to_current_templates():
         assert row["verification_state"] in allowed_states
         assert row["critical_fields"]
         assert row["evidence_refs"]
-        assert row["test_account"] == memory["scope"]["test_accounts"][row["provider"]]
-        assert row["prior_live_write_observed"] is True
-        assert row["known_live_hierarchies"]
+        configured_accounts = memory["scope"]["test_accounts"][row["provider"]]
+        if isinstance(configured_accounts, str):
+            configured_accounts = [configured_accounts]
+        assert row["test_account"] in configured_accounts
+        if row["verification_state"] in {"not_run", "blocked_by_provider"} and not row[
+            "prior_live_write_observed"
+        ]:
+            assert row["prior_live_write_observed"] is False
+            assert row["known_live_hierarchies"] == []
+            assert row["remaining_gap"]
+        else:
+            assert row["prior_live_write_observed"] is True
+            assert row["known_live_hierarchies"]
         for field, expected in row["expected_status_values"].items():
             assert template["values"][field] == expected
         value_digest = hashlib.sha256(
@@ -110,6 +132,95 @@ def test_live_e2e_memory_is_complete_and_bound_to_current_templates():
             assert field in template["values"]
         if row["verification_state"] != "live_verified":
             assert row["remaining_gap"]
+
+
+def test_live_e2e_memory_supports_a_second_account_without_prior_writes(tmp_path):
+    shutil.copytree(ROOT / "agents", tmp_path / "agents")
+    memory_path = tmp_path / "agents/tools/advertising/contracts/provider_live_e2e_memory.json"
+    template_path = (
+        tmp_path
+        / "agents/applications/advertising/contracts/builtin_creation_templates.json"
+    )
+    memory = _load_json(memory_path)
+    catalog = _load_json(template_path)
+    account = "7574609568"
+    configured_accounts = memory["scope"]["test_accounts"]["google-ads"]
+    prior_account = next(
+        item for item in configured_accounts if item != account
+    )
+    second_account_rows = [
+        row for row in memory["campaign_types"]
+        if row["provider"] == "google-ads" and row["test_account"] == account
+    ]
+    second_account_keys = {row["template_key"] for row in second_account_rows}
+    second_account_templates = [
+        row for row in catalog["templates"] if row["key"] in second_account_keys
+    ]
+    assert len(second_account_rows) == 3
+    assert all(
+        row["verification_state"] in {"not_run", "blocked_by_provider"}
+        for row in second_account_rows
+    )
+
+    # Reconstruct the prior single-account state, then add the second account
+    # records back to the isolated copy exactly as a migration would.
+    memory["campaign_types"] = [
+        row for row in memory["campaign_types"]
+        if row["template_key"] not in second_account_keys
+    ]
+    catalog["templates"] = [
+        row for row in catalog["templates"] if row["key"] not in second_account_keys
+    ]
+    memory["scope"]["test_accounts"]["google-ads"] = prior_account
+    memory_path.write_text(json.dumps(memory, ensure_ascii=False, indent=2), encoding="utf-8")
+    template_path.write_text(json.dumps(catalog, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    memory["scope"]["test_accounts"]["google-ads"] = [prior_account, account]
+    memory["campaign_types"].extend(second_account_rows)
+    catalog["templates"].extend(second_account_templates)
+    memory_path.write_text(json.dumps(memory, ensure_ascii=False, indent=2), encoding="utf-8")
+    template_path.write_text(json.dumps(catalog, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    loaded = load_live_e2e_memory(tmp_path)
+    pmax = next(
+        item for item in second_account_rows
+        if item["campaign_type"] == "PERFORMANCE_MAX"
+    )
+    resolved = resolve_template_memory(
+        tmp_path,
+        provider="google-ads",
+        account_id=account,
+        template_id=pmax["template_key"],
+        api_template={
+            "provider": "google-ads",
+            "account_id": account,
+            "blueprint_id": pmax["blueprint_id"],
+            "blueprint_version": pmax["blueprint_version"],
+            "status": "active",
+        },
+    )
+
+    assert len(loaded["campaign_types"]) == len(memory["campaign_types"])
+    assert resolved["verification_state"] == "blocked_by_provider"
+    assert resolved["recovery_plan"]["action"] == "respect_provider_block"
+    assert resolved["hierarchy_reuse"]["requires_reconciliation"] is False
+    assert not resolved["known_live_hierarchies"]
+
+    observation = append_live_e2e_observation(
+        tmp_path,
+        event_type="attempt_started",
+        attempt_id="google-7574609568-pmax-create",
+        phase_id="google-7574609568-pmax-create:1",
+        phase=1,
+        provider="google-ads",
+        account_id=account,
+        template_id=pmax["template_key"],
+        blueprint_version=pmax["blueprint_version"],
+        template_values_sha256=pmax["template_values_sha256"],
+        case_id="google-7574609568-pmax-create",
+        outcome="pending",
+    )
+    assert observation["account_id"] == account
 
 
 def test_live_e2e_memory_encodes_paused_creation_and_non_overclaimed_evidence():
@@ -897,6 +1008,32 @@ def test_known_live_write_requires_explicit_new_hierarchy_authorization():
     memory = load_live_e2e_memory(ROOT)
     for record in memory["campaign_types"]:
         state = hierarchy_reuse_state(record, [])
+        if record["verification_state"] == "not_run":
+            assert state["requires_reconciliation"] is False
+            continue
+        if (
+            record["verification_state"] == "blocked_by_provider"
+            and not record["prior_live_write_observed"]
+        ):
+            assert state["requires_reconciliation"] is False
+            applicable_findings = [
+                finding
+                for finding in memory["known_findings"]
+                if any(
+                    scope["provider"] == record["provider"]
+                    and scope["campaign_type"] == record["campaign_type"]
+                    and scope.get("test_account") in (None, record["test_account"])
+                    for scope in finding["applies_to"]
+                )
+            ]
+            with pytest.raises(ValueError, match="known Provider block"):
+                require_new_hierarchy_authorization(
+                    state,
+                    allow_new_hierarchy=True,
+                    verification_state=record["verification_state"],
+                    known_findings=applicable_findings,
+                )
+            continue
         assert state["requires_reconciliation"] is True
         applicable_findings = [
             finding
@@ -904,6 +1041,7 @@ def test_known_live_write_requires_explicit_new_hierarchy_authorization():
             if any(
                 scope["provider"] == record["provider"]
                 and scope["campaign_type"] == record["campaign_type"]
+                and scope.get("test_account") in (None, record["test_account"])
                 for scope in finding["applies_to"]
             )
         ]
@@ -986,3 +1124,41 @@ def test_live_resource_capture_ignores_simulated_and_failed_creates():
             "status": "DISABLE",
         }
     ]
+
+
+def test_google_7574609568_campaign_limit_blocks_creation_for_that_account_only():
+    memory = load_live_e2e_memory(ROOT)
+    finding_id = "google_7574609568_campaign_resource_limit"
+    finding = next(
+        item for item in memory["known_findings"] if item["id"] == finding_id
+    )
+    assert finding["status"] == "provider_limited"
+    assert {item.get("test_account") for item in finding["applies_to"]} == {
+        "7574609568",
+    }
+    assert {item["campaign_type"] for item in finding["applies_to"]} == {
+        "PERFORMANCE_MAX", "SHOPPING", "APP",
+    }
+
+    test_account_entries = [
+        entry
+        for entry in build_live_e2e_memory_report(ROOT, provider="google-ads")["entries"]
+        if entry["test_account"] == "7574609568"
+    ]
+    assert len(test_account_entries) == 3
+    assert all(entry["verification_state"] == "blocked_by_provider" for entry in test_account_entries)
+    assert all(entry["recovery_plan"]["action"] == "respect_provider_block" for entry in test_account_entries)
+    assert all(
+        any(item["id"] == finding_id for item in entry["known_findings"])
+        for entry in test_account_entries
+    )
+
+    legacy_account_entries = [
+        entry
+        for entry in build_live_e2e_memory_report(ROOT, provider="google-ads")["entries"]
+        if entry["test_account"] == "9055507554"
+    ]
+    assert all(
+        all(item["id"] != finding_id for item in entry["known_findings"])
+        for entry in legacy_account_entries
+    )

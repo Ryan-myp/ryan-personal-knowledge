@@ -22,6 +22,7 @@ from agents.agent_harness import (
     TurnRequest,
 )
 from agents.agent_harness.core.tool_selection import ToolSelector
+from agents.agent_harness.core.policy import apply_policies
 from agents.agent_harness.core.timeouts import DEFAULT_EXECUTION_TIMEOUT_SECONDS
 from agents.agent_platform import (
     AgentPlatform,
@@ -34,6 +35,7 @@ from agents.agent_platform.tools import (
     scheduling_tool_source,
 )
 from agents.agent_platform.tools.clarification import clarification_tool_source
+from agents.agent_platform.tools.discovery import tool_discovery_source
 from agents.agent_harness.core.plugins import PluginKind
 from agents.agent_harness.core.memory import MemoryManager
 from agents.scenarios.advertising import (
@@ -94,6 +96,14 @@ _MULTI_ACCOUNT_REFERENCE = re.compile(
     r"\s+(?:(?:test|ad)\s+)?(?:accounts?|channels?|platforms?)\b",
     re.IGNORECASE,
 )
+
+
+def _discovery_tool_available(runtime: Any, request: TurnRequest, tool: Any) -> bool:
+    """Discovery and ordinary selection share namespace and live-write policy."""
+    namespaces = apply_policies(runtime.policies, [tool.namespace])
+    return tool.namespace in namespaces and bool(
+        _filter_unapproved_live_write_tools(runtime, request, [tool]),
+    )
 
 
 def _select_blueprint_tools(
@@ -360,6 +370,16 @@ class AdApplicationAssembly:
         )
         services.bind_scheduling(scheduling_service)
         for source, description in (
+            (
+                tool_discovery_source(
+                    required_permission="ads.read",
+                    granted_permissions=runtime._granted_permissions,
+                    is_available=lambda request, tool: _discovery_tool_available(
+                        runtime, request, tool,
+                    ),
+                ),
+                "Bounded Run-local discovery of registered Tool schemas",
+            ),
             (
                 clarification_tool_source(required_permission="ads.read"),
                 "Side-effect-free structured clarification Tool",

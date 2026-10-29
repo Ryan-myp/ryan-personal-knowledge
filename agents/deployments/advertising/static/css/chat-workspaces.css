@@ -242,3 +242,15 @@
             .knowledge-search-grid { grid-template-columns: 1fr; }
         }
 
+/* Bounded result viewer shares the management console's typography. */
+.schedule-result-content {
+    max-height: min(55vh, 640px);
+    overflow: auto;
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
+    padding: 16px;
+}
+
+#scheduleRunDetail[hidden] { display: none; }
+
+#scheduleRunRows .btn { margin-left: 12px; }

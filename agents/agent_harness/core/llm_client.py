@@ -19,6 +19,7 @@ from types import SimpleNamespace
 from typing import Optional, Dict, Any
 
 from ..messages import AgentMessage, ModelTurn, ToolCall
+from ..tool_schema_projection import model_tool_payload
 from ..model_limits import (
     DEFAULT_MODEL_INPUT_CHARS, ModelInputLimitError, ModelInvocationStoppedError,
     ModelTimeoutError, positive_integer,
@@ -907,7 +908,7 @@ class LLMClient:
         if (
             state.attempt > 0
             and len(state.active_tools) == 1
-            and self._is_registered_web_search_tool(state.active_tools[0])
+            and self._is_registered_semantic_discovery_tool(state.active_tools[0])
         ):
             self._start_text_only_recovery(state)
             return True
@@ -921,7 +922,7 @@ class LLMClient:
         return False
 
     def _repair_initial_catalog_error(self, state: _CompletionState) -> None:
-        recovery_tool = self._registered_web_search_recovery_tool(
+        recovery_tool = self._registered_discovery_recovery_tool(
             state.active_tools
         )
         if recovery_tool is None:
@@ -947,7 +948,7 @@ class LLMClient:
             )
             logger.warning(
                 "LLM requested an unavailable Tool; retrying with "
-                "the registered semantic web-search Tool"
+                "the registered discovery Tool"
             )
         state.attempt += 1
 
@@ -1583,14 +1584,26 @@ class LLMClient:
         )
 
     @classmethod
-    def _registered_web_search_recovery_tool(cls, tools: Any) -> Any:
-        """Pick a registered web-search Tool only from a discovery-only catalog."""
+    def _registered_discovery_recovery_tool(cls, tools: Any) -> Any:
+        """Preserve a sole discovery target, including knowledge retrieval."""
         catalog = tuple(tools or ())
+        runtime_discovery = [
+            tool for tool in catalog
+            if "runtime_tool_discovery" in (cls._tool_value(tool, "traits", ()) or ())
+            and str(getattr(
+                cls._tool_value(tool, "effect_class", ""), "value",
+                cls._tool_value(tool, "effect_class", ""),
+            )) == "read"
+        ]
+        if len(runtime_discovery) == 1:
+            return runtime_discovery[0]
         if not catalog or not all(
             cls._is_registered_semantic_discovery_tool(tool)
             for tool in catalog
         ):
             return None
+        if len(catalog) == 1:
+            return catalog[0]
         candidates = [
             tool for tool in catalog
             if cls._is_registered_web_search_tool(tool)
@@ -1606,37 +1619,7 @@ class LLMClient:
                 raise LLMStructuredOutputError(
                     "active Tool catalog contains an invalid function name"
                 )
-            raw_schema = cls._tool_value(tool, "input_schema", {})
-            if callable(getattr(raw_schema, "to_dict", None)):
-                raw_schema = raw_schema.to_dict()
-            schema = dict(raw_schema) if isinstance(raw_schema, dict) else {}
-            properties = schema.get("properties")
-            visible_properties = {
-                key: value
-                for key, value in (properties or {}).items()
-                if not (isinstance(value, dict) and value.get("ui_hidden") is True)
-            } if isinstance(properties, dict) else {}
-            parameters = {
-                "type": "object",
-                "properties": visible_properties,
-                "required": [
-                    str(item) for item in (schema.get("required") or ())
-                    if str(item) in visible_properties
-                ],
-                "additionalProperties": bool(
-                    schema.get("additionalProperties", False)
-                ),
-            }
-            definitions.append({
-                "type": "function",
-                "function": {
-                    "name": name,
-                    "description": str(
-                        cls._tool_value(tool, "description", "") or ""
-                    )[:1200],
-                    "parameters": parameters,
-                },
-            })
+            definitions.append(model_tool_payload(tool))
         return definitions
 
     @staticmethod

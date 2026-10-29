@@ -1,0 +1,75 @@
+[
+  {
+    "id": "upgrade-meta-status-query",
+    "input": "查询 Meta 昨天的 Campaign spend 报表，只看当前 PAUSED 的 Campaign。测试账户 account_id=2806375919473667，日期使用 date_preset=yesterday，不查其他资源。",
+    "assertions": {
+      "required_tools": [
+        "meta_get_campaign_report"
+      ],
+      "max_tool_calls": 1,
+      "needs_input": false,
+      "run_status": "succeeded",
+      "tool_arguments": [
+        {
+          "tool": "meta_get_campaign_report",
+          "equals": {
+            "date_preset": "yesterday",
+            "effective_status": [
+              "PAUSED"
+            ]
+          }
+        }
+      ]
+    }
+  },
+  {
+    "id": "upgrade-meta-report-followup",
+    "history": [
+      "查一下 Meta Campaign 昨天的 spend 报表，使用测试账户 account_id=2806375919473667，日期保持 date_preset=yesterday。"
+    ],
+    "input": "再按状态筛选，只看当前 PAUSED 的 Campaign，账户与报表日期都沿用刚才的，不要改成列表查询。",
+    "assertions": {
+      "required_tools": [
+        "meta_get_campaign_report"
+      ],
+      "forbidden_tools": [
+        "meta_list_campaigns",
+        "agent_web_search",
+        "agent_knowledge_search"
+      ],
+      "max_tool_calls": 1,
+      "needs_input": false,
+      "run_status": "succeeded",
+      "tool_arguments": [
+        {
+          "tool": "meta_get_campaign_report",
+          "equals": {
+            "date_preset": "yesterday",
+            "effective_status": [
+              "PAUSED"
+            ]
+          }
+        }
+      ]
+    }
+  },
+  {
+    "id": "upgrade-knowledge-topic-switch",
+    "history": [
+      "查询 Meta campaign 列表"
+    ],
+    "input": "换一个主题，只从知识库解释 Google Ads 的智能出价原理，不读任何账户",
+    "assertions": {
+      "required_tools": [
+        "agent_knowledge_search"
+      ],
+      "forbidden_tools": [
+        "meta_list_campaigns",
+        "google_list_campaigns",
+        "agent_web_search"
+      ],
+      "max_tool_calls": 2,
+      "run_status": "succeeded"
+    }
+  }
+]

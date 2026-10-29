@@ -2,8 +2,9 @@
 
 from typing import Annotated, Any, Literal, Mapping
 
-from pydantic import BaseModel, ConfigDict, Field, StrictBool, field_validator
-from .execution_evidence import regression_calls, run_status_evidence
+import json
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, StrictBool, field_validator
+from .execution_evidence import argument_fingerprints, regression_calls, run_status_evidence
 
 
 _Text = Annotated[str, Field(min_length=1, max_length=200)]
@@ -29,6 +30,22 @@ class _KnowledgeDelivery(BaseModel):
     claims_answer_grounded: Literal[False]
 
 
+class ToolArgumentAssertion(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    tool: _ToolName
+    equals: dict[str, JsonValue] = Field(min_length=1, max_length=16)
+
+    @field_validator("equals")
+    @classmethod
+    def _validate_values(cls, value: dict[str, Any]) -> dict[str, Any]:
+        if len(json.dumps(value, ensure_ascii=False, allow_nan=False)) > 4096:
+            raise ValueError("argument assertions exceed the evidence limit")
+        if len(argument_fingerprints(value)) != len(value):
+            raise ValueError("argument assertions contain unsupported or private fields")
+        return value
+
+
 class RegressionAssertions(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
@@ -44,6 +61,7 @@ class RegressionAssertions(BaseModel):
     knowledge_context_present: StrictBool | None = None
     required_context_documents: list[_Text] = Field(default_factory=list, max_length=8)
     run_status: _Text | None = None
+    tool_arguments: list[ToolArgumentAssertion] = Field(default_factory=list, max_length=32)
 
     @field_validator("run_status")
     @classmethod
@@ -89,6 +107,16 @@ def evaluate_regression(
         check(name in successful, f"required_tool:{name}")
     for name in assertions.forbidden_tools:
         check(name not in tools, f"forbidden_tool:{name}")
+    for index, assertion in enumerate(assertions.tool_arguments):
+        expected = argument_fingerprints(assertion.equals)
+        check(any(
+            row.get("tool") == assertion.tool and row.get("success") is True
+            and all(
+                row.get("argument_fingerprints", {}).get(key) == value
+                for key, value in expected.items()
+            )
+            for row in rows
+        ), f"tool_arguments:{assertion.tool}:{index}")
     reply = response.get("reply", "")
     if not isinstance(reply, str):
         raise ValueError("regression reply must be text")

@@ -337,7 +337,9 @@ class MetaToolSource(BaseProviderToolSource):
         "create_catalog_ad": ["meta_create_catalog_ad"],
         "create_app_promotion_ad": ["meta_create_app_promotion_ad"],
         "create_messaging_ad": ["meta_create_messaging_ad"],
-        "create_link_ad": ["meta_create_traffic_ad", "meta_create_conversion_ad"],
+        "create_link_ad": [
+            "meta_create_traffic_ad", "meta_create_conversion_ad", "meta_create_awareness_ad",
+        ],
         "create_engagement_ad": ["meta_create_engagement_ad"],
         "update_ad": ["meta_update_ad"],
         "pause_ad": ["meta_pause_ad"], "delete_ad": ["meta_delete_ad"],
@@ -1191,7 +1193,7 @@ class MetaToolSource(BaseProviderToolSource):
                 activation_rules=[{
                     "if": {
                         "objective": {"aliases": ["objective_type"], "in": [
-                            "OUTCOME_MESSAGES", "MESSAGES",
+                            "OUTCOME_ENGAGEMENT", "OUTCOME_MESSAGES", "MESSAGES",
                         ]},
                         "optimization_goal": {"in": ["MESSAGES"]},
                         "messaging_app": {"exists": True},
@@ -1208,27 +1210,28 @@ class MetaToolSource(BaseProviderToolSource):
                 ), {}),
             ),
         ]
-        for tool_name, intent_name, objective_values, optimization_values, traits in (
+        for tool_name, intent_name, objective_values, optimization_values, traits, label in (
             (
                 "meta_create_traffic_ad", "create_traffic_ad",
                 ["OUTCOME_TRAFFIC", "TRAFFIC"], ["LINK_CLICKS"],
-                ["write", "ad", "traffic"],
+                ["write", "ad", "traffic"], "流量",
             ),
             (
                 "meta_create_conversion_ad", "create_conversion_ad",
                 ["OUTCOME_SALES", "CONVERSIONS"],
                 ["CONVERSIONS", "OFFSITE_CONVERSIONS", "VALUE"],
-                ["write", "ad", "conversion"],
+                ["write", "ad", "conversion"], "销售转化",
+            ),
+            (
+                "meta_create_awareness_ad", "create_awareness_ad",
+                ["OUTCOME_AWARENESS"], ["REACH", "IMPRESSIONS"],
+                ["write", "ad", "awareness"], "品牌认知",
             ),
         ):
             link_schema = meta_link_ad_schema()
             tools.append(method_tool(
                 namespace="meta", skill="meta-marketing-api", name=tool_name,
-                description=(
-                    "创建 Meta Traffic 网站链接广告；默认仅生成 dry-run 计划。"
-                    if intent_name == "create_traffic_ad"
-                    else "创建 Meta Conversion 网站链接广告；默认仅生成 dry-run 计划。"
-                ),
+                description=f"创建 Meta {label}图片或视频链接广告；默认仅生成 dry-run 计划。",
                 method_name="create_link_ad", result_key="ad_id",
                 properties=link_schema["properties"], required=link_schema["required"],
                 requires=link_schema["requires"],
@@ -1490,6 +1493,7 @@ class MetaToolSource(BaseProviderToolSource):
         # Create Campaign
         tools.append((ToolDefinition(
             name="meta_create_campaign",
+            contract_version="1.1.0",
             skill="meta-marketing-api",
             namespace="meta",
             description="创建 Meta Campaign。",
@@ -1710,22 +1714,39 @@ class MetaToolSource(BaseProviderToolSource):
         # Get Report
         tools.append((ToolDefinition(
             name="meta_get_campaign_report",
-            contract_version="2.0.0",
+            contract_version="2.2.0",
             skill="meta-marketing-api",
             namespace="meta",
-            description="查询 Meta Campaign 报表。",
+            description=(
+                "查询 Meta Campaign 报表，支持已授权 account_id、Campaign ID 和日期范围。"
+                "effective_status 用于按 Campaign 当前有效状态筛选；日期范围仅限定指标发生时间，"
+                "状态筛选不是历史某日的状态快照。多个条件同时生效。"
+            ),
             input_schema=ToolSchema(
                 properties={
+                    "account_id": {
+                        "type": "string", "minLength": 1,
+                        "description": "Meta Ad Account ID；仍须通过 principal 的账户范围校验",
+                    },
                     "campaign_id": {"type": "string"},
                     "campaign_ids": {"type": "array", "items": {"type": "string"}},
+                    "effective_status": {
+                        "type": "array", "minItems": 1,
+                        "maxItems": len(MetaAPIClient.REPORT_EFFECTIVE_STATUSES),
+                        "uniqueItems": True,
+                        "items": {
+                            "type": "string", "enum": list(MetaAPIClient.REPORT_EFFECTIVE_STATUSES),
+                        },
+                        "description": "按 Campaign 当前有效状态筛选，例如 PAUSED；不改变报表时间范围",
+                    },
                     "date_preset": {
                         "type": "string",
+                        "enum": [
+                            *MetaAPIClient.REPORT_DATE_PRESETS,
+                            *MetaAPIClient.REPORT_DATE_PRESET_ALIASES,
+                        ],
                         "intent_field": "date_preset",
-                        "intent_map": {
-                            "LAST_7_DAYS": "last_7d",
-                            "LAST_14_DAYS": "last_14d",
-                            "LAST_30_DAYS": "last_30d",
-                        },
+                        "intent_map": dict(MetaAPIClient.REPORT_DATE_PRESET_ALIASES),
                     },
                     "date_range": {
                         "type": "object",
@@ -1751,12 +1772,15 @@ class MetaToolSource(BaseProviderToolSource):
             ),
             action="report", resource_type="campaign",
             intent_types=["get_campaign_report", "download_report"],
+            skill_refs=["meta-marketing-api-expert", "account-diagnostics"],
             intent_aliases=[
                 "报表",
                 "查询 Meta 报表", "查询 Meta campaign 报表",
                 "查看 Meta 广告系列表现",
             ],
             related_resource_type="campaign",
+            result_items_key="report",
+            result_id_fields=["campaign_id"],
             related_resource_id_fields=["campaign_ids", "campaign_id"],
             risk_level=RiskLevel.LOW,
             effect_class=ToolEffect.READ,

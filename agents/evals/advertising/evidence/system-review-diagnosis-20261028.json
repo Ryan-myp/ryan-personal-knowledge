@@ -1,0 +1,43 @@
+{
+  "schema_version": "system-review-diagnosis/v1",
+  "provider_e2e": false,
+  "provider_api_calls": 0,
+  "initial_suite": {
+    "cases": 12,
+    "passed": 8,
+    "failed": 4
+  },
+  "findings": [
+    {
+      "case": "holdout-budget-retraction",
+      "verified": "model_backed_targeted_pass",
+      "cause": "Mentioned writes were forcing a Tool call during constraint recap."
+    },
+    {
+      "case": "holdout-filter-refines-current-campaign-query",
+      "verified": "model_backed_targeted_pass",
+      "cause": "Described states were mistaken for imperative write actions."
+    },
+    {
+      "case": "holdout-topic-switch-does-not-reuse-provider-scope",
+      "verified": "model_backed_targeted_pass",
+      "cause": "Explicit knowledge source was not selected; unrelated Provider Tools were exposed."
+    },
+    {
+      "case": "holdout-report-filter-followup",
+      "verified": "not_passed",
+      "causes": [
+        "Original fixture did not actually select an account.",
+        "Explicit-account variant exposed missing account_id in the closed report schema.",
+        "Status filtering is not supported by the current report contract."
+      ],
+      "account_contract_fix": "Optional account_id added in Tool version 2.0.1. Offline Runtime tests cover authorized acceptance and unauthorized rejection; a separate one-turn model-backed offline report case passed with one successful report call. State-filter followup remains unverified and unsupported.",
+      "status_filter": "not_implemented"
+    }
+  ],
+  "limitations": [
+    "Separate targeted passes do not constitute a current complete holdout pass.",
+    "Assertions on Tool names do not verify all query parameters or professional content.",
+    "No production capacity or new live Provider success is attested."
+  ]
+}

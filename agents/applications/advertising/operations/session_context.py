@@ -75,6 +75,7 @@ class SessionContext:
     def save_result(
         self, tool_name: str, result: ToolResult, platform: str = None
     ) -> None:
+        self.tool_results.pop(tool_name, None)
         self.tool_results[tool_name] = result
         declared = (
             result.data.get("resource_id_field")

@@ -1,0 +1,70 @@
+{
+  "date": "2026-10-29",
+  "scope": [
+    "bounded_tool_discovery_window",
+    "interrupted_run_evidence",
+    "business_outcome_accuracy",
+    "chat_stream_transport"
+  ],
+  "provider_requests": 0,
+  "verification": {
+    "make_ad_agent_check": "passed",
+    "python_tests_passed": 3373,
+    "frontend_tests_passed": 223,
+    "targeted_tests_passed": 64,
+    "tool_contracts_validated": 323,
+    "knowledge_pages_validated": 85,
+    "git_diff_check": "passed",
+    "coverage": {
+      "scope": [
+        "tool_discovery.py",
+        "agent_platform/tools/discovery.py",
+        "results.py"
+      ],
+      "combined_percent": 87,
+      "runtime_discovery_percent": 100,
+      "platform_discovery_percent": 91
+    },
+    "qguard": {
+      "repository_gate": "failed",
+      "scanned_files": 771,
+      "findings": 4998,
+      "score": 0,
+      "findings_before_round": 4998,
+      "runtime_discovery_findings": 0,
+      "platform_discovery_findings": 0
+    }
+  },
+  "performance": {
+    "catalog_tools": 323,
+    "samples": 240,
+    "median_ms": 1.82,
+    "p95_ms": 2.054,
+    "max_loaded": 8,
+    "provider_requests": 0
+  },
+  "service": {
+    "ready_status": 200,
+    "listen_host": "0.0.0.0",
+    "port": 8766,
+    "discovery_contract_version": "1.1.0",
+    "discovery_replay_policy": "unsafe",
+    "stream_transport_update_served": true,
+    "user_template_count": 14,
+    "template_ids_preserved": true,
+    "recent_conversations_checked": 200,
+    "recent_conversations_preserved": true,
+    "original_database": true
+  },
+  "boundaries": {
+    "database_migration": false,
+    "credentials_changed": false,
+    "real_channel_validation": false,
+    "git_commit_created": false,
+    "raw_model_chain_of_thought_changes": false
+  },
+  "limitations": [
+    "全仓质量门禁仍有遗留问题；没有调整阈值。",
+    "本轮采用离线渠道 fixture，不代表新增线上 Provider 验收。"
+  ]
+}

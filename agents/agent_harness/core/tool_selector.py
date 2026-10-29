@@ -17,6 +17,7 @@ from .interfaces import ToolDefinition, ParsedIntent, ToolContext, KnowledgeSour
 from .policy import RuntimePolicy, apply_policies, policy_metadata
 from .namespace import normalize_namespace
 from ..skills.reference_selection import select_reference_excerpts
+from ..skills.metadata import instruction_body, instruction_budget
 from .tool_selection import (
     PromptRenderer,
     ToolSelection,
@@ -176,6 +177,10 @@ class DynamicToolSelector:
             "tool_prompt": self.build_tool_prompt(selection),
             "expert_knowledge": selection.expert_knowledge,
             "namespaces": list(selection.namespaces),
+            "needs_creation_context": any(
+                tool.action == "create" and tool.is_write_tool
+                for tool in selection.selected_tools
+            ),
             "knowledge": knowledge,
         }
 
@@ -202,56 +207,67 @@ class DynamicToolSelector:
         requested_refs = {
             str(item).strip() for item in (skill_refs or set()) if str(item).strip()
         }
-        sections: list[str] = []
-        for skill in sorted(
-            self.skill_loader.list_all().values(),
-            key=lambda item: str(getattr(item, "name", "")),
-        ):
+        candidates = []
+        for skill in self.skill_loader.list_all().values():
             identity = {
                 str(getattr(skill, "name", "") or "").strip(),
                 str(getattr(skill, "version", "") or "").strip(),
             }
-            matched = bool(requested_refs & identity)
-            if not matched:
-                for trigger in getattr(skill, "triggers", []) or []:
-                    keywords = [
-                        str(item).casefold()
-                        for item in getattr(trigger, "keywords", []) or []
-                    ]
-                    patterns = [
-                        str(item) for item in getattr(trigger, "patterns", []) or []
-                    ]
-                    if any(keyword and keyword in text for keyword in keywords):
-                        matched = True
-                    if any(pattern and _safe_search(pattern, text) for pattern in patterns):
-                        matched = True
-                    if matched:
-                        break
-            if not matched:
+            associated = bool(requested_refs & identity)
+            if not associated and not self._skill_trigger_matches(skill, text):
                 continue
-            markdown = str(getattr(skill, "raw_markdown", "") or "").strip()
-            if not markdown:
+            if not str(getattr(skill, "raw_markdown", "") or "").strip():
                 continue
-            references = getattr(skill, "reference_documents", {}) or {}
-            reference_budget = min(1200, max(0, max_chars // 3))
-            markdown_budget = max_chars - reference_budget if references else max_chars
-            excerpt = markdown[:markdown_budget]
-            if isinstance(references, Mapping) and reference_budget:
-                reference_text = select_reference_excerpts(
-                    _skill_reference_query(user_input, skill),
-                    references,
-                    max_documents=2,
-                    max_chars=reference_budget,
-                    scope_query=user_input,
-                )
-                if reference_text:
-                    excerpt += "\n\n" + reference_text
-            sections.append(
-                f"[skill guidance: {getattr(skill, 'name', '')}]\n"
-                "以下内容仅用于理解和澄清，不会新增 Tool、权限或账户范围：\n"
-                + excerpt[:max_chars]
+            candidates.append((not associated, str(getattr(skill, "name", "")), skill))
+        candidates.sort(key=lambda item: item[:2])
+        sections: list[str] = []
+        remaining = max(0, max_chars)
+        minimum_share = min(256, remaining // max(1, 2 * len(candidates)))
+        for index, (_keyword_only, _name, skill) in enumerate(candidates):
+            separator = 2 if sections else 0
+            budget = instruction_budget(
+                remaining - separator, len(candidates) - index, minimum_share,
             )
-        return "\n\n".join(sections)[:max_chars]
+            section = self._render_triggered_skill(skill, user_input, budget)
+            if not section:
+                break
+            sections.append(section)
+            remaining -= len(section) + separator
+        return "\n\n".join(sections)
+
+    @staticmethod
+    def _skill_trigger_matches(skill: Any, text: str) -> bool:
+        return any(
+            any(
+                str(keyword).casefold() in text
+                for keyword in (getattr(trigger, "keywords", ()) or ()) if keyword
+            ) or any(
+                pattern and _safe_search(str(pattern), text)
+                for pattern in (getattr(trigger, "patterns", ()) or ())
+            )
+            for trigger in getattr(skill, "triggers", ()) or ()
+        )
+
+    @staticmethod
+    def _render_triggered_skill(skill: Any, user_input: str, budget: int) -> str:
+        header = (
+            f"[skill guidance: {getattr(skill, 'name', '')}]\n"
+            "以下内容仅用于理解和澄清，不会新增 Tool、权限或账户范围：\n"
+        )
+        references = getattr(skill, "reference_documents", {}) or {}
+        reference_text = select_reference_excerpts(
+            _skill_reference_query(user_input, skill), references,
+            max_documents=2,
+            max_chars=min(1200, max(0, (budget - len(header)) // 2)),
+            scope_query=user_input,
+        ) if isinstance(references, Mapping) else ""
+        reference_block = "\n\n" + reference_text if reference_text else ""
+        markdown_budget = max(0, budget - len(header) - len(reference_block))
+        return (
+            header
+            + instruction_body(str(getattr(skill, "raw_markdown", "") or ""))[:markdown_budget]
+            + reference_block
+        )[:budget]
 
     def _managed_skill_context(
         self,

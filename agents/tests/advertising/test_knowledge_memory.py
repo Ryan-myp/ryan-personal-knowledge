@@ -1814,9 +1814,11 @@ def test_context_budget_is_uniform_and_reported():
     assert len(skill_context["memory"]) <= 5
     assert len(skill_context["knowledge"]) <= 8
     assert skill_context["context_budget"]["truncated"]
-    assert skill_context["context_budget"]["used"]["tool_prompt"] == limits["tool_prompt"]
+    # Tool schemas travel in the tools payload. An unused textual copy must
+    # not consume the budget reserved for memory and conversation evidence.
+    assert "tool_prompt" not in skill_context
+    assert "tool_prompt" not in skill_context["context_budget"]["used"]
     model_context_fields = (
-        "tool_prompt",
         "expert_knowledge",
         "publisher_context",
         "memory_context",

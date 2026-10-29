@@ -15,6 +15,21 @@ from ..core.plugins import normalize_plugin_version
 MAX_SKILL_TEXT_CHARS = 100_000
 
 
+def instruction_body(content: str) -> str:
+    """Keep package metadata out of the model's advisory instruction budget."""
+    return re.sub(
+        r"\A---[ \t]*\r?\n.*?\r?\n---[ \t]*(?:\r?\n|\Z)", "", content,
+        count=1, flags=re.DOTALL,
+    ).strip()
+
+
+def instruction_budget(remaining: int, slots: int, minimum_share: int) -> int:
+    """Prefer the most relevant Skill while reserving space for other matches."""
+    if slots <= 0 or remaining <= 0:
+        return 0
+    return max(remaining // slots, min(remaining // 2, remaining - minimum_share * (slots - 1)))
+
+
 def immutable_metadata(value: Mapping[str, Any]) -> Mapping[str, Any]:
     if not isinstance(value, Mapping):
         raise ValueError("Skill metadata must be a mapping")
@@ -52,6 +67,25 @@ def read_skill_text(path: Path) -> str:
     return content
 
 
+def _selection_keywords(fields: Mapping[str, Any]) -> tuple[str, ...]:
+    """Keep literal package triggers as advisory selection data, never code."""
+    aliases = fields.get("aliases", ())
+    triggers = fields.get("triggers", ())
+    groups = [aliases] if isinstance(aliases, (list, tuple)) else []
+    if isinstance(triggers, (list, tuple)):
+        groups.extend(triggers)
+    keywords = []
+    for group in groups[:128]:
+        if isinstance(group, Mapping):
+            group = group.get("keywords", ())
+        values = [group] if isinstance(group, str) else group
+        if not isinstance(values, (list, tuple)):
+            continue
+        keywords.extend(value.strip()[:200] for value in values[:128]
+                        if isinstance(value, str) and value.strip())
+    return tuple(dict.fromkeys(keywords))[:128]
+
+
 def skill_identity(content: str, directory_name: str) -> dict[str, Any]:
     header = re.match(r"\A---[ \t]*\r?\n(.*?)\r?\n---[ \t]*(?:\r?\n|\Z)", content, re.DOTALL)
     fields: Mapping[str, Any] = {}
@@ -67,8 +101,10 @@ def skill_identity(content: str, directory_name: str) -> dict[str, Any]:
         fields = raw.get("skill", raw)
         if not isinstance(fields, Mapping):
             raise ValueError("Skill identity must be a mapping")
-    metadata = fields.get("metadata") or {}
-    metadata = immutable_metadata(metadata)
+    metadata = immutable_metadata(fields.get("metadata") or {})
+    keywords = _selection_keywords(fields)
+    if keywords:
+        metadata = immutable_metadata({**metadata, "selection_keywords": keywords})
     heading = re.search(r"(?m)^#\s+(.+?)\s*$", content)
     name = fields.get("name", directory_name)
     description = fields.get("description", heading.group(1).strip() if heading else "")

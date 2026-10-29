@@ -18,9 +18,15 @@ class MetaGetReportHandler(ToolHandler):
         self.client = api_client
 
     def execute(self, ctx: ToolContext, input_data: dict) -> ToolResult:
+        try:
+            statuses = MetaAPIClient.normalize_report_statuses(input_data.get("effective_status"))
+            time_range = input_data.get("date_range") or input_data.get("date_preset")
+            if time_range is not None and not isinstance(time_range, dict):
+                time_range = MetaAPIClient.normalize_report_preset(time_range)
+        except ValueError as error:
+            return ToolResult.error(str(error))
         campaign_id = input_data.get("campaign_id")
         campaign_ids = input_data.get("campaign_ids") or ([campaign_id] if campaign_id else [])
-        time_range = input_data.get("date_range") or input_data.get("date_preset")
         if self.client and ctx.account_id:
             try:
                 report_options = {}
@@ -28,6 +34,8 @@ class MetaGetReportHandler(ToolHandler):
                     report_options["limit"] = input_data["limit"]
                 if "time_increment" in input_data:
                     report_options["time_increment"] = input_data["time_increment"]
+                if statuses is not None:
+                    report_options["effective_status"] = statuses
                 report = self.client.get_campaign_report(
                     ctx.account_id,
                     campaign_ids,
@@ -36,14 +44,7 @@ class MetaGetReportHandler(ToolHandler):
                 )
                 return ToolResult.ok({
                     "report": report,
-                    "report_context": build_report_context(
-                        provider="meta",
-                        resource_level="campaign",
-                        input_data=input_data,
-                        rows=report,
-                        default_period="last_7d",
-                        default_limit=1000,
-                    ),
+                    "report_context": self._context(input_data, report, executed=True),
                     "data_status": "live",
                 })
             except Exception as e:
@@ -63,4 +64,20 @@ class MetaGetReportHandler(ToolHandler):
                 },
                 "data_status": "offline_no_client",
                 "simulated": True,
+                **({"report_context": self._context(input_data, [], executed=False)}
+                   if statuses else {}),
             })
+
+    @staticmethod
+    def _context(input_data: dict, rows: list, *, executed: bool) -> dict:
+        context = build_report_context(
+            provider="meta", resource_level="campaign", input_data=input_data,
+            rows=rows, default_period="last_7d", default_limit=1000,
+        )
+        if input_data.get("effective_status") is not None:
+            context["filters"] = {
+                "effective_status": list(input_data["effective_status"]),
+                "status_basis": "current_campaign_effective_status",
+            }
+            context["filters_executed"] = executed
+        return context

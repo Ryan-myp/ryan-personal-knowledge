@@ -590,6 +590,7 @@ class BlueprintRegistry:
         self, provider: Optional[str] = None, ad_format: Optional[str] = None,
         selector_dimension: Optional[str] = None,
         selector_value: Any = None,
+        *, include_history: bool = False,
     ) -> list[AdCreationBlueprint]:
         provider = str(provider).strip().lower() if provider else None
         ad_format = str(ad_format).strip() if ad_format else None
@@ -611,6 +612,15 @@ class BlueprintRegistry:
                     )
                 )
             ]
+        if not include_history:
+            latest = {}
+            for blueprint in values:
+                current = latest.get(blueprint.blueprint_id)
+                if current is None or (
+                    _version_key(blueprint.version) > _version_key(current.version)
+                ):
+                    latest[blueprint.blueprint_id] = blueprint
+            values = list(latest.values())
         return sorted(values, key=lambda item: (item.provider, item.ad_format, item.blueprint_id, item.version))
 
     def resolve(
@@ -637,28 +647,38 @@ class BlueprintRegistry:
                 if blueprint.provider.lower() == provider_key
                 and (version is None or blueprint.version == str(version))
             ]
+        requested_format = requested.get("ad_format", nested_values.get("ad_format"))
+        exact_formats = [
+            item for item in candidates
+            if requested_format is not None
+            and str(requested_format).strip().casefold() == item.ad_format.casefold()
+        ]
+        if exact_formats:
+            candidates = exact_formats
+        elif requested_format is not None:
+            candidates = [
+                item for item in candidates
+                if item.selector and item.selector["dimension"] == "ad_format"
+                and requested_format in item.selector["values"]
+            ]
         matching: list[AdCreationBlueprint] = []
         for blueprint in candidates:
             # ``ad_format`` is a provider-owned variant identifier.  It is
             # intentionally separate from the selector's campaign/channel
             # field, because several ad formats can share one provider value
             # (for example four Demand Gen creative variants).
-            requested_format = requested.get("ad_format")
-            if requested_format is None:
-                requested_format = nested_values.get("ad_format")
-            if requested_format is not None and str(requested_format).strip().casefold() == blueprint.ad_format.casefold():
-                matching.append(blueprint)
-                continue
             selector = blueprint.selector
             if selector is None:
-                if not requested:
+                if exact_formats or not requested:
                     matching.append(blueprint)
                 continue
             dimension = str(selector["dimension"])
             selected = requested.get(dimension)
+            if exact_formats and dimension == "ad_format":
+                selected = None
             if selected is None:
                 selected = _value_at(nested_values, str(selector["field"]))
-            if selected in selector.get("values", []):
+            if selected in selector.get("values", []) or (selected is None and exact_formats):
                 matching.append(blueprint)
         if not matching:
             return None
@@ -708,6 +728,8 @@ def _value_at(values: Mapping[str, Any], path: str) -> Any:
 
 
 def _has_value(value: Any) -> bool:
+    if isinstance(value, str):
+        return bool(value.strip())
     if value is None or value == "" or value == []:
         return False
     if isinstance(value, Mapping):

@@ -1,0 +1,20 @@
+{
+  "mode": "local_in_memory_sidebar_fixture",
+  "sessions": 50,
+  "turns_per_session": 100,
+  "raw_messages": 10000,
+  "samples_per_path": 5,
+  "previous": {
+    "p50_ms": 99.77,
+    "max_ms": 103.608,
+    "sql_statements": 51
+  },
+  "current": {
+    "p50_ms": 2.815,
+    "max_ms": 3.123,
+    "sql_statements": 1
+  },
+  "titles_and_previews_equal": true,
+  "provider_calls": 0,
+  "production_capacity_attested": false
+}

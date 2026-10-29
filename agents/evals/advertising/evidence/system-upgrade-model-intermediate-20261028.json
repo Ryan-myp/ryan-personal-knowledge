@@ -1,0 +1,151 @@
+{
+  "schema_version": "agent-regression-report/v1",
+  "mode": "model_backed_offline_providers",
+  "complete": true,
+  "completed_cases": 3,
+  "provider_e2e": false,
+  "total": 3,
+  "passed": 1,
+  "failed": 2,
+  "ungraded": 0,
+  "error": 0,
+  "cases": [
+    {
+      "id": "upgrade-meta-status-query",
+      "status": "failed",
+      "failures": [
+        "tool_arguments:meta_get_campaign_report:0"
+      ],
+      "checks": 5,
+      "tool_call_count": 1,
+      "tool_names": [
+        "meta_get_campaign_report"
+      ],
+      "phase_ms": {
+        "run_wall": 55640.028,
+        "tool_duration_sum": 4.414,
+        "model": 55306.29,
+        "model_prepare": 311.18,
+        "context_build": 58.644,
+        "run_event_persistence": 5.105
+      },
+      "runtime_state": {
+        "status": "succeeded",
+        "needs_input": false,
+        "needs_confirmation": false
+      },
+      "execution_states": [
+        "completed"
+      ],
+      "tool_execution_evidence": [
+        {
+          "tool": "meta_get_campaign_report",
+          "success": true,
+          "state": "completed",
+          "argument_fingerprints": {
+            "account_id": "3fc9daf32e987550135bae5e3026ec229e35a7e410a128b0b2143131a96468a9",
+            "date_preset": "30a873aa84c5d8541ea2a0e27926ebc730e0c5de4145a3c7b6ddc6a7a521a6c1",
+            "effective_status": "bc84ea8cc715e62a1bb6e09a878993f9163bb54bb3aa86ccd081b665f6a3e540",
+            "limit": "40510175845988f13f6162ed8526f0b09f73384467fa855e1e79b44a56562a58"
+          }
+        }
+      ],
+      "duration_ms": 56271.115
+    },
+    {
+      "id": "upgrade-meta-report-followup",
+      "status": "failed",
+      "failures": [
+        "tool_arguments:meta_get_campaign_report:0"
+      ],
+      "checks": 8,
+      "tool_call_count": 1,
+      "tool_names": [
+        "meta_get_campaign_report"
+      ],
+      "phase_ms": {
+        "run_wall": 139035.477,
+        "tool_duration_sum": 11.405,
+        "model": 138327.08,
+        "model_prepare": 662.52,
+        "context_build": 263.737,
+        "run_event_persistence": 10.842
+      },
+      "runtime_state": {
+        "status": "succeeded",
+        "needs_input": false,
+        "needs_confirmation": false
+      },
+      "execution_states": [
+        "completed"
+      ],
+      "tool_execution_evidence": [
+        {
+          "tool": "meta_get_campaign_report",
+          "success": true,
+          "state": "completed",
+          "argument_fingerprints": {
+            "account_id": "3fc9daf32e987550135bae5e3026ec229e35a7e410a128b0b2143131a96468a9",
+            "date_preset": "6380f5083859a92816509599590c0ff249d81464d52db2c86176b1c073d158a5",
+            "effective_status": "bc84ea8cc715e62a1bb6e09a878993f9163bb54bb3aa86ccd081b665f6a3e540"
+          }
+        }
+      ],
+      "duration_ms": 139607.503
+    },
+    {
+      "id": "upgrade-knowledge-topic-switch",
+      "status": "passed",
+      "failures": [],
+      "checks": 6,
+      "tool_call_count": 1,
+      "tool_names": [
+        "agent_knowledge_search"
+      ],
+      "phase_ms": {
+        "run_wall": 117344.875,
+        "tool_duration_sum": 59.14,
+        "model": 116836.67,
+        "model_prepare": 404.23,
+        "context_build": 138.692,
+        "run_event_persistence": 6.435
+      },
+      "runtime_state": {
+        "status": "succeeded",
+        "needs_input": false,
+        "needs_confirmation": false
+      },
+      "execution_states": [
+        "completed"
+      ],
+      "tool_execution_evidence": [
+        {
+          "tool": "agent_knowledge_search",
+          "success": true,
+          "state": "completed",
+          "argument_fingerprints": {
+            "query": "b141c5e67763fe1194d7014dd277515859f9d067ae5060a2b7c27ff3138c7b28",
+            "limit": "ef2d127de37b942baad06145e54b0c619a1f22327b2ebbcfbec78f5564afe39d"
+          }
+        }
+      ],
+      "duration_ms": 117906.479
+    }
+  ],
+  "gate_passed": false,
+  "latency_samples": 3,
+  "latency_p50_ms": 117906.479,
+  "latency_p95_ms": 139607.503,
+  "release_ready": false,
+  "release_blockers": [
+    "release_gate_not_configured"
+  ],
+  "phase_p95_ms": {
+    "run_wall": 139035.477,
+    "tool_duration_sum": 59.14,
+    "model": 138327.08,
+    "model_prepare": 662.52,
+    "context_build": 263.737,
+    "run_event_persistence": 10.842
+  }
+}

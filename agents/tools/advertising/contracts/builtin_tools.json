@@ -1,5 +1,5 @@
 {
-  "digest": "b3478e61410bc9accf851ce1c400a6c69fa7355e841511e44c4ec98847a1309b",
+  "digest": "88313773c413a99219b5c18c02ccc9a9a1e5250bb5fdaa8f59494b32acadc9d6",
   "format_version": 1,
   "platforms": {
     "advertising": {
@@ -226,15 +226,101 @@
       ]
     },
     "agent-platform": {
-      "digest": "87ee020b7cc041c86fd07c434811337049d1a3fb0bac12e0265aa400a4270315",
-      "tool_count": 5,
+      "digest": "e90bc4a55255e215992f868acbd4c694634b112e42fb195863106554b6f0bff7",
+      "tool_count": 6,
       "tools": [
         {
           "action": "search",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
+          "contract_hash": "7a831f1bb9edefd7818a7fcaed31c364cabafca63a1b9de5d2eba85614e639cd",
+          "contract_version": "1.1.0",
+          "description": "查找并加载当前未附带的已注册 Tool；用于下一步缺少查询、分析或操作工具时。按动作和资源描述搜索，可用 namespace/resource_type 缩小范围；默认只查只读工具，写工具需显式 effect=write。仅检索本地能力目录，不搜索网页、不调用渠道 API、不执行找到的操作。成功后下次请求将附带对应 schema，继续原任务。",
+          "effect_class": "read",
+          "idempotency_key_field": null,
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "effect": {
+                "default": "read",
+                "enum": [
+                  "read",
+                  "write"
+                ],
+                "type": "string"
+              },
+              "limit": {
+                "default": 4,
+                "maximum": 4,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "namespace": {
+                "maxLength": 100,
+                "type": "string"
+              },
+              "query": {
+                "maxLength": 500,
+                "minLength": 1,
+                "type": "string"
+              },
+              "resource_type": {
+                "maxLength": 100,
+                "type": "string"
+              }
+            },
+            "required": [
+              "query"
+            ],
+            "requires": [],
+            "requires_any_of": [],
+            "type": "object"
+          },
+          "integration_api_version": null,
+          "intent_aliases": [],
+          "intent_types": [
+            "discover_tools"
+          ],
+          "live_permission": null,
+          "live_support": true,
+          "max_output_bytes": 16000,
+          "name": "agent_discover_tools",
+          "namespace": "agent-platform",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "readback_tool": null,
+          "related_resource_id_fields": [],
+          "related_resource_type": null,
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "tool_catalog",
+          "result_id_fields": [],
+          "result_items_key": null,
+          "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
+          "skill": "tool-discovery",
+          "skill_refs": [],
+          "timeout_seconds": 5,
+          "traits": [
+            "runtime_tool_discovery",
+            "local",
+            "catalog",
+            "bounded_output"
+          ]
+        },
+        {
+          "action": "search",
+          "activation_rules": [],
+          "cancellation_mode": "cooperative",
           "contract_hash": "ef29d27f6b2413f17f00bf3cd72a60e11204ea6cacd64a708940979f95a5a097",
-          "contract_version": "1.0.0",
+          "contract_version": "1.0.1",
           "description": "Search the registered read-only knowledge source and return bounded excerpts with citations. Call for explicit requests to search or retrieve knowledge, including short follow-ups to a recent knowledge query. Do not claim this Tool is unavailable when it is present in the current Tool definitions. Provider/channel names in the query are filters or search terms, not a request to call provider APIs. The tenant is taken from trusted Runtime context and cannot be supplied as an argument.",
           "effect_class": "read",
           "idempotency_key_field": null,
@@ -275,6 +361,7 @@
           },
           "integration_api_version": null,
           "intent_aliases": [
+            "从知识库",
             "知识库检索",
             "知识库查询",
             "从知识库检索",
@@ -295,6 +382,7 @@
             "查找知识库中的",
             "检索知识",
             "search the knowledge base",
+            "from the knowledge base",
             "search knowledge"
           ],
           "intent_types": [
@@ -3269,7 +3357,7 @@
       ]
     },
     "google-ads": {
-      "digest": "9752abb43dd786cc47d769525d6f09973056c87f2f42778d919f6b76cada2a0b",
+      "digest": "363ce418727d64ee38db4c22eca997d4e4267f9076f48a4a9d587fbfca583ff0",
       "tool_count": 111,
       "tools": [
         {
@@ -5713,8 +5801,8 @@
           "action": "create",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
-          "contract_hash": "30f58a5b3c62aec9def856283fb831ca283946adbea98020ca1320a751b0293a",
-          "contract_version": "1.5.1",
+          "contract_hash": "3dbbf1942b2a509fe72623dcefe13fd5660ded7686b7ecb032acbc0766a45915",
+          "contract_version": "1.6.0",
           "description": "创建 Google Ads Campaign。",
           "effect_class": "write",
           "idempotency_key_field": null,
@@ -5965,6 +6053,7 @@
                 }
               },
               "advertising_channel_type": {
+                "creation_selector": true,
                 "default": "SEARCH",
                 "description": "Channel type",
                 "enum": [
@@ -16415,7 +16504,7 @@
           "cancellation_mode": "cooperative",
           "contract_hash": "ff9db0253836ac34a50fdc459d34f40d71368b242bdc8ec7e0a7c3bbbb8cd538",
           "contract_version": "1.5.0",
-          "description": "查询 Google Ads CampaignBudget 列表。",
+          "description": "查询 Google Ads CampaignBudget 列表，可按 name 精确过滤。",
           "effect_class": "read",
           "idempotency_key_field": null,
           "input_schema": {
@@ -20209,8 +20298,8 @@
       ]
     },
     "meta": {
-      "digest": "427116de7286110e716de2da18a43df0e61fc1ab9e058b9abacefbb9fb64bdc2",
-      "tool_count": 82,
+      "digest": "8136e21c13dc1e0f0ab6a0113de243c3efe98a937356ac98817888760e033f19",
+      "tool_count": 83,
       "tools": [
         {
           "action": "boost",
@@ -22961,10 +23050,263 @@
         },
         {
           "action": "create",
+          "activation_rules": [
+            {
+              "if": {
+                "link": {
+                  "exists": true
+                },
+                "objective": {
+                  "aliases": [
+                    "objective_type"
+                  ],
+                  "in": [
+                    "OUTCOME_AWARENESS"
+                  ]
+                },
+                "optimization_goal": {
+                  "in": [
+                    "REACH",
+                    "IMPRESSIONS"
+                  ]
+                }
+              }
+            }
+          ],
+          "cancellation_mode": "cooperative",
+          "contract_hash": "0e2222a27bec5b5dcacb5e9ca6847b1e5e705fbd310e78022bd41f5cd56b04c6",
+          "contract_version": "1.5.1",
+          "description": "创建 Meta 品牌认知图片或视频链接广告；默认仅生成 dry-run 计划。",
+          "effect_class": "write",
+          "idempotency_key_field": null,
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [
+              {
+                "id": "image_link_requires_image_hash",
+                "if": {
+                  "media_type": "IMAGE"
+                },
+                "message": "IMAGE link creatives require image_hash",
+                "required": [
+                  "image_hash"
+                ]
+              },
+              {
+                "id": "video_link_requires_video_id",
+                "if": {
+                  "media_type": "VIDEO"
+                },
+                "message": "VIDEO link creatives require video_id",
+                "required": [
+                  "video_id"
+                ]
+              }
+            ],
+            "properties": {
+              "adset_id": {
+                "description": "Parent Meta Ad Set ID",
+                "lookup_defaults": {
+                  "limit": 1000
+                },
+                "lookup_dependencies": [
+                  {
+                    "input_field": "campaign_id",
+                    "label": "所属 Campaign",
+                    "required": true,
+                    "value_path": "campaign_id"
+                  }
+                ],
+                "lookup_result_key": "ad_sets",
+                "lookup_tool": "meta_list_ad_sets",
+                "selection_label_fields": [
+                  "name",
+                  "adset_name",
+                  "id"
+                ],
+                "selection_value_fields": [
+                  "id",
+                  "adset_id"
+                ],
+                "type": "string"
+              },
+              "call_to_action_type": {
+                "default": "LEARN_MORE",
+                "description": "Link ad CTA",
+                "enum": [
+                  "LEARN_MORE",
+                  "SHOP_NOW",
+                  "SIGN_UP",
+                  "CONTACT_US"
+                ],
+                "type": "string"
+              },
+              "description": {
+                "description": "Description",
+                "type": "string"
+              },
+              "headline": {
+                "description": "Headline",
+                "type": "string"
+              },
+              "image_hash": {
+                "description": "Uploaded image hash",
+                "lookup_defaults": {
+                  "limit": 1000
+                },
+                "lookup_query_field": "hash",
+                "lookup_result_key": "image_assets",
+                "lookup_tool": "meta_list_image_assets",
+                "minLength": 1,
+                "selection_label_fields": [
+                  "name",
+                  "filename",
+                  "hash",
+                  "id"
+                ],
+                "selection_value_fields": [
+                  "hash",
+                  "id",
+                  "image_hash"
+                ],
+                "type": "string",
+                "ui_visible_when": {
+                  "equals": "IMAGE",
+                  "field": "media_type"
+                }
+              },
+              "link": {
+                "description": "Destination URL",
+                "minLength": 1,
+                "type": "string"
+              },
+              "media_type": {
+                "default": "IMAGE",
+                "description": "Link creative media type",
+                "enum": [
+                  "IMAGE",
+                  "VIDEO"
+                ],
+                "type": "string"
+              },
+              "message": {
+                "description": "Primary text",
+                "type": "string"
+              },
+              "name": {
+                "description": "Ad name",
+                "maxLength": 400,
+                "type": "string"
+              },
+              "page_id": {
+                "description": "Facebook Page ID",
+                "lookup_defaults": {
+                  "limit": 100
+                },
+                "lookup_result_key": "pages",
+                "lookup_tool": "meta_list_pages",
+                "minLength": 1,
+                "selection_label_fields": [
+                  "name",
+                  "page_name",
+                  "id"
+                ],
+                "selection_value_fields": [
+                  "id",
+                  "page_id"
+                ],
+                "type": "string"
+              },
+              "status": {
+                "description": "Initial delivery status",
+                "enum": [
+                  "ACTIVE",
+                  "PAUSED"
+                ],
+                "type": "string"
+              },
+              "video_id": {
+                "description": "Uploaded video ID",
+                "lookup_defaults": {
+                  "limit": 1000
+                },
+                "lookup_result_key": "video_assets",
+                "lookup_tool": "meta_list_video_assets",
+                "minLength": 1,
+                "selection_label_fields": [
+                  "title",
+                  "name",
+                  "video_id",
+                  "id"
+                ],
+                "selection_value_fields": [
+                  "id",
+                  "video_id"
+                ],
+                "type": "string",
+                "ui_visible_when": {
+                  "equals": "VIDEO",
+                  "field": "media_type"
+                }
+              }
+            },
+            "required": [
+              "adset_id",
+              "name",
+              "page_id",
+              "link"
+            ],
+            "requires": [
+              "page_id",
+              "link"
+            ],
+            "requires_any_of": [],
+            "type": "object"
+          },
+          "integration_api_version": "v25.0",
+          "intent_aliases": [],
+          "intent_types": [
+            "create_awareness_ad",
+            "create_campaign"
+          ],
+          "live_permission": null,
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "meta_create_awareness_ad",
+          "namespace": "meta",
+          "parent_resource_id_field": "adset_id",
+          "parent_resource_type": "ad_set",
+          "readback_tool": "meta_get_ad",
+          "related_resource_id_fields": [],
+          "related_resource_type": null,
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "ad_id",
+          "resource_type": "ad",
+          "result_id_fields": [],
+          "result_items_key": null,
+          "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": null,
+          "scope_type": null,
+          "skill": "meta-marketing-api",
+          "skill_refs": [],
+          "timeout_seconds": 500.0,
+          "traits": [
+            "write",
+            "ad",
+            "awareness"
+          ]
+        },
+        {
+          "action": "create",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
-          "contract_hash": "e87e1468dcea95d6a99d54169bb7d1776cfc3128343bb138e624c3599b515574",
-          "contract_version": "1.5.1",
+          "contract_hash": "379f05943b049529999469e2cedc5be6633eada4a318ad450a6221699f78f4d2",
+          "contract_version": "1.1.0",
           "description": "创建 Meta Campaign。",
           "effect_class": "write",
           "idempotency_key_field": null,
@@ -23146,6 +23488,7 @@
                 "type": "string"
               },
               "objective": {
+                "creation_selector": true,
                 "description": "Campaign objective",
                 "enum": [
                   "OUTCOME_SALES",
@@ -23667,7 +24010,7 @@
           "cancellation_mode": "cooperative",
           "contract_hash": "0e2222a27bec5b5dcacb5e9ca6847b1e5e705fbd310e78022bd41f5cd56b04c6",
           "contract_version": "1.5.1",
-          "description": "创建 Meta Conversion 网站链接广告；默认仅生成 dry-run 计划。",
+          "description": "创建 Meta 销售转化图片或视频链接广告；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "idempotency_key_field": null,
           "input_schema": {
@@ -25011,6 +25354,7 @@
                     "objective_type"
                   ],
                   "in": [
+                    "OUTCOME_ENGAGEMENT",
                     "OUTCOME_MESSAGES",
                     "MESSAGES"
                   ]
@@ -25348,7 +25692,7 @@
           "cancellation_mode": "cooperative",
           "contract_hash": "0e2222a27bec5b5dcacb5e9ca6847b1e5e705fbd310e78022bd41f5cd56b04c6",
           "contract_version": "1.5.1",
-          "description": "创建 Meta Traffic 网站链接广告；默认仅生成 dry-run 计划。",
+          "description": "创建 Meta 流量图片或视频链接广告；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "idempotency_key_field": null,
           "input_schema": {
@@ -27037,9 +27381,9 @@
           "action": "report",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
-          "contract_hash": "8b9370e737928ef2c82c4584300bea8cc728ebf02f1102655546c178d6883899",
-          "contract_version": "2.0.0",
-          "description": "查询 Meta Campaign 报表。",
+          "contract_hash": "08c2a33a02131aba77187a535a226d314ec7cc1c0cff481a31b5352c3cdd6cfb",
+          "contract_version": "2.2.0",
+          "description": "查询 Meta Campaign 报表，支持已授权 account_id、Campaign ID 和日期范围。effective_status 用于按 Campaign 当前有效状态筛选；日期范围仅限定指标发生时间，状态筛选不是历史某日的状态快照。多个条件同时生效。",
           "effect_class": "read",
           "idempotency_key_field": null,
           "input_schema": {
@@ -27047,6 +27391,11 @@
             "additional_properties": false,
             "conditional_rules": [],
             "properties": {
+              "account_id": {
+                "description": "Meta Ad Account ID；仍须通过 principal 的账户范围校验",
+                "minLength": 1,
+                "type": "string"
+              },
               "campaign_id": {
                 "lookup_defaults": {
                   "limit": 1000
@@ -27072,6 +27421,31 @@
                 "type": "array"
               },
               "date_preset": {
+                "enum": [
+                  "data_maximum",
+                  "last_14d",
+                  "last_28d",
+                  "last_30d",
+                  "last_3d",
+                  "last_7d",
+                  "last_90d",
+                  "last_month",
+                  "last_quarter",
+                  "last_week_mon_sun",
+                  "last_week_sun_sat",
+                  "last_year",
+                  "maximum",
+                  "this_month",
+                  "this_quarter",
+                  "this_week_mon_today",
+                  "this_week_sun_today",
+                  "this_year",
+                  "today",
+                  "yesterday",
+                  "LAST_7_DAYS",
+                  "LAST_14_DAYS",
+                  "LAST_30_DAYS"
+                ],
                 "intent_field": "date_preset",
                 "intent_map": {
                   "LAST_14_DAYS": "last_14d",
@@ -27096,6 +27470,22 @@
                   "until"
                 ],
                 "type": "object"
+              },
+              "effective_status": {
+                "description": "按 Campaign 当前有效状态筛选，例如 PAUSED；不改变报表时间范围",
+                "items": {
+                  "enum": [
+                    "ACTIVE",
+                    "PAUSED",
+                    "DELETED",
+                    "ARCHIVED"
+                  ],
+                  "type": "string"
+                },
+                "maxItems": 4,
+                "minItems": 1,
+                "type": "array",
+                "uniqueItems": true
               },
               "limit": {
                 "description": "Insights 分页查询的最大总行数",
@@ -27145,14 +27535,19 @@
           ],
           "resource_id_field": null,
           "resource_type": "campaign",
-          "result_id_fields": [],
-          "result_items_key": null,
+          "result_id_fields": [
+            "campaign_id"
+          ],
+          "result_items_key": "report",
           "risk_level": "low",
           "scope_fields": [],
           "scope_required": null,
           "scope_type": null,
           "skill": "meta-marketing-api",
-          "skill_refs": [],
+          "skill_refs": [
+            "meta-marketing-api-expert",
+            "account-diagnostics"
+          ],
           "timeout_seconds": 500.0,
           "traits": [
             "read",
@@ -32168,7 +32563,7 @@
       ]
     },
     "tiktok": {
-      "digest": "3e44d1478f2ba685e6409934aedf34fa8adb1aca88f472b68a9442446f732f4f",
+      "digest": "9cbd5d43ff3ff086133533d446721cd9311565f060fc32d8b3b7c2b0e6b179e7",
       "tool_count": 89,
       "tools": [
         {
@@ -32904,15 +33299,17 @@
                   ],
                   "not_in": [
                     "APP_PROMOTION",
-                    "app",
-                    "TRAFFIC",
-                    "traffic",
-                    "SALES",
-                    "sales",
-                    "PRODUCT_SALES",
-                    "product sales",
                     "WEB_CONVERSIONS",
+                    "TRAFFIC",
+                    "SALES",
+                    "PRODUCT_SALES",
+                    "LEAD_GENERATION",
+                    "app",
+                    "traffic",
+                    "sales",
+                    "product sales",
                     "web conversions",
+                    "leads",
                     "REACH",
                     "VIDEO_VIEWS",
                     "ENGAGEMENT"
@@ -35360,14 +35757,17 @@
                   ],
                   "not_in": [
                     "APP_PROMOTION",
-                    "TRAFFIC",
-                    "traffic",
-                    "SALES",
-                    "sales",
-                    "PRODUCT_SALES",
-                    "product sales",
                     "WEB_CONVERSIONS",
+                    "TRAFFIC",
+                    "SALES",
+                    "PRODUCT_SALES",
+                    "LEAD_GENERATION",
+                    "app",
+                    "traffic",
+                    "sales",
+                    "product sales",
                     "web conversions",
+                    "leads",
                     "REACH",
                     "VIDEO_VIEWS",
                     "ENGAGEMENT"
@@ -35395,7 +35795,7 @@
             }
           ],
           "cancellation_mode": "cooperative",
-          "contract_hash": "669ef382d1e91341c187738daea04e564e6b973bc50aa5b208dbdd0f9a23721f",
+          "contract_hash": "d034a9a4a76cd8b896dad76d374d0d3b58cd0990cf4e38c529869339ae029581",
           "contract_version": "1.5.0",
           "description": "创建 TikTok Ads Campaign。",
           "effect_class": "write",
@@ -35561,6 +35961,7 @@
                 "type": "string"
               },
               "objective_type": {
+                "creation_selector": true,
                 "description": "Campaign optimization objective",
                 "enum": [
                   "APP_PROMOTION",
@@ -35736,6 +36137,7 @@
                     "TRAFFIC",
                     "SALES",
                     "PRODUCT_SALES",
+                    "LEAD_GENERATION",
                     "REACH",
                     "VIDEO_VIEWS",
                     "ENGAGEMENT"
@@ -37575,8 +37977,7 @@
           "integration_api_version": "v1.3",
           "intent_aliases": [],
           "intent_types": [
-            "create_lead_ad",
-            "create_campaign"
+            "create_lead_ad"
           ],
           "live_permission": null,
           "live_support": false,
@@ -39870,6 +40271,7 @@
                     "TRAFFIC",
                     "SALES",
                     "PRODUCT_SALES",
+                    "LEAD_GENERATION",
                     "REACH",
                     "VIDEO_VIEWS",
                     "ENGAGEMENT"
@@ -40549,6 +40951,7 @@
                     "TRAFFIC",
                     "SALES",
                     "PRODUCT_SALES",
+                    "LEAD_GENERATION",
                     "REACH",
                     "VIDEO_VIEWS",
                     "ENGAGEMENT"
@@ -46105,17 +46508,19 @@
                 "TRAFFIC",
                 "SALES",
                 "PRODUCT_SALES",
+                "LEAD_GENERATION",
                 "app",
                 "traffic",
                 "sales",
                 "product sales",
-                "web conversions"
+                "web conversions",
+                "leads"
               ]
             }
           ],
           "cancellation_mode": "cooperative",
-          "contract_hash": "c2e5044ee5016369552e51e62493723811eabaf6788195a9dc74b3f9076a50a4",
-          "contract_version": "1.7.0",
+          "contract_hash": "0aace11d253df1fa9fabf3fc2f924fea3a73f45bda9d334e5ad71ef7283f6012",
+          "contract_version": "1.8.0",
           "description": "使用 TikTok Upgraded Smart+ Ad API 创建广告和素材；支持 Spark 帖子、视频、图片等渠道素材引用，live 仅允许创建暂停状态。",
           "effect_class": "write",
           "idempotency_key_field": null,
@@ -46125,11 +46530,25 @@
             "conditional_rules": [
               {
                 "if": {
-                  "objective_type": "LEAD_GENERATION"
+                  "objective_type": "LEAD_GENERATION",
+                  "promotion_target_type": "INSTANT_PAGE"
                 },
-                "message": "LEAD_GENERATION Smart+ ads require a selected Instant Page",
+                "message": "Lead Instant Form 必须选择 Instant Page",
                 "required": [
                   "page_list"
+                ]
+              },
+              {
+                "if": {
+                  "landing_page_url_list": {
+                    "exists": false
+                  },
+                  "objective_type": "LEAD_GENERATION",
+                  "promotion_target_type": "EXTERNAL_WEBSITE"
+                },
+                "message": "Lead 网站表单必须填写落地页链接",
+                "required": [
+                  "landing_page_url"
                 ]
               },
               {
@@ -46926,6 +47345,15 @@
                 ],
                 "type": "string"
               },
+              "promotion_target_type": {
+                "description": "父 Ad Group 的线索承接位置；仅校验上下文，不发送到 Ad API",
+                "enum": [
+                  "INSTANT_PAGE",
+                  "EXTERNAL_WEBSITE"
+                ],
+                "type": "string",
+                "ui_hidden": true
+              },
               "request_id": {
                 "description": "System-generated decimal int64 idempotency key",
                 "pattern": "^[0-9]{1,19}$",
@@ -47057,17 +47485,19 @@
                 "TRAFFIC",
                 "SALES",
                 "PRODUCT_SALES",
+                "LEAD_GENERATION",
                 "app",
                 "traffic",
                 "sales",
                 "product sales",
-                "web conversions"
+                "web conversions",
+                "leads"
               ]
             }
           ],
           "cancellation_mode": "cooperative",
-          "contract_hash": "1214bec7f0bb4f0998ae6fd0ca63b74eb9f34af2e9f306f3f00925d1b201d820",
-          "contract_version": "1.6.0",
+          "contract_hash": "acd57874ace9bf16b10edd775e38251ed8c8ff80818a094ede41471080e4e54b",
+          "contract_version": "1.7.0",
           "description": "使用 TikTok Upgraded Smart+ Ad Group API 创建广告组；定向、优化目标、出价和排期由渠道级联规则校验，live 仅允许创建暂停状态。",
           "effect_class": "write",
           "idempotency_key_field": null,
@@ -47075,6 +47505,36 @@
             "additionalProperties": false,
             "additional_properties": false,
             "conditional_rules": [
+              {
+                "if": {
+                  "bid_type": "BID_TYPE_CUSTOM",
+                  "optimization_goal": {
+                    "in": [
+                      "CONVERT",
+                      "TRAFFIC_LANDING_PAGE_VIEW"
+                    ]
+                  }
+                },
+                "message": "此优化目标的自定义出价需要 conversion_bid_price",
+                "required": [
+                  "conversion_bid_price"
+                ]
+              },
+              {
+                "if": {
+                  "bid_type": "BID_TYPE_CUSTOM",
+                  "optimization_goal": {
+                    "not_in": [
+                      "CONVERT",
+                      "TRAFFIC_LANDING_PAGE_VIEW"
+                    ]
+                  }
+                },
+                "message": "此优化目标的自定义出价需要 bid_price",
+                "required": [
+                  "bid_price"
+                ]
+              },
               {
                 "allowed": {
                   "optimization_goal": [
@@ -47098,15 +47558,15 @@
               },
               {
                 "allowed": {
+                  "billing_event": [
+                    "OCPM"
+                  ],
                   "optimization_goal": [
                     "LEAD_GENERATION",
-                    "CLICK",
-                    "CONVERSATION"
+                    "CONVERT"
                   ],
                   "promotion_type": [
-                    "LEAD_GENERATION",
-                    "LEAD_GEN_CLICK_TO_TT_DIRECT_MESSAGE",
-                    "LEAD_GEN_CLICK_TO_SOCIAL_MEDIA_APP_MESSAGE"
+                    "LEAD_GENERATION"
                   ]
                 },
                 "if": {
@@ -47115,6 +47575,35 @@
                 "message": "LEAD_GENERATION requires a supported lead promotion type, target and goal",
                 "required": [
                   "promotion_target_type"
+                ]
+              },
+              {
+                "allowed": {
+                  "optimization_goal": [
+                    "LEAD_GENERATION"
+                  ]
+                },
+                "if": {
+                  "objective_type": "LEAD_GENERATION",
+                  "promotion_target_type": "INSTANT_PAGE"
+                },
+                "message": "Lead 承接位置、优化目标和事件必须一致",
+                "required": []
+              },
+              {
+                "allowed": {
+                  "optimization_goal": [
+                    "CONVERT"
+                  ]
+                },
+                "if": {
+                  "objective_type": "LEAD_GENERATION",
+                  "promotion_target_type": "EXTERNAL_WEBSITE"
+                },
+                "message": "Lead 承接位置、优化目标和事件必须一致",
+                "required": [
+                  "pixel_id",
+                  "optimization_event"
                 ]
               },
               {
@@ -47803,18 +48292,20 @@
                 "TRAFFIC",
                 "SALES",
                 "PRODUCT_SALES",
+                "LEAD_GENERATION",
                 "app",
                 "traffic",
                 "sales",
                 "product sales",
-                "web conversions"
+                "web conversions",
+                "leads"
               ]
             }
           ],
           "cancellation_mode": "cooperative",
-          "contract_hash": "2af34a88e64778aae66e832f4388510299a1e885f1828b341630b251b5eafd92",
-          "contract_version": "1.6.0",
-          "description": "使用 TikTok Upgraded Smart+ Campaign API 创建广告系列；支持 App、Web/Traffic、Sales 和 Product Sales，live 仅允许创建暂停状态。",
+          "contract_hash": "ab2b40257cc45c8acb204ff2db1e5ff013bad2129ea3858f6cce732ea5c70e33",
+          "contract_version": "1.7.0",
+          "description": "使用 TikTok Upgraded Smart+ Campaign API 创建广告系列；支持 App、Web/Traffic、Sales、Product Sales 和 Lead Generation，live 仅允许创建暂停状态。",
           "effect_class": "write",
           "idempotency_key_field": null,
           "input_schema": {
@@ -47967,6 +48458,7 @@
                 "type": "boolean"
               },
               "objective_type": {
+                "creation_selector": true,
                 "description": "Business objective or Smart+ API objective",
                 "enum": [
                   "APP_PROMOTION",
@@ -48129,7 +48621,7 @@
           "action": "update",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
-          "contract_hash": "0073a9035a89804f507ceb6d82cd9dea9f733bea432ab7c34eabae55dce18919",
+          "contract_hash": "48788a10b06ac0581b224da74bea71dc03c099745657af08118d6385b7afe464",
           "contract_version": "2",
           "description": "更新 TikTok Upgraded Smart+ ad；仅允许在测试账号和确认后执行。内容字段更新仅提交用户要求改动的字段。即使用户要求保持暂停，也不要把 DISABLE/status 塞入内容更新；只有用户明确要求改变投放状态时才单独提交 status/operation_status，且不得与内容字段同次更新。",
           "effect_class": "write",
@@ -48234,7 +48726,8 @@
                   "WEB_CONVERSIONS",
                   "TRAFFIC",
                   "SALES",
-                  "PRODUCT_SALES"
+                  "PRODUCT_SALES",
+                  "LEAD_GENERATION"
                 ],
                 "type": "string",
                 "ui_hidden": true
@@ -48760,7 +49253,7 @@
           "action": "update",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
-          "contract_hash": "914c1c8ed6aae3dc04cab5d0fdf7fcfac736b19684fb0cafce8f2a3d84f31503",
+          "contract_hash": "7de108145d288c0ef8eecb29a9a806941620c19e79627c28bfcc65b7c9c785df",
           "contract_version": "2",
           "description": "更新 TikTok Upgraded Smart+ ad_group；仅允许在测试账号和确认后执行。内容字段更新仅提交用户要求改动的字段。即使用户要求保持暂停，也不要把 DISABLE/status 塞入内容更新；只有用户明确要求改变投放状态时才单独提交 status/operation_status，且不得与内容字段同次更新。",
           "effect_class": "write",
@@ -48876,7 +49369,8 @@
                   "WEB_CONVERSIONS",
                   "TRAFFIC",
                   "SALES",
-                  "PRODUCT_SALES"
+                  "PRODUCT_SALES",
+                  "LEAD_GENERATION"
                 ],
                 "type": "string",
                 "ui_hidden": true
@@ -49096,7 +49590,7 @@
           "action": "update",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
-          "contract_hash": "de480bad841c32b2d19496a7ed816846475e019e5d69cfad72d9212ffb36fe42",
+          "contract_hash": "3b4ced014ef309f84b6b81aa707663c26edd6cbb38cc9fdca23c5d6dfc398a09",
           "contract_version": "2",
           "description": "更新 TikTok Upgraded Smart+ campaign；仅允许在测试账号和确认后执行。内容字段更新仅提交用户要求改动的字段。即使用户要求保持暂停，也不要把 DISABLE/status 塞入内容更新；只有用户明确要求改变投放状态时才单独提交 status/operation_status，且不得与内容字段同次更新。",
           "effect_class": "write",
@@ -49159,7 +49653,8 @@
                   "WEB_CONVERSIONS",
                   "TRAFFIC",
                   "SALES",
-                  "PRODUCT_SALES"
+                  "PRODUCT_SALES",
+                  "LEAD_GENERATION"
                 ],
                 "type": "string",
                 "ui_hidden": true
@@ -49267,6 +49762,7 @@
                     "TRAFFIC",
                     "SALES",
                     "PRODUCT_SALES",
+                    "LEAD_GENERATION",
                     "REACH",
                     "VIDEO_VIEWS",
                     "ENGAGEMENT"
@@ -49297,7 +49793,8 @@
                     "WEB_CONVERSIONS",
                     "TRAFFIC",
                     "SALES",
-                    "PRODUCT_SALES"
+                    "PRODUCT_SALES",
+                    "LEAD_GENERATION"
                   ]
                 }
               }
@@ -55198,5 +55695,5 @@
       "tool_source_api_version": "v1.3"
     }
   },
-  "tool_count": 321
+  "tool_count": 323
 }

@@ -8,6 +8,7 @@ hooks; the loop never knows a provider, channel or business workflow.
 from __future__ import annotations
 
 import re
+import sys
 import threading
 import time
 from contextvars import ContextVar
@@ -17,6 +18,7 @@ import uuid
 from typing import Any, Callable, Mapping, Optional, Protocol, Sequence
 
 from .context import ContextProvider, context_prompt
+from .evidence_compaction import compact_read_messages
 from .conversation_recall import (
     has_recall_terms, is_contextual_followup, relevant_user_requests,
 )
@@ -51,6 +53,9 @@ from .core.timeouts import DEFAULT_EXECUTION_TIMEOUT_SECONDS
 from .runtime_kernel import CancellationEventGroup, TurnRequest
 from .skills import SkillCatalog
 from .tool_catalog import ToolCatalog
+from .tool_discovery import (
+    DISCOVERY_GUIDANCE, RunToolDiscovery, active_tool_discovery, is_discovery_tool,
+)
 from .tool_execution import (
     ToolCallContext,
     ToolExecutionCoordinator,
@@ -743,7 +748,10 @@ class Agent:
             try:
                 callback(request, state)
             except Exception:
-                return
+                self._emit(
+                    "context_cleanup_error", request,
+                    error_type=type(sys.exception()).__name__,
+                )
 
     def _model_inputs(
         self,
@@ -751,12 +759,24 @@ class Agent:
         state: AgentState,
     ) -> tuple[list[Any], list[Any], TurnRequest]:
         transcript = state.snapshot()
+        if len(transcript) > self.max_transcript_messages:
+            raise ModelInputLimitError()
+        definitions = self.tool_catalog.list_tools() if self.tool_catalog else []
+        if self._state_io.over_budget(transcript):
+            transcript = compact_read_messages(
+                transcript, definitions, max_chars=self.max_transcript_chars,
+                message_size=lambda message: len(str(message.content)),
+            )
+            if self._state_io.over_budget(transcript):
+                raise ModelInputLimitError()
         tools, require_tool_call = self._tools_for_turn(
             request, transcript, state=state,
         )
         context_messages, model_request = self._context_messages_for_turn(
-            request, transcript,
+            request, transcript, tools=tools,
         )
+        if any(is_discovery_tool(tool) for tool in tools):
+            context_messages.append(AgentMessage.system(DISCOVERY_GUIDANCE))
         if (
             require_tool_call
             and model_request.initial_tool_choice in (None, "auto")
@@ -784,7 +804,9 @@ class Agent:
             raise ModelInputLimitError()
         bounded = bound_model_messages(
             messages, tools, max_chars=self.max_model_input_chars,
+            evidence_definitions=definitions,
         )
+        self._emit_evidence_compaction(request, state.snapshot(), bounded)
         bounded = self._add_recalled_context(
             request, state, transcript, bounded, tools,
         )
@@ -802,6 +824,23 @@ class Agent:
             )
         model_request = self._apply_model_limits(model_request)
         return bounded, tools, model_request
+
+    def _emit_evidence_compaction(
+        self, request: TurnRequest, original: Sequence[AgentMessage],
+        bounded: Sequence[AgentMessage],
+    ) -> None:
+        originals = {message.message_id: message for message in original}
+        changed = [
+            message for message in bounded
+            if message.role == "tool" and message.message_id in originals
+            and message.content != originals[message.message_id].content
+        ]
+        if changed:
+            self._emit(
+                "tool_evidence_compacted", request, compacted_messages=len(changed),
+                original_chars=sum(len(str(originals[m.message_id].content)) for m in changed),
+                projected_chars=sum(len(str(m.content)) for m in changed),
+            )
 
     def _add_recalled_context(
         self,
@@ -1021,7 +1060,7 @@ class Agent:
             return list(tools)
         return [
             tool for tool in tools
-            if str(getattr(tool, "name", "") or "") == target_name
+            if Agent._tool_name(tool) == target_name
         ]
 
     def _tools_for_turn(
@@ -1032,6 +1071,9 @@ class Agent:
         state: AgentState | None = None,
     ) -> tuple[list[Any], bool]:
         tools = self.tool_catalog.list_tools() if self.tool_catalog else []
+        catalog_tools = tuple(tools)
+        # Discovery is a control capability, not a competing business intent.
+        tools = [tool for tool in tools if not is_discovery_tool(tool)]
         require_tool_call = False
         if callable(self.tool_selector):
             selection_request, catalog_target_name = self._tool_selection_request(
@@ -1061,6 +1103,9 @@ class Agent:
         if request.tool_allowlist is not None:
             allowed = set(request.tool_allowlist)
             tools = [tool for tool in tools if self._tool_name(tool) in allowed]
+        discovery = active_tool_discovery.get()
+        if discovery is not None:
+            tools = discovery.select(tools, catalog_tools)
         tools = list(tools[: self.max_tools])
         require_tool_call = require_tool_call and bool(tools)
         if isinstance(request.context, dict):
@@ -1074,6 +1119,8 @@ class Agent:
         self,
         request: TurnRequest,
         transcript: Sequence[AgentMessage],
+        *,
+        tools: Sequence[Any] = (),
     ) -> tuple[list[AgentMessage], TurnRequest]:
         context_messages: list[AgentMessage] = []
         model_request = request
@@ -1109,10 +1156,13 @@ class Agent:
                 configured_sources = request.context.get("skill_source_ids")
                 if isinstance(configured_sources, (list, tuple, set, frozenset)):
                     source_ids = tuple(str(item) for item in configured_sources)
-            skill_context = self.skill_catalog.build_context(
-                request.user_input,
-                source_ids=source_ids,
-            )
+            build_tool_context = getattr(self.skill_catalog, "build_tool_context", None)
+            if callable(build_tool_context):
+                skill_context = build_tool_context(request.user_input, tools, source_ids=source_ids)
+            else:
+                skill_context = self.skill_catalog.build_context(
+                    request.user_input, source_ids=source_ids,
+                )
             skill_context = redact_for_persistence(skill_context)
             if skill_context:
                 context_messages.append(
@@ -1177,36 +1227,41 @@ class Agent:
         if reason == "cancelled":
             raise AgentCancelledError("Agent Run was cancelled")
 
-    @staticmethod
     def _interrupted_result(
+        self,
         request: TurnRequest,
         state: AgentState,
         *,
         reason: str,
+        tool_results: Sequence[Mapping[str, Any]],
+        tool_call_count: int,
     ) -> RunResult:
-        if reason == "session_lease_lost":
-            return RunResult(
-                run_id=str(request.run_id or ""),
-                turn_id=str(request.turn_id or ""),
-                status=RunStatus.RECOVERY_REQUIRED,
-                recovery_required=True,
-                runtime_signals={"session_lease_lost": True},
-                data={
-                    "messages": [item.to_dict() for item in state.messages],
-                    "error": "session_lease_lost",
-                    "usage": dict(state.usage),
-                },
-            )
+        signals = {
+            key: value for item in tool_results
+            if isinstance(item.get("runtime_signals"), Mapping)
+            for key, value in item["runtime_signals"].items()
+        }
+        recovery = reason == "session_lease_lost" or any(
+            item.get("recovery_required")
+            or item.get("effect_state") in {"unknown", "recovery_required"}
+            for item in tool_results
+        ) or bool(signals.get("audit_error"))
         return RunResult(
             run_id=str(request.run_id or ""),
             turn_id=str(request.turn_id or ""),
-            status=RunStatus.CANCELLED,
-            runtime_signals={"cancelled": True},
+            status=RunStatus.RECOVERY_REQUIRED if recovery else RunStatus.CANCELLED,
+            recovery_required=recovery,
+            effect_state="unknown" if recovery else "none",
+            runtime_signals={**signals, reason: True},
             data={
                 "messages": [item.to_dict() for item in state.messages],
-                "error": "cancelled",
+                "error": reason,
+                "tool_results": list(tool_results),
+                "tool_call_count": tool_call_count,
+                "tool_call_limit": self.max_tool_calls_per_run,
                 "usage": dict(state.usage),
             },
+            interactions=self._run_interactions(tool_results),
         )
 
     def run(self, request: TurnRequest) -> RunResult:
@@ -1252,11 +1307,14 @@ class Agent:
             state.last_used_at = time.monotonic()
         checkpoint_source_id: str | None = None
         all_tool_results: list[dict[str, Any]] = []
+        tool_call_count = 0
         run_read_cache = ToolReadCache()
         run_write_cache = ToolWriteReplayCache()
         run_resource_history: list[Mapping[str, Any]] = []
         schema_repair_attempts: set[str] = set()
         model_snapshot_token = self._run_model_snapshot.set(self.model)
+        discovery = RunToolDiscovery(request, self.tool_catalog, self.max_tools)
+        discovery_token = active_tool_discovery.set(discovery)
         try:
             self._state_io.hydrate(request, state)
             checkpoint_source_id = self._state_io.restore_checkpoint(request, state)
@@ -1328,7 +1386,6 @@ class Agent:
             self._state_io.append_message(state, user_message, request=request)
             self._emit("message_end", request, message=user_message.to_dict())
             tool_results: list[dict[str, Any]] = []
-            tool_call_count = 0
             last_reply = ""
             application_data: Mapping[str, Any] = {}
             for turn_index in range(self.max_turns):
@@ -1338,6 +1395,8 @@ class Agent:
                         request,
                         state,
                         reason=interrupt_reason,
+                        tool_results=all_tool_results,
+                        tool_call_count=tool_call_count,
                     )
                     self._emit("agent_end", request, status=result.status.value)
                     return result
@@ -1713,6 +1772,8 @@ class Agent:
                 request,
                 state,
                 reason="session_lease_lost",
+                tool_results=all_tool_results,
+                tool_call_count=tool_call_count,
             )
             self._emit("agent_end", request, status=result.status.value)
             return result
@@ -1721,6 +1782,8 @@ class Agent:
                 request,
                 state,
                 reason="cancelled",
+                tool_results=all_tool_results,
+                tool_call_count=tool_call_count,
             )
             self._emit("agent_end", request, status=result.status.value)
             return result
@@ -1764,6 +1827,8 @@ class Agent:
             self._notify_model_run_cleanup(request, state)
             self._notify_context_cleanup(request, state)
             self._run_model_snapshot.reset(model_snapshot_token)
+            discovery.close()
+            active_tool_discovery.reset(discovery_token)
 
     def execute(self, request: TurnRequest) -> RunResult:
         """Execute one Run through the shared TurnPipeline contract."""

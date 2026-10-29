@@ -11,6 +11,8 @@ from __future__ import annotations
 from typing import Any, Optional, Protocol
 
 from .models import ConversationMessagePage
+from .schedule_pages import SchedulePageQuery
+from .feedback_review_pages import FeedbackReviewQuery
 
 
 class KnowledgeStorePort(Protocol):
@@ -125,6 +127,10 @@ class PersistenceBackend(KnowledgeStorePort, Protocol):
     def list_conversation_messages(
         self, session_id: str, limit: int = 200,
     ) -> list[Any]: ...
+    def list_conversation_preview_messages(
+        self, session_ids: list[str], *, user_id: str, tenant_id: str,
+        limit_per_session: int = 50,
+    ) -> dict[str, ConversationMessagePage]: ...
     def list_recent_user_messages(
         self, session_id: str, limit: int = 128,
     ) -> list[dict[str, str]]: ...
@@ -143,6 +149,7 @@ class PersistenceBackend(KnowledgeStorePort, Protocol):
     def get_conversation_feedback_trend(
         self, *, days: int, user_id: str, tenant_id: str,
     ) -> dict[str, Any]: ...
+    def page_conversation_feedback_review_queue(self, filters: FeedbackReviewQuery) -> dict[str, Any]: ...
     def list_conversation_feedback_review_queue(
         self, *, tenant_id: str, status: str = "pending", limit: int = 50,
     ) -> list[dict[str, Any]]: ...
@@ -423,6 +430,11 @@ class PersistenceBackend(KnowledgeStorePort, Protocol):
         self, tenant_id: Optional[str] = None, user_id: Optional[str] = None,
         statuses: Optional[list[str]] = None, limit: int = 100,
     ) -> list[Any]: ...
+    def page_scheduled_tasks(self, filters: SchedulePageQuery) -> dict[str, Any]: ...
+    def page_scheduled_task_runs(self, filters: SchedulePageQuery) -> dict[str, Any]: ...
+    def get_scheduled_task_run(
+        self, schedule_id: str, run_id: str, *, tenant_id: str, user_id: str,
+    ) -> Optional[Any]: ...
     def update_scheduled_task(
         self, schedule_id: str, *, status: Optional[str] = None,
         next_run_at: Optional[str] = None, last_run_at: Optional[str] = None,

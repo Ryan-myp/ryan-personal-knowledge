@@ -7460,12 +7460,14 @@ def test_google_campaign_client_normalizes_channel_alias_and_video_bidding():
     assert campaign["advertisingChannelType"] == "PERFORMANCE_MAX"
 
     operations.clear()
-    client.create_campaign(
+    planned = client.create_campaign(
         "Video", "VIDEO", "TARGET_CPM", 10, target_cpm_micros=2500000,
         network_setting={"target_content_network": True},
-        live=True,
+        live=False,
     )
-    campaign = operations[0][1]["campaignOperation"]["create"]
+    assert operations == []
+    assert planned["live_support"] is False
+    campaign = planned["operation"]["campaigns"]["create"]
     assert campaign["targetCpm"] == {"targetCpmMicros": 2500000}
     assert campaign["networkSettings"] == {"targetContentNetwork": True}
 
@@ -8806,6 +8808,45 @@ def test_google_campaign_budget_tools_cover_gaql_and_mutations():
     assert operations[-1][1] == {
         "remove": "customers/123/campaignBudgets/8"
     }
+
+
+def test_google_campaign_budget_list_supports_an_exact_escaped_name_filter():
+    client = GoogleAdsAPIClient({"access_token": "test", "customer_id": "123"})
+    captured = {}
+
+    def search_all(query, page_size=100):
+        captured.update(query=query, page_size=page_size)
+        return []
+
+    client._search_all = search_all
+    assert client.list_campaign_budgets(
+        page_size=17, name="Budget for O'Reilly"
+    ) == []
+    assert captured == {
+        "query": (
+            "SELECT campaign_budget.id, campaign_budget.resource_name, "
+            "campaign_budget.name, campaign_budget.amount_micros, "
+            "campaign_budget.delivery_method, campaign_budget.explicitly_shared, "
+            "campaign_budget.status, campaign_budget.reference_count "
+            "FROM campaign_budget WHERE campaign_budget.name = 'Budget for O\\'Reilly'"
+        ),
+        "page_size": 17,
+    }
+
+
+def test_google_campaign_budget_list_tool_forwards_name_filter():
+    client = GoogleAdsAPIClient({"access_token": "test", "customer_id": "123"})
+    _definition, handler = next(
+        (definition, handler)
+        for definition, handler in create_google_tool_source(client).register_tools()
+        if definition.name == "google_list_campaign_budgets"
+    )
+    args, kwargs = handler.argument_builder(
+        ToolContext(session_id="budget-filter", user_id="operator-test"),
+        {"customer_id": "123", "name": "Budget for test", "limit": 25},
+    )
+    assert args == ()
+    assert kwargs == {"page_size": 25, "name": "Budget for test"}
 
 
 def test_google_extended_provider_tools_resolve_customer_scoped_client():

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import queue
 import time
 from typing import Any, Mapping, Optional
@@ -41,6 +42,7 @@ _STREAM_RUN_STATUSES = frozenset({
     "unknown",
 })
 _STREAM_TERMINAL_STATUSES = _STREAM_RUN_STATUSES - {"succeeded"}
+_logger = logging.getLogger(__name__)
 
 
 def _confirmation_payload_for_response(context: ApiContext, value: Any) -> Any:
@@ -149,9 +151,33 @@ def _load_chat_input_media(
     *,
     session_id: Optional[str],
     principal: Any,
+    runtime: Any = None,
 ) -> tuple[Any, ...]:
-    if not media_ids:
+    resolved_ids = list(media_ids or ())
+    inherited = not resolved_ids
+    if not resolved_ids:
+        resolved_ids = list(_pending_chat_attachment_ids(
+            runtime, session_id=session_id, principal=principal,
+        ))
+    if not resolved_ids:
         return ()
+    return _load_chat_media_by_ids(
+        context,
+        resolved_ids,
+        session_id=session_id,
+        principal=principal,
+        inherited=inherited,
+    )
+
+
+def _load_chat_media_by_ids(
+    context: ApiContext,
+    media_ids: list[str],
+    *,
+    session_id: Optional[str],
+    principal: Any,
+    inherited: bool,
+) -> tuple[Any, ...]:
     if not str(session_id or "").strip():
         raise HTTPException(
             status_code=422,
@@ -159,7 +185,29 @@ def _load_chat_input_media(
         )
     store = context.chat_media_store()
     if store is None:
+        if inherited:
+            _logger.warning(
+                "Pending chat attachment restore skipped (store unavailable)"
+            )
+            return ()
         raise HTTPException(status_code=503, detail="聊天附件存储未初始化")
+    return _load_chat_media_from_store(
+        store,
+        media_ids,
+        session_id=session_id,
+        principal=principal,
+        inherited=inherited,
+    )
+
+
+def _load_chat_media_from_store(
+    store: Any,
+    media_ids: list[str],
+    *,
+    session_id: str,
+    principal: Any,
+    inherited: bool,
+) -> tuple[Any, ...]:
     try:
         return store.load_for_model(
             media_ids,
@@ -168,14 +216,94 @@ def _load_chat_input_media(
             user_id=principal.user_id,
         )
     except FileNotFoundError as error:
+        if inherited:
+            _logger.warning(
+                "Pending chat attachment restore skipped (not found)"
+            )
+            return ()
         raise HTTPException(
             status_code=404,
             detail="附件不存在或无权访问",
         ) from error
     except ValueError as error:
+        if inherited:
+            _logger.warning(
+                "Pending chat attachment restore skipped (%s)",
+                type(error).__name__,
+            )
+            return ()
         raise HTTPException(status_code=422, detail=str(error)) from error
     except RuntimeError as error:
+        if inherited:
+            _logger.warning(
+                "Pending chat attachment restore skipped (%s)",
+                type(error).__name__,
+            )
+            return ()
         raise HTTPException(status_code=503, detail=str(error)) from error
+
+
+def _pending_chat_attachment_ids(
+    runtime: Any,
+    *,
+    session_id: Optional[str],
+    principal: Any,
+) -> tuple[str, ...]:
+    """Resolve only the latest user attachments for an input-waiting Run."""
+    if not str(session_id or "").strip() or runtime is None:
+        return ()
+    latest_loader = getattr(runtime, "get_latest_run_status", None)
+    if not callable(latest_loader):
+        latest_loader = getattr(runtime, "get_latest_run", None)
+    history_loader = getattr(runtime, "get_conversation", None)
+    if not callable(latest_loader) or not callable(history_loader):
+        return ()
+    try:
+        latest = latest_loader(
+            session_id=session_id,
+            user_id=principal.user_id,
+            tenant_id=principal.tenant_id,
+        )
+        if not isinstance(latest, Mapping) or str(
+            latest.get("status") or ""
+        ).strip().lower() != "awaiting_input":
+            return ()
+        conversation = history_loader(
+            session_id=session_id,
+            user_id=principal.user_id,
+            tenant_id=principal.tenant_id,
+            limit=10,
+        )
+    except (RuntimeError, ValueError, TypeError, PermissionError) as error:
+        # Continuity lookup is best-effort; never block a text reply because an
+        # older attachment could not be restored. Log only the exception type.
+        _logger.warning(
+            "Pending chat attachment restore skipped (%s)", type(error).__name__,
+        )
+        return ()
+    return _latest_user_attachment_ids(conversation)
+
+
+def _latest_user_attachment_ids(conversation: Any) -> tuple[str, ...]:
+    messages = (
+        conversation.get("messages")
+        if isinstance(conversation, Mapping) else None
+    )
+    if not isinstance(messages, list):
+        return ()
+    latest_user = next((
+        item for item in reversed(messages)
+        if isinstance(item, Mapping) and item.get("role") == "user"
+    ), None)
+    attachments = latest_user.get("attachments") if latest_user else None
+    if not isinstance(attachments, list):
+        return ()
+    ids = tuple(dict.fromkeys(
+        str(item.get("id") or "").strip()
+        for item in attachments[:5]
+        if isinstance(item, Mapping) and str(item.get("id") or "").strip()
+    ))
+    return ids[:5]
 
 
 def create_chat_router(context: ApiContext) -> APIRouter:
@@ -343,6 +471,7 @@ def create_chat_router(context: ApiContext) -> APIRouter:
                 request.media_ids,
                 session_id=request.session_id,
                 principal=principal,
+                runtime=runtime,
             )
             await run_in_threadpool(
                 context.activate_tenant_skills, principal
@@ -436,6 +565,7 @@ def create_chat_router(context: ApiContext) -> APIRouter:
                 request.media_ids,
                 session_id=request.session_id,
                 principal=principal,
+                runtime=runtime,
             )
             await run_in_threadpool(
                 context.activate_tenant_skills, principal

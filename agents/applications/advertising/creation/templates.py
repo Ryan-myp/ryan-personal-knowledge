@@ -69,8 +69,17 @@ def load_builtin_template_definitions(path: Optional[Path] = None) -> list[dict[
         if key in keys:
             raise CreationTemplateError(f"内置模板 key 重复：{key}")
         keys.add(key)
-        for field in ("name", "provider", "blueprint_id", "blueprint_version", "account_id"):
+        for field in ("name", "provider", "blueprint_id", "blueprint_version"):
             _text(definition.get(field), f"内置模板 {key} 的 {field}", 240, required=True)
+        scope_type = definition.get("scope_type", "account")
+        if scope_type not in {"account", "general"}:
+            raise CreationTemplateError(f"内置模板 {key} 的 scope_type 不支持")
+        if scope_type == "general":
+            if (definition.get("account_id")
+                    or definition.get("verification_status") != "dry_run_only"):
+                raise CreationTemplateError("通用起步模板不能绑定账户或声明真实创建验证")
+        else:
+            _text(definition.get("account_id"), f"内置模板 {key} 的 account_id", 240, required=True)
         values = definition.get("values")
         if not isinstance(values, Mapping):
             raise CreationTemplateError(f"内置模板 {key} 的 values 必须是对象")
@@ -280,6 +289,14 @@ class CreationTemplateManager:
     ) -> bool:
         provider = str(definition.get("provider") or "")
         template_account = str(definition.get("account_id") or "")
+        if definition.get("scope_type") == "general":
+            scope = self.account_scope if account_scope is _UNSET else account_scope
+            return (
+                (scope is None or bool(scope.get(provider)))
+                and self.blueprint_getter(
+                    definition["blueprint_id"], definition["blueprint_version"]
+                ) is not None
+            )
         if account_id and template_account != str(account_id):
             return False
         return self._account_is_visible(
@@ -298,7 +315,7 @@ class CreationTemplateManager:
             "blueprint_id": definition.get("blueprint_id"),
             "blueprint_version": definition.get("blueprint_version"),
             "ad_format": definition.get("ad_format", ""),
-            "scope_type": "account",
+            "scope_type": definition.get("scope_type", "account"),
             "account_id": definition.get("account_id"),
             "region": definition.get("region", ""),
             "tags": definition.get("tags", []),
@@ -337,9 +354,15 @@ class CreationTemplateManager:
         *,
         account_scope: Any = _UNSET,
         account_id: Optional[str] = None,
+        provider: Optional[str] = None,
+        blueprint_id: Optional[str] = None,
     ) -> list[dict[str, Any]]:
         records = []
         for definition in self.builtin_templates:
+            if provider and definition.get("provider") != provider:
+                continue
+            if blueprint_id and definition.get("blueprint_id") != blueprint_id:
+                continue
             if self._builtin_is_visible(definition, account_scope, account_id):
                 records.append(self._builtin_record(definition))
         return records
@@ -483,6 +506,8 @@ class CreationTemplateManager:
         records = self._builtin_records(
             account_scope=account_scope,
             account_id=account_id,
+            provider=filters.get("provider"),
+            blueprint_id=filters.get("blueprint_id"),
         )
         filtered_records = []
         query = str(filters.get("query") or "").strip().casefold()
@@ -514,8 +539,16 @@ class CreationTemplateManager:
         *,
         account_id: Optional[str] = None,
         account_scope: Any = _UNSET,
+        source: Optional[str] = None,
         **filters: Any,
     ) -> list[dict[str, Any]]:
+        if source not in {None, "user", "builtin"}:
+            raise CreationTemplateError("source 必须是 user 或 builtin")
+        if source == "builtin":
+            limit = max(1, min(int(filters.get("limit", 100)), 200))
+            return self._filtered_builtin_records(
+                account_scope=account_scope, account_id=account_id, filters=filters,
+            )[:limit]
         records = self.store.list_creation_templates(
             str(tenant_id), str(user_id), **filters,
         )
@@ -524,6 +557,8 @@ class CreationTemplateManager:
             account_id=account_id,
             account_scope=account_scope,
         )
+        if source == "user":
+            return visible_records
         builtin_records = self._filtered_builtin_records(
             account_scope=account_scope, account_id=account_id,
             filters=filters,
@@ -654,6 +689,7 @@ def creation_template_manager_for_runtime(
     if not callable(getter):
         raise CreationTemplateError("创建蓝图注册表未初始化")
 
+    @lru_cache(maxsize=128)
     def get_blueprint(
         blueprint_id: str, version: Optional[str] = None,
     ) -> Optional[dict[str, Any]]:

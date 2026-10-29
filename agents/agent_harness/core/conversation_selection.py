@@ -10,6 +10,17 @@ from typing import Any
 from agents.agent_harness.redaction import redact_for_persistence
 
 
+def _definition_field(value: Any, key: str, default: Any = None) -> Any:
+    return value.get(key, default) if isinstance(value, Mapping) else getattr(value, key, default)
+
+
+def _declares_read(tool: Any) -> bool:
+    effect = _definition_field(tool, "effect_class", _definition_field(tool, "effect"))
+    if effect is not None:
+        return getattr(effect, "value", effect) == "read"
+    return _definition_field(tool, "is_read_tool", False) is True
+
+
 def _tool_message_content(message: Any) -> Mapping[str, Any] | None:
     content = getattr(message, "content", None)
     if isinstance(content, str) and len(content) <= 32_000:
@@ -252,8 +263,8 @@ def catalog_selection_input(
     if len(normalized_choice) < 4:
         return "", ""
     definitions = {
-        str(getattr(tool, "name", "") or ""): tool
-        for tool in tools if getattr(tool, "name", None)
+        str(_definition_field(tool, "name", "") or ""): tool
+        for tool in tools if _definition_field(tool, "name")
     }
     prior_lists = _recent_list_results(turn_id, transcript, definitions)
     matches = _matching_rows(normalized_choice, prior_lists)
@@ -263,18 +274,18 @@ def catalog_selection_input(
     target = _matching_detail_tool(list_definition, row, tools)
     if target is None:
         return "", ""
-    aliases = getattr(target, "intent_aliases", ()) or ()
+    aliases = _definition_field(target, "intent_aliases", ()) or ()
     prefix = next(
         (str(alias).strip() for alias in aliases if str(alias).strip()),
-        f"get {getattr(target, 'resource_type', '')}",
+        f"get {_definition_field(target, 'resource_type', '')}",
     )
     identifiers = {
         field: row[field]
-        for field in getattr(list_definition, "result_id_fields", ()) or ()
+        for field in _definition_field(list_definition, "result_id_fields", ()) or ()
         if row.get(field) not in (None, "")
     }
     identity = json.dumps(identifiers, ensure_ascii=False)
-    return f"{prefix} {label} {identity} {choice}", str(getattr(target, "name", "") or "")
+    return f"{prefix} {label} {identity} {choice}", str(_definition_field(target, "name", "") or "")
 
 
 def _normalize(value: str) -> str:
@@ -299,7 +310,8 @@ def _recent_list_results(
         definition = definitions.get(str(getattr(message, "name", "") or ""))
         if (
             definition is None
-            or str(getattr(definition, "action", "")).lower() != "list"
+            or str(_definition_field(definition, "action", "")).lower() != "list"
+            or not _declares_read(definition)
         ):
             continue
         content = _tool_message_content(message)
@@ -318,12 +330,21 @@ def _matching_rows(
     matches = []
     for definition, content in list_results:
         data = content.get("data")
-        items_key = str(getattr(definition, "result_items_key", "") or "")
+        items_key = str(_definition_field(definition, "result_items_key", "") or "")
         rows = data.get(items_key) if isinstance(data, Mapping) else None
         if not isinstance(rows, list):
             continue
         for row in rows[:100]:
             if not isinstance(row, Mapping):
+                continue
+            identifiers = _definition_field(definition, "result_id_fields", ()) or ()
+            selected_id = next((
+                str(row[key]) for key in identifiers
+                if row.get(key) not in (None, "")
+                and _normalize(str(row[key])) == normalized_choice
+            ), "")
+            if selected_id:
+                matches.append((definition, row, str(row.get("name") or selected_id)))
                 continue
             for key in ("name", "title", "label", "display_name"):
                 label = str(row.get(key) or "").strip()
@@ -336,7 +357,8 @@ def _matching_rows(
                     break
     identities = {
         (
-            str(getattr(definition, "namespace", "")),
+            str(_definition_field(definition, "namespace", "")),
+            str(_definition_field(definition, "resource_type", "")),
             _result_identity(definition, row, label),
         ): (definition, row, label)
         for definition, row, label in matches
@@ -345,7 +367,7 @@ def _matching_rows(
 
 
 def _result_identity(definition: Any, row: Mapping[str, Any], label: str) -> Any:
-    fields = getattr(definition, "result_id_fields", ()) or ()
+    fields = _definition_field(definition, "result_id_fields", ()) or ()
     identity = tuple(
         (field, str(row.get(field) or ""))
         for field in fields if row.get(field) not in (None, "")
@@ -358,20 +380,20 @@ def _matching_detail_tool(
     row: Mapping[str, Any],
     tools: Sequence[Any],
 ) -> Any | None:
-    namespace = str(getattr(list_definition, "namespace", "") or "").casefold()
-    resource = str(getattr(list_definition, "resource_type", "") or "").casefold()
-    result_ids = set(getattr(list_definition, "result_id_fields", ()) or ())
+    namespace = str(_definition_field(list_definition, "namespace", "") or "").casefold()
+    resource = str(_definition_field(list_definition, "resource_type", "") or "").casefold()
+    result_ids = set(_definition_field(list_definition, "result_id_fields", ()) or ())
     targets = []
     for tool in tools:
-        schema = getattr(tool, "input_schema", None)
-        required = set(getattr(schema, "required", ()) or ())
+        schema = _definition_field(tool, "input_schema")
+        required = set(_definition_field(schema, "required", ()) or ())
         if (
-            str(getattr(tool, "namespace", "") or "").casefold() == namespace
-            and str(getattr(tool, "resource_type", "") or "").casefold() == resource
-            and str(getattr(tool, "action", "") or "").lower()
+            str(_definition_field(tool, "namespace", "") or "").casefold() == namespace
+            and str(_definition_field(tool, "resource_type", "") or "").casefold() == resource
+            and str(_definition_field(tool, "action", "") or "").lower()
             in {"get", "detail", "retrieve"}
             and required & result_ids & set(row)
-            and bool(getattr(tool, "is_read_tool", False))
+            and _declares_read(tool)
         ):
             targets.append(tool)
     return targets[0] if len(targets) == 1 else None

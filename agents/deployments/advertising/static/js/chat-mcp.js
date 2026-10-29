@@ -54,7 +54,8 @@
             if (!overlay) return;
             overlay.classList.add('active');
             overlay.setAttribute('aria-hidden', 'false');
-            loadMCPServers();
+            showResourceList('mcp');
+            if (!mcpState.loaded) loadMCPServers();
         }
 
         function closeMCPManager() {
@@ -65,19 +66,25 @@
         }
 
         function newMCPServer() {
+            resourceCatalogs.mcp.sequence++;
+            setResourceView('mcp', 'edit');
+            resourceCatalogs.mcp.hasDraft = true;
+            trackResourceDraft('mcp', '#mcpServerForm');
+            setMCPFormReadOnly(false);
             mcpState.selectedId = '';
             mcpState.selected = null;
             setMCPConfigSections(false);
             setMCPManagedSummary(false);
             hideMCPToolTestPanel();
             document.getElementById('mcpDetailTitle').textContent = '新建 MCP Server';
+            document.getElementById('mcpEditConfigButton').hidden = true;
             document.getElementById('mcpServerStatus').textContent = '草稿';
             for (const [id, value] of [['mcpNameInput', ''], ['mcpEndpointInput', ''], ['mcpCredentialRefInput', ''], ['mcpAuthHeaderInput', ''], ['mcpDescriptionInput', '']]) {
                 const field = document.getElementById(id);
                 if (field) field.value = value;
             }
             document.getElementById('mcpAuthTypeInput').value = 'none';
-            document.getElementById('mcpTimeoutInput').value = '20';
+            document.getElementById('mcpTimeoutInput').value = '500';
             document.getElementById('mcpToolList').innerHTML = '<div class="mcp-empty">保存并完成连通性校验后显示远端 Tool。</div>';
             const search = document.getElementById('mcpToolSearch');
             if (search) search.value = '';
@@ -110,49 +117,50 @@
         }
 
         async function loadMCPServers(selectId = null) {
+            const sequence = resourceCatalogs.mcp.sequence;
+            const request = beginCatalogLoad('mcp', {retry: () => loadMCPServers()});
             clearMCPNotice();
             try {
                 const data = await apiFetch('/mcp/servers?limit=200');
+                if (!isCurrentCatalogLoad(request)) return;
+                mcpState.loaded = true;
                 mcpState.servers = Array.isArray(data.servers) ? data.servers : [];
                 renderMCPServerList();
                 const ids = new Set(mcpState.servers.map(item => String(item.server_id)));
                 const currentId = selectId || mcpState.selectedId;
-                const id = ids.has(String(currentId))
-                    ? currentId
-                    : (mcpState.servers[0]?.server_id || '');
-                if (id) selectMCPServer(id);
-                else newMCPServer();
+                if (sequence === resourceCatalogs.mcp.sequence && ids.has(String(currentId))
+                    && (selectId || resourceCatalogs.mcp.view === 'detail')) {
+                    selectMCPServer(currentId);
+                }
             } catch (error) {
-                mcpState.servers = [];
+                if (!isCurrentCatalogLoad(request)) return;
+                request.error = error.message || 'MCP Server 读取失败';
                 renderMCPServerList();
-                showMCPNotice(error.message || 'MCP Server 读取失败', true);
+            } finally {
+                finishCatalogLoad(request, request.error);
             }
         }
 
         function renderMCPServerList() {
-            const list = document.getElementById('mcpServerList');
-            if (!list) return;
-            list.replaceChildren();
-            for (const server of mcpState.servers) {
-                const button = document.createElement('button');
-                button.type = 'button';
-                button.className = `mcp-server-item${server.source === 'runtime_registry' ? ' mcp-server-item-runtime' : ''}${mcpState.selectedId === server.server_id ? ' active' : ''}`;
-                const sourceLabel = server.source === 'runtime_registry' ? 'Runtime MCP' : '外部 MCP';
-                button.innerHTML = `<span class="mcp-server-item-mark">${server.enabled ? '●' : '○'}</span><span class="mcp-server-item-copy"><strong>${escapeHtml(server.name || server.server_id)}</strong><small>${escapeHtml(sourceLabel)} · ${escapeHtml(mcpStatusLabel(server.status))} · ${(server.tools || []).length} Tools</small></span><span class="mcp-server-item-arrow">›</span>`;
-                button.addEventListener('click', () => selectMCPServer(server.server_id));
-                list.appendChild(button);
-            }
-            if (!mcpState.servers.length) {
-                const empty = document.createElement('div');
-                empty.className = 'mcp-empty';
-                empty.textContent = '还没有 MCP Server。点击“接入 MCP Server”开始。';
-                list.appendChild(empty);
-            }
+            renderMCPCatalogTable();
         }
 
-        function selectMCPServer(serverId) {
+        function setMCPFormReadOnly(readOnly) {
+            document.querySelectorAll('#mcpServerForm input, #mcpServerForm textarea').forEach(field => { field.readOnly = readOnly; });
+            document.querySelectorAll('#mcpServerForm select').forEach(field => { field.disabled = readOnly; });
+        }
+
+        function selectMCPServer(serverId, edit = false) {
             const server = mcpState.servers.find(item => String(item.server_id) === String(serverId));
             if (!server) return;
+            resourceCatalogs.mcp.sequence++;
+            const editing = edit && server.source !== 'runtime_registry';
+            setResourceView('mcp', editing ? 'edit' : 'detail');
+            setMCPFormReadOnly(!editing);
+            if (editing) {
+                resourceCatalogs.mcp.hasDraft = true;
+                trackResourceDraft('mcp', '#mcpServerForm');
+            }
             const serverChanged = String(mcpState.selectedId) !== String(server.server_id);
             mcpState.selectedId = server.server_id;
             mcpState.selected = server;
@@ -162,6 +170,7 @@
                 if (search) search.value = '';
             }
             const managed = server.source === 'runtime_registry';
+            document.getElementById('mcpEditConfigButton').hidden = managed || editing;
             setMCPConfigSections(managed);
             setMCPManagedSummary(managed, server);
             hideMCPToolTestPanel();
@@ -470,6 +479,7 @@
                 const result = await apiFetch(isNew ? '/mcp/servers' : `/mcp/servers/${encodeURIComponent(mcpState.selectedId)}`, {
                     method: isNew ? 'POST' : 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
                 });
+                resourceCatalogs.mcp.hasDraft = false;
                 showMCPNotice(isNew ? 'MCP Server 已保存为草稿，请运行完整校验。' : 'MCP Server 配置已保存；连接配置变化后需要重新校验。');
                 await loadMCPServers(result.server_id);
             } catch (error) { showMCPNotice(error.message || 'MCP Server 保存失败', true); }
@@ -511,6 +521,7 @@
             const panel = document.getElementById('mcpExternalTestPanel');
             if (panel) panel.hidden = true;
             mcpState.selectedTool = null;
+            document.getElementById('mcpExternalTestButton').disabled = false;
             mcpState.advancedInputEdited = false;
             clearMCPTestNotice();
             const trigger = mcpState.testTrigger;
@@ -534,6 +545,7 @@
                 return;
             }
             mcpState.selectedTool = { serverId: server.server_id, toolId: tool.tool_id, tool, managed };
+            document.getElementById('mcpExternalTestButton').disabled = false;
             const panel = document.getElementById('mcpExternalTestPanel');
             if (!panel) return;
             panel.hidden = false;
@@ -633,6 +645,7 @@
         async function testMCPTool() {
             const selected = mcpState.selectedTool;
             if (!selected) return;
+            if (document.getElementById('mcpExternalTestButton')?.disabled) return;
             let input;
             clearMCPTestNotice();
             const advancedInput = document.getElementById('mcpExternalInput');
@@ -657,6 +670,7 @@
                     method: 'POST', headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ input, account_id: document.getElementById('mcpExternalAccountInput').value.trim() || null }),
                 });
+                if (mcpState.selectedTool !== selected) return;
                 document.getElementById('mcpExternalResult').textContent = JSON.stringify(result, null, 2);
                 status.textContent = result.success ? '运行成功' : '运行完成但 Tool 返回失败';
                 showMCPTestNotice(result.success
@@ -665,18 +679,31 @@
                         : '宿主信任的 MCP Tool 只读运行已完成。')
                     : (result.error || 'Tool 返回失败。'), !result.success);
             } catch (error) {
+                if (mcpState.selectedTool !== selected) return;
                 document.getElementById('mcpExternalResult').textContent = error.message || 'Tool 测试失败';
                 status.textContent = '运行失败';
                 showMCPTestNotice(error.message || 'MCP Tool 测试失败', true);
-            } finally { button.disabled = false; }
+            } finally {
+                if (mcpState.selectedTool === selected) button.disabled = false;
+            }
         }
 
-        async function deleteMCPServer() {
-            if (!mcpState.selectedId || !window.confirm('移除后会停用 Server 和全部 Tool，但保留控制面审计记录。继续吗？')) return;
+        async function deleteMCPServer(serverId = mcpState.selectedId) {
+            const server = mcpState.servers.find(item => item.server_id === serverId);
+            if (!server || server.source === 'runtime_registry') return;
+            if (!window.confirm('移除后会停用 Server 和全部 Tool，但保留控制面审计记录。继续吗？')) return;
             try {
-                await apiFetch(`/mcp/servers/${encodeURIComponent(mcpState.selectedId)}`, { method: 'DELETE' });
+                await apiFetch(`/mcp/servers/${encodeURIComponent(serverId)}`, { method: 'DELETE' });
                 showMCPNotice('MCP Server 已移除。');
-                mcpState.selectedId = '';
+                if (mcpState.selectedId === serverId) {
+                    mcpState.selectedId = '';
+                    resourceCatalogs.mcp.hasDraft = false;
+                }
+                if (resourceCatalogs.mcp.draft?.serverId === serverId) {
+                    resourceCatalogs.mcp.draft = null;
+                    resourceCatalogs.mcp.hasDraft = false;
+                }
+                setResourceView('mcp', 'list');
                 await loadMCPServers();
             } catch (error) { showMCPNotice(error.message || 'MCP Server 移除失败', true); }
         }

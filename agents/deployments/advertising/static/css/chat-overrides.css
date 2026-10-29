@@ -684,7 +684,7 @@
         }
         .sidebar > .new-chat-btn + .new-chat-btn { margin-top: 8px; }
         .sidebar > .new-chat-btn:last-of-type { margin-bottom: 12px; }
-        .skill-nav-btn, .mcp-nav-btn, .knowledge-nav-btn, .blueprint-nav-btn { justify-content: flex-start; }
+        .new-chat-btn.workspace-nav { justify-content: flex-start; }
         .nav-icon { width: 20px; min-width: 20px; display: inline-grid; place-items: center; text-align: center; }
         .new-chat-btn svg { width: 16px; height: 16px; }
         .skill-nav-btn, .mcp-nav-btn, .knowledge-nav-btn { justify-content: flex-start; margin-top: 0; }
@@ -854,12 +854,12 @@
             box-shadow: 0 7px 18px rgba(88,230,208,.12);
         }
         .sidebar > .new-chat-btn:first-child:hover { background: var(--accent-hover); }
-        .skill-nav-btn, .mcp-nav-btn, .knowledge-nav-btn, .blueprint-nav-btn {
+        .new-chat-btn.workspace-nav {
             background: transparent !important;
             border-color: transparent !important;
             color: var(--text-secondary) !important;
         }
-        .skill-nav-btn:hover, .mcp-nav-btn:hover, .knowledge-nav-btn:hover, .blueprint-nav-btn:hover {
+        .new-chat-btn.workspace-nav:hover {
             background: var(--bg-hover) !important;
             border-color: var(--border-light) !important;
             color: var(--text-primary) !important;
@@ -1078,8 +1078,8 @@
         body.light-theme .sidebar { background: #fbfdfd; border-right-color: #d8e5e6; }
         body.light-theme .sidebar > .new-chat-btn:first-child { color: #fff; background: #0b9f91; }
         body.light-theme .sidebar > .new-chat-btn:first-child:hover { background: #087d73; }
-        body.light-theme .skill-nav-btn, body.light-theme .mcp-nav-btn, body.light-theme .knowledge-nav-btn, body.light-theme .blueprint-nav-btn { color: #536e77 !important; }
-        body.light-theme .skill-nav-btn:hover, body.light-theme .mcp-nav-btn:hover, body.light-theme .knowledge-nav-btn:hover, body.light-theme .blueprint-nav-btn:hover { color: #16333b !important; background: #e8f3f3 !important; }
+        body.light-theme .new-chat-btn.workspace-nav { color: #536e77 !important; }
+        body.light-theme .new-chat-btn.workspace-nav:hover { color: #16333b !important; background: #e8f3f3 !important; }
         body.light-theme .chat-history-item:hover { background: #edf6f6; }
         body.light-theme .chat-history-item.active { color: #16333b; background: #dff1ef; border-color: #a8d6d2; box-shadow: inset 3px 0 #0b9f91; }
         body.light-theme .topbar { background: rgba(246,250,250,.88); border-bottom-color: #d8e5e6; }
@@ -1626,7 +1626,7 @@
 
         .sidebar { padding-bottom: 3px; }
         .sidebar > .new-chat-btn:first-child { border-radius: 10px; font-weight: 700; letter-spacing: -.01em; }
-        .skill-nav-btn, .mcp-nav-btn, .knowledge-nav-btn, .blueprint-nav-btn { min-height: 38px; border-radius: 9px; }
+        .new-chat-btn.workspace-nav { min-height: 38px; border-radius: 9px; }
         .sidebar-section-label { padding-top: 18px; letter-spacing: .02em; }
         .chat-history-item { min-height: 52px; border-radius: 9px; }
         .chat-history-item.active { box-shadow: inset 3px 0 var(--accent), 0 4px 14px rgba(0,0,0,.08); }

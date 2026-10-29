@@ -1,7 +1,7 @@
 ---
 name: tiktok-ads-expert
 description: "TikTok Ads 专家 Skill：负责广告层级、Smart/电商/应用/Lead/Spark 创意、定向与素材资产、Pixel/CAPI、报表和投放诊断"
-version: 2.0.2
+version: 2.1.0
 author: Ryan
 created: 2026-09-08
 tags: [tiktok, ads, smart-plus, spark-ads, ecommerce, app, lead-generation, pixel, reporting]
@@ -13,6 +13,15 @@ aliases: [tiktok ads, tiktok, douyin, 抖音]
 > 本 Skill 只提供 TikTok 广告业务知识、对象依赖、参数判断和 SOP。它不是 Tool 注册表，
 > 不持有认证材料，不执行 API。实际能力必须由当前 Registry 中 TikTok Tool Source
 > 发布的 Tool 按 schema、账户范围、权限、dry-run/live gate、幂等和审计执行。
+
+## Lead 与网站转化的当前创建边界
+
+Lead 已纳入支持范围。先区分原生表单与网站表单，再使用对应蓝图和已注册的 Upgraded Smart+ Tools。
+原生表单需要 Instant Page；网站表单需要 Pixel、已配置的转化事件和落地页，不要求 Instant Page。
+父 Campaign 的目标与 Ad Group 的承接位置必须传给 Ad 的校验上下文，不能凭素材类型改走旧创建链路。
+消息、电话和多承接位置等变体仍需专用参数合同；当前不能把“支持 Lead 目标”解释为所有变体都已可创建。
+本轮新增合同只有离线校验记录，不能当成测试账户真实创建成功；外部表单/素材必须使用账户实际资源。
+
 
 ## 账户、对象和身份边界
 
@@ -125,7 +134,7 @@ advertiser scope
 `agents/knowledge/advertising/wiki/concepts/provider-live-e2e-memory.md`，再读取
 `agents/tools/advertising/contracts/provider_live_e2e_memory.json` 中 Traffic、
 Product Sales 或 App Promotion 对应记录。复用已验证的视频、身份、CTA、Catalog、App 和模板参数；
-TikTok Lead Generation 按当前范围暂不测试。
+TikTok Lead Generation 已纳入本次支持范围；当前只有离线合同验证，不继承其他目标的实测状态。
 
 Campaign 或 Ad Group 已成功创建后，子级失败只能从该父级恢复；先读取并复用现有资源 ID，不重跑
 完整 Campaign 链。Smart+ Ad 的投放状态看 Ad 自身 `operation_status`，不能把关联 Creative 的

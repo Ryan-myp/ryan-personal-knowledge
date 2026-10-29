@@ -1,0 +1,653 @@
+{
+  "schema_version": "prompt-optimization-comparison/v1",
+  "measurement": "offline composition with synthetic principal, in-memory persistence, capture model, network forbidden; no answer-quality or latency claims",
+  "baseline_method": "Pre-change Skill selection captured before modification; pre-change SDK schema projection and unconditional blueprint loading restored within the benchmark process. The working tree was not reverted.",
+  "provider_calls": 0,
+  "external_model_calls": 0,
+  "before": {
+    "schema_version": "prompt-payload/v1",
+    "units": "serialized_characters_not_tokens",
+    "provider_calls": 0,
+    "external_model_calls": 0,
+    "cases": [
+      {
+        "case_id": "greeting",
+        "message_content_chars": {
+          "system": 11011,
+          "provider": 13110,
+          "user": 2
+        },
+        "tool_names": [
+          "agent_knowledge_search"
+        ],
+        "skills": [],
+        "tool_schema_chars": 1024,
+        "payload_chars": 25565
+      },
+      {
+        "case_id": "capabilities",
+        "message_content_chars": {
+          "system": 11011,
+          "provider": 15976,
+          "skills": 12000,
+          "user": 8
+        },
+        "tool_names": [
+          "agent_knowledge_search"
+        ],
+        "skills": [
+          "ad-copywriting (v1.0.1)",
+          "account-diagnostics (v1.5.0)",
+          "ad-growth-operations (v1.1.0)",
+          "competitor-research (v1.0.0)",
+          "creative-production (v1.1.0)",
+          "knowledge-explainer (v1.0.6)",
+          "measurement-instrumentation (v1.2.0)",
+          "app-growth (v1.1.1)"
+        ],
+        "tool_schema_chars": 1024,
+        "payload_chars": 40970
+      },
+      {
+        "case_id": "knowledge",
+        "message_content_chars": {
+          "system": 11011,
+          "provider": 15881,
+          "skills": 12000,
+          "user": 31
+        },
+        "tool_names": [
+          "agent_request_input",
+          "agent_knowledge_search",
+          "dv360_list_creation_templates",
+          "google_ads_list_creation_templates",
+          "meta_list_accounts",
+          "meta_list_creation_templates",
+          "tiktok_create_campaign",
+          "tiktok_list_accounts",
+          "tiktok_list_creation_templates",
+          "google_get_campaign_report",
+          "google_list_customer_clients",
+          "google_get_ad_asset_report",
+          "tiktok_get_report",
+          "meta_get_campaign_report",
+          "dv360_list_campaigns",
+          "dv360_get_campaign",
+          "google_list_campaigns",
+          "google_get_campaign",
+          "google_create_campaign",
+          "google_list_ad_groups",
+          "google_upload_image_asset",
+          "meta_list_campaigns",
+          "meta_get_campaign",
+          "meta_create_campaign",
+          "meta_list_ad_sets",
+          "meta_list_ads",
+          "meta_list_apps",
+          "meta_list_pages",
+          "meta_list_pixels",
+          "meta_list_image_assets",
+          "meta_list_video_assets",
+          "meta_list_custom_conversions"
+        ],
+        "skills": [
+          "knowledge-explainer (v1.0.6)",
+          "account-diagnostics (v1.5.0)",
+          "ad-growth-operations (v1.1.0)",
+          "measurement-instrumentation (v1.2.0)",
+          "meta-marketing-api-expert (v2.2.0)",
+          "google-ads-api-expert (v2.0.3)",
+          "creative-production (v1.1.0)",
+          "data-visualization (v1.2.1)"
+        ],
+        "tool_schema_chars": 39491,
+        "payload_chars": 79357
+      },
+      {
+        "case_id": "report",
+        "message_content_chars": {
+          "system": 11011,
+          "provider": 16015,
+          "skills": 12000,
+          "user": 25
+        },
+        "tool_names": [
+          "meta_get_campaign_report"
+        ],
+        "skills": [
+          "dv360-expert (v3.0.0)",
+          "account-diagnostics (v1.5.0)",
+          "google-ads-api-expert (v2.0.3)",
+          "meta-marketing-api-expert (v2.2.0)",
+          "tiktok-ads-expert (v2.0.2)",
+          "ad-copywriting (v1.0.1)",
+          "knowledge-explainer (v1.0.6)",
+          "ad-growth-operations (v1.1.0)"
+        ],
+        "tool_schema_chars": 1778,
+        "payload_chars": 41815
+      },
+      {
+        "case_id": "templates",
+        "message_content_chars": {
+          "system": 11011,
+          "provider": 16588,
+          "skills": 12000,
+          "user": 15
+        },
+        "tool_names": [
+          "agent_request_input",
+          "google_create_campaign",
+          "google_list_customer_clients",
+          "google_create_keywords",
+          "google_list_campaigns",
+          "google_ads_list_creation_templates",
+          "google_ads_get_creation_template",
+          "google_upload_image_asset",
+          "google_generate_keyword_ideas",
+          "google_get_campaign_report",
+          "google_update_campaign",
+          "google_update_ad_group",
+          "google_create_app_ad",
+          "google_get_campaign",
+          "google_delete_campaign",
+          "google_get_ad_asset_report",
+          "google_create_ad_group",
+          "google_create_experiment",
+          "google_create_asset",
+          "google_create_campaign_budget",
+          "google_create_conversion_action",
+          "google_create_campaign_criteria",
+          "google_create_bidding_strategy",
+          "google_create_user_list",
+          "google_create_product_group",
+          "google_create_asset_group_listing_group_filter",
+          "google_create_responsive_display_ad",
+          "google_create_specialized_ad_group",
+          "google_create_ad",
+          "google_create_asset_group",
+          "google_create_app_ad_group",
+          "google_create_search_ad"
+        ],
+        "skills": [
+          "creative-production (v1.1.0)",
+          "ad-copywriting (v1.0.1)",
+          "google-ads-api-expert (v2.0.3)",
+          "account-diagnostics (v1.5.0)",
+          "dv360-expert (v3.0.0)",
+          "experimentation-design (v1.0.1)",
+          "knowledge-explainer (v1.0.6)",
+          "measurement-attribution (v1.1.0)"
+        ],
+        "tool_schema_chars": 77567,
+        "payload_chars": 118170
+      },
+      {
+        "case_id": "creation",
+        "message_content_chars": {
+          "system": 11011,
+          "provider": 16436,
+          "skills": 12000,
+          "user": 35
+        },
+        "tool_names": [
+          "agent_request_input",
+          "meta_create_campaign",
+          "meta_get_campaign_report",
+          "meta_get_campaign",
+          "meta_update_campaign",
+          "meta_list_campaigns",
+          "meta_delete_campaign",
+          "meta_pause_campaign",
+          "meta_resume_campaign",
+          "meta_list_creation_templates",
+          "meta_create_app_promotion_ad",
+          "meta_create_adset",
+          "meta_get_creation_template",
+          "meta_create_ad",
+          "meta_create_lead_ad",
+          "meta_create_catalog_ad",
+          "meta_create_messaging_ad",
+          "meta_create_traffic_ad",
+          "meta_create_conversion_ad",
+          "meta_create_engagement_ad",
+          "meta_list_ads",
+          "meta_create_creative",
+          "meta_create_custom_conversion",
+          "meta_create_lead_form",
+          "meta_create_catalog",
+          "meta_create_product_set",
+          "meta_create_audience",
+          "meta_create_lookalike_audience",
+          "meta_lookup_creative",
+          "meta_get_adset",
+          "meta_lookup_adset",
+          "meta_boost_post"
+        ],
+        "skills": [
+          "meta-marketing-api-expert (v2.2.0)",
+          "account-diagnostics (v1.5.0)",
+          "dv360-expert (v3.0.0)",
+          "tiktok-ads-expert (v2.0.2)",
+          "ad-copywriting (v1.0.1)",
+          "creative-production (v1.1.0)",
+          "google-ads-api-expert (v2.0.3)",
+          "measurement-instrumentation (v1.2.0)"
+        ],
+        "tool_schema_chars": 67264,
+        "payload_chars": 107748
+      },
+      {
+        "case_id": "followup",
+        "message_content_chars": {
+          "system": 11011,
+          "provider": 16598,
+          "skills": 12000,
+          "user": 47,
+          "assistant": 9
+        },
+        "tool_names": [
+          "agent_request_input",
+          "tiktok_create_all_in_one_spark_ad",
+          "tiktok_smart_plus_create_campaign",
+          "tiktok_smart_plus_create_adgroup",
+          "tiktok_smart_plus_create_ad",
+          "tiktok_smart_plus_update_campaign",
+          "tiktok_smart_plus_update_adgroup",
+          "tiktok_smart_plus_update_ad",
+          "agent_readonly_recipe",
+          "google_get_ad",
+          "tiktok_pause_campaign",
+          "meta_create_campaign",
+          "meta_create_adset",
+          "meta_create_ad",
+          "meta_get_campaign_report",
+          "meta_create_app_promotion_ad",
+          "google_get_ad_group",
+          "google_update_ad",
+          "google_create_app_ad",
+          "google_update_campaign_criterion",
+          "google_list_customer_clients",
+          "google_update_keyword",
+          "google_create_product_group",
+          "google_update_product_group",
+          "meta_update_campaign",
+          "meta_update_adset",
+          "meta_update_ad",
+          "tiktok_get_brand_safety_partner_status"
+        ],
+        "skills": [
+          "account-diagnostics (v1.5.0)",
+          "ad-growth-operations (v1.1.0)",
+          "creative-production (v1.1.0)",
+          "tiktok-ads-expert (v2.0.2)",
+          "competitor-research (v1.0.0)",
+          "creative-strategy (v1.0.1)",
+          "data-visualization (v1.2.1)",
+          "dv360-expert (v3.0.0)"
+        ],
+        "tool_schema_chars": 99555,
+        "payload_chars": 140268
+      }
+    ]
+  },
+  "after": {
+    "schema_version": "prompt-payload/v1",
+    "units": "serialized_characters_not_tokens",
+    "provider_calls": 0,
+    "external_model_calls": 0,
+    "cases": [
+      {
+        "case_id": "greeting",
+        "message_content_chars": {
+          "system": 11011,
+          "provider": 9573,
+          "skills": 1326,
+          "user": 2
+        },
+        "tool_names": [
+          "agent_knowledge_search"
+        ],
+        "skills": [
+          "knowledge-explainer (v1.0.6)"
+        ],
+        "tool_schema_chars": 1024,
+        "payload_chars": 23412
+      },
+      {
+        "case_id": "capabilities",
+        "message_content_chars": {
+          "system": 11011,
+          "provider": 12438,
+          "skills": 7093,
+          "user": 8
+        },
+        "tool_names": [
+          "agent_knowledge_search"
+        ],
+        "skills": [
+          "knowledge-explainer (v1.0.6)",
+          "ad-copywriting (v1.0.1)",
+          "account-diagnostics (v1.5.0)",
+          "creative-production (v1.1.0)"
+        ],
+        "tool_schema_chars": 1024,
+        "payload_chars": 32389
+      },
+      {
+        "case_id": "knowledge",
+        "message_content_chars": {
+          "system": 11011,
+          "provider": 12343,
+          "skills": 11616,
+          "user": 31
+        },
+        "tool_names": [
+          "agent_request_input",
+          "agent_knowledge_search",
+          "dv360_list_creation_templates",
+          "google_ads_list_creation_templates",
+          "meta_list_accounts",
+          "meta_list_creation_templates",
+          "tiktok_create_campaign",
+          "tiktok_list_accounts",
+          "tiktok_list_creation_templates",
+          "google_get_campaign_report",
+          "google_list_customer_clients",
+          "google_get_ad_asset_report",
+          "tiktok_get_report",
+          "meta_get_campaign_report",
+          "dv360_list_campaigns",
+          "dv360_get_campaign",
+          "google_list_campaigns",
+          "google_get_campaign",
+          "google_create_campaign",
+          "google_list_ad_groups",
+          "google_upload_image_asset",
+          "meta_list_campaigns",
+          "meta_get_campaign",
+          "meta_create_campaign",
+          "meta_list_ad_sets",
+          "meta_list_ads",
+          "meta_list_apps",
+          "meta_list_pages",
+          "meta_list_pixels",
+          "meta_list_image_assets",
+          "meta_list_video_assets",
+          "meta_list_custom_conversions"
+        ],
+        "skills": [
+          "knowledge-explainer (v1.0.6)",
+          "account-diagnostics (v1.5.0)",
+          "google-ads-api-expert (v2.0.3)",
+          "meta-marketing-api-expert (v2.2.0)"
+        ],
+        "tool_schema_chars": 34210,
+        "payload_chars": 70153
+      },
+      {
+        "case_id": "report",
+        "message_content_chars": {
+          "system": 11011,
+          "provider": 12481,
+          "skills": 9677,
+          "user": 25
+        },
+        "tool_names": [
+          "meta_get_campaign_report"
+        ],
+        "skills": [
+          "meta-marketing-api-expert (v2.2.0)",
+          "account-diagnostics (v1.5.0)",
+          "cross-channel-campaign-manager (v1.2.0)"
+        ],
+        "tool_schema_chars": 1677,
+        "payload_chars": 35800
+      },
+      {
+        "case_id": "templates",
+        "message_content_chars": {
+          "system": 11011,
+          "provider": 13051,
+          "skills": 3600,
+          "user": 15
+        },
+        "tool_names": [
+          "agent_request_input",
+          "google_create_campaign",
+          "google_list_customer_clients",
+          "google_create_keywords",
+          "google_list_campaigns",
+          "google_ads_list_creation_templates",
+          "google_ads_get_creation_template",
+          "google_upload_image_asset",
+          "google_generate_keyword_ideas",
+          "google_get_campaign_report",
+          "google_update_campaign",
+          "google_update_ad_group",
+          "google_create_app_ad",
+          "google_get_campaign",
+          "google_delete_campaign",
+          "google_get_ad_asset_report",
+          "google_create_ad_group",
+          "google_create_experiment",
+          "google_create_asset",
+          "google_create_campaign_budget",
+          "google_create_conversion_action",
+          "google_create_campaign_criteria",
+          "google_create_bidding_strategy",
+          "google_create_user_list",
+          "google_create_product_group",
+          "google_create_asset_group_listing_group_filter",
+          "google_create_responsive_display_ad",
+          "google_create_specialized_ad_group",
+          "google_create_ad",
+          "google_create_asset_group",
+          "google_create_app_ad_group",
+          "google_create_search_ad"
+        ],
+        "skills": [
+          "google-ads-api-expert (v2.0.3)"
+        ],
+        "tool_schema_chars": 65086,
+        "payload_chars": 93531
+      },
+      {
+        "case_id": "creation",
+        "message_content_chars": {
+          "system": 11011,
+          "provider": 12899,
+          "skills": 9677,
+          "user": 35
+        },
+        "tool_names": [
+          "agent_request_input",
+          "meta_create_campaign",
+          "meta_get_campaign_report",
+          "meta_get_campaign",
+          "meta_update_campaign",
+          "meta_list_campaigns",
+          "meta_delete_campaign",
+          "meta_pause_campaign",
+          "meta_resume_campaign",
+          "meta_list_creation_templates",
+          "meta_create_app_promotion_ad",
+          "meta_create_adset",
+          "meta_get_creation_template",
+          "meta_create_ad",
+          "meta_create_lead_ad",
+          "meta_create_catalog_ad",
+          "meta_create_messaging_ad",
+          "meta_create_traffic_ad",
+          "meta_create_conversion_ad",
+          "meta_create_engagement_ad",
+          "meta_list_ads",
+          "meta_create_creative",
+          "meta_create_custom_conversion",
+          "meta_create_lead_form",
+          "meta_create_catalog",
+          "meta_create_product_set",
+          "meta_create_audience",
+          "meta_create_lookalike_audience",
+          "meta_lookup_creative",
+          "meta_get_adset",
+          "meta_lookup_adset",
+          "meta_boost_post"
+        ],
+        "skills": [
+          "meta-marketing-api-expert (v2.2.0)",
+          "account-diagnostics (v1.5.0)",
+          "cross-channel-campaign-manager (v1.2.0)"
+        ],
+        "tool_schema_chars": 57688,
+        "payload_chars": 92253
+      },
+      {
+        "case_id": "followup",
+        "message_content_chars": {
+          "system": 11011,
+          "provider": 13061,
+          "skills": 11490,
+          "user": 47,
+          "assistant": 9
+        },
+        "tool_names": [
+          "agent_request_input",
+          "tiktok_create_all_in_one_spark_ad",
+          "tiktok_smart_plus_create_campaign",
+          "tiktok_smart_plus_create_adgroup",
+          "tiktok_smart_plus_create_ad",
+          "tiktok_smart_plus_update_campaign",
+          "tiktok_smart_plus_update_adgroup",
+          "tiktok_smart_plus_update_ad",
+          "agent_readonly_recipe",
+          "google_get_ad",
+          "tiktok_pause_campaign",
+          "meta_create_campaign",
+          "meta_create_adset",
+          "meta_create_ad",
+          "meta_get_campaign_report",
+          "meta_create_app_promotion_ad",
+          "google_get_ad_group",
+          "google_update_ad",
+          "google_create_app_ad",
+          "google_update_campaign_criterion",
+          "google_list_customer_clients",
+          "google_update_keyword",
+          "google_create_product_group",
+          "google_update_product_group",
+          "meta_update_campaign",
+          "meta_update_adset",
+          "meta_update_ad",
+          "tiktok_get_brand_safety_partner_status"
+        ],
+        "skills": [
+          "account-diagnostics (v1.5.0)",
+          "google-ads-api-expert (v2.0.3)",
+          "meta-marketing-api-expert (v2.2.0)",
+          "ad-growth-operations (v1.1.0)"
+        ],
+        "tool_schema_chars": 85441,
+        "payload_chars": 122090
+      }
+    ]
+  },
+  "comparison": [
+    {
+      "case_id": "greeting",
+      "before_payload_chars": 25565,
+      "after_payload_chars": 23412,
+      "reduction_percent": 8.42,
+      "active_tools_unchanged": true,
+      "before_schema_chars": 1024,
+      "after_schema_chars": 1024
+    },
+    {
+      "case_id": "capabilities",
+      "before_payload_chars": 40970,
+      "after_payload_chars": 32389,
+      "reduction_percent": 20.94,
+      "active_tools_unchanged": true,
+      "before_schema_chars": 1024,
+      "after_schema_chars": 1024
+    },
+    {
+      "case_id": "knowledge",
+      "before_payload_chars": 79357,
+      "after_payload_chars": 70153,
+      "reduction_percent": 11.6,
+      "active_tools_unchanged": true,
+      "before_schema_chars": 39491,
+      "after_schema_chars": 34210
+    },
+    {
+      "case_id": "report",
+      "before_payload_chars": 41815,
+      "after_payload_chars": 35800,
+      "reduction_percent": 14.38,
+      "active_tools_unchanged": true,
+      "before_schema_chars": 1778,
+      "after_schema_chars": 1677
+    },
+    {
+      "case_id": "templates",
+      "before_payload_chars": 118170,
+      "after_payload_chars": 93531,
+      "reduction_percent": 20.85,
+      "active_tools_unchanged": true,
+      "before_schema_chars": 77567,
+      "after_schema_chars": 65086
+    },
+    {
+      "case_id": "creation",
+      "before_payload_chars": 107748,
+      "after_payload_chars": 92253,
+      "reduction_percent": 14.38,
+      "active_tools_unchanged": true,
+      "before_schema_chars": 67264,
+      "after_schema_chars": 57688
+    },
+    {
+      "case_id": "followup",
+      "before_payload_chars": 140268,
+      "after_payload_chars": 122090,
+      "reduction_percent": 12.96,
+      "active_tools_unchanged": true,
+      "before_schema_chars": 99555,
+      "after_schema_chars": 85441
+    }
+  ],
+  "verification": {
+    "make_ad_agent_check": {
+      "exit_code": 0,
+      "passed": 3267,
+      "warnings": 1,
+      "pytest_seconds": 291.97,
+      "compile": true,
+      "capability_audit": true,
+      "tool_contract_snapshot": true,
+      "knowledge_checks": true,
+      "diff_check": true
+    },
+    "quality_delta": {
+      "files": 45,
+      "new_findings": 0,
+      "gate_passed": true
+    },
+    "whole_repository_quality": {
+      "files": 762,
+      "findings": 4990,
+      "gate_passed": false
+    },
+    "coverage_percent": {
+      "tool_schema_projection": 98,
+      "skill_catalog": 81,
+      "catalog_metadata_projection_combined": 82
+    },
+    "external_provider_validation": "not_run",
+    "live_model_quality": "not_run",
+    "service_restarted": false,
+    "committed": false,
+    "pushed": false
+  }
+}

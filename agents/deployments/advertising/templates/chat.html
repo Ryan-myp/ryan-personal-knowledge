@@ -4,30 +4,17 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="knowledge-render-compat" content="knowledge-render-v3">
-    <title>AI Ops Agent · 广告投放工作区</title>
-    <link rel="stylesheet" href="/static/css/chat.css?v=20261028-svg-render-v1">
+    <title>AI Ops Agent · 智能工作区</title>
+    <link rel="stylesheet" href="/static/css/chat.css?v=20261029-workspace-resilience-v1">
 </head>
-<body>
+<body class="workspace-refresh">
+    <div class="workspace-boot-status" id="workspaceBootStatus"><span id="workspaceBootMessage" role="status" aria-live="polite">正在准备工作区…</span><button id="workspaceBootRetry" type="button" hidden>重试加载</button></div>
     <!-- 全局 Agent 控制台栏：对应执行会话、模式和工作区入口。 -->
     <header class="global-topbar">
+        <button class="icon-btn mobile-navigation-toggle workspace-nav" type="button" onclick="toggleWorkspaceNavigation()" aria-label="打开导航" aria-expanded="false" id="workspaceNavigationToggle">☰</button>
         <div class="global-brand-mark">A</div>
         <div class="global-brand-name">AI Ops Agent</div>
         <div class="global-actions">
-            <button class="global-action" id="agentSettingsButton" type="button" onclick="openAgentSettings()" aria-label="模型与密钥管理" title="模型与渠道密钥管理"><span aria-hidden="true">⚙</span><span class="global-action-label">模型与密钥</span></button>
-            <button class="global-readonly" id="modeToggleButton" type="button" onclick="toggleModePopover()" aria-expanded="false"><span id="modeToggleIcon">◈</span> <span id="modeToggleLabel">dry-run</span></button>
-            <button class="global-action" id="filterToggleButton" type="button" onclick="toggleFilterPopover()" aria-label="筛选" aria-expanded="false"><span aria-hidden="true">▽</span><span class="global-action-label">筛选</span></button>
-            <div class="system-ops-wrap">
-                <button class="global-action system-ops-trigger" id="systemOpsButton" type="button" onclick="toggleSystemOpsMenu()" aria-label="系统运维" aria-expanded="false"><span class="system-ops-icon" aria-hidden="true">⌘</span><span class="global-action-label">系统运维</span><span class="monitoring-nav-badge" id="monitoringNavBadge" hidden></span><span class="system-ops-chevron" aria-hidden="true"></span></button>
-                <div class="system-ops-menu" id="systemOpsMenu" role="menu" aria-label="系统运维菜单">
-                    <div class="system-ops-menu-head"><strong>系统运维</strong><span>服务状态与运行现场</span></div>
-                    <button class="system-ops-item active" type="button" role="menuitem" onclick="openMonitoring()"><span class="system-ops-item-icon">◉</span><span><strong>运行监控</strong><small>队列、租约、恢复与 Tool 审计</small></span><span class="system-ops-item-arrow">›</span></button>
-                    <button class="system-ops-item active" type="button" role="menuitem" onclick="openFeedbackTrend()"><span class="system-ops-item-icon">↗</span><span><strong>反馈趋势</strong><small>回答评分与每日变化</small></span><span class="system-ops-item-arrow">›</span></button>
-                    <button class="system-ops-item active" type="button" role="menuitem" onclick="openSchedules()"><span class="system-ops-item-icon">◷</span><span><strong>定时任务</strong><small>调度列表、执行记录与暂停恢复</small></span><span class="system-ops-item-arrow">›</span></button>
-                    <button class="system-ops-item active" type="button" role="menuitem" onclick="openMemoryManager()"><span class="system-ops-item-icon">✦</span><span><strong>用户记忆</strong><small>偏好、事实与记忆生命周期</small></span><span class="system-ops-item-arrow">›</span></button>
-                    <button class="system-ops-item disabled" type="button" role="menuitem" disabled><span class="system-ops-item-icon">◇</span><span><strong>服务健康</strong><small>健康检查与依赖状态 · 即将支持</small></span></button>
-                    <button class="system-ops-item disabled" type="button" role="menuitem" disabled><span class="system-ops-item-icon">≋</span><span><strong>事件投递</strong><small>Outbox 消费与失败重试 · 即将支持</small></span></button>
-                </div>
-            </div>
             <button class="global-action theme-toggle" id="themeToggleButton" type="button" onclick="toggleTheme()" aria-label="切换主题"><span id="themeToggleIcon" aria-hidden="true">☼</span><span class="global-action-label" id="themeToggleLabel">浅色</span></button>
         </div>
     </header>
@@ -74,18 +61,35 @@
             <div class="workspace-form-actions"><span class="workspace-filter-summary" id="traceFilterSummary">当前显示全部节点</span><button type="button" onclick="clearTraceFilters()">清除筛选</button></div>
         </div>
     </section>
-    <div class="knowledge-overlay" id="knowledgeOverlay" aria-hidden="true">
-        <section class="knowledge-console" role="dialog" aria-modal="true" aria-labelledby="knowledgeConsoleTitle">
+    <div class="knowledge-overlay management-workspace" id="knowledgeOverlay" aria-hidden="true">
+        <section class="management-surface knowledge-console" role="region" aria-labelledby="knowledgeConsoleTitle">
             <header class="knowledge-console-header">
                 <div>
                     <div class="knowledge-console-title" id="knowledgeConsoleTitle">LLM Wiki 知识库</div>
                     <div class="knowledge-console-subtitle">搜索、阅读和沉淀 Markdown 知识；这里管理的是业务知识，不会调用广告渠道接口。</div>
                 </div>
-                <button class="icon-btn" type="button" onclick="closeWorkspacePopovers()" aria-label="关闭知识库">×</button>
+                <div class="monitoring-console-actions"><button class="btn btn-secondary" type="button" onclick="loadKnowledgeCatalog();loadManagedKnowledgeDocuments()">刷新</button><button class="btn btn-primary" type="button" onclick="newKnowledgeCatalogDocument()">新建知识</button><button class="icon-btn" type="button" onclick="closeWorkspacePopovers()" aria-label="关闭知识库">×</button></div>
             </header>
+            <div class="resource-catalog-back" id="knowledgeCatalogBack" hidden><button class="schedule-back" type="button" onclick="showResourceList('knowledge')">← 返回知识列表</button></div>
+            <p class="resource-catalog-notice" id="knowledgeNotice" role="status" hidden></p>
             <div class="knowledge-console-body">
                 <div class="knowledge-search-panel">
-                    <div class="knowledge-index-toolbar">
+                    <div class="knowledge-search-grid">
+                        <label class="workspace-form">全文检索
+                            <input id="knowledgeQuery" type="search" maxlength="2000" placeholder="例如：TikTok 报表、Google OAuth" onkeydown="if (event.key === 'Enter') searchKnowledge()">
+                        </label>
+                        <label class="workspace-form">平台
+                            <select id="knowledgePlatform" onchange="searchKnowledge()"><option value="">全部平台</option><option value="meta">Meta</option><option value="tiktok">TikTok</option><option value="google-ads">Google Ads</option><option value="dv360">DV360</option></select>
+                        </label>
+
+                        <button class="btn btn-primary" type="button" onclick="searchKnowledge()">搜索</button>
+                    </div>
+                    <div class="workspace-form-actions"><span class="workspace-form-status" id="knowledgeStatus">打开时自动展示已发布知识目录。</span></div>
+                    <div class="knowledge-view-switcher">
+                        <details class="knowledge-search-options"><summary>检索设置</summary><div class="knowledge-search-options-body">                        <label class="knowledge-smart-toggle">
+                            <span><input id="knowledgeSmartSummary" type="checkbox"> 智能总结</span>
+                            <small>更完整，但响应会稍慢</small>
+                        </label>                    <div class="knowledge-index-toolbar">
                         <div>
                             <strong>语义索引</strong>
                             <span id="knowledgeSemanticStatus" role="status" aria-live="polite">尚未检查索引状态</span>
@@ -95,27 +99,10 @@
                             <button type="button" id="knowledgeSemanticRebuildButton" onclick="rebuildKnowledgeSemanticIndex()" disabled>重建索引</button>
                         </div>
                     </div>
-                    <div class="knowledge-search-grid">
-                        <label class="workspace-form">关键词
-                            <input id="knowledgeQuery" type="search" maxlength="2000" placeholder="例如：TikTok 报表、Google OAuth" onkeydown="if (event.key === 'Enter') searchKnowledge()">
-                        </label>
-                        <label class="workspace-form">平台
-                            <select id="knowledgePlatform" onchange="if (!document.getElementById('knowledgeQuery')?.value.trim()) loadKnowledgeCatalog()"><option value="">全部平台</option><option value="meta">Meta</option><option value="tiktok">TikTok</option><option value="google-ads">Google Ads</option><option value="dv360">DV360</option></select>
-                        </label>
-                        <label class="knowledge-smart-toggle">
-                            <span><input id="knowledgeSmartSummary" type="checkbox"> 智能总结</span>
-                            <small>更完整，但响应会稍慢</small>
-                        </label>
-                    </div>
-                    <div class="workspace-form-actions"><span class="workspace-form-status" id="knowledgeStatus">打开时自动展示已发布知识目录。</span><button type="button" onclick="searchKnowledge()">搜索</button></div>
-                    <div class="knowledge-view-switcher">
-                        <span class="workspace-filter-summary">知识文档发布后才会被 Agent 使用</span>
-                        <div class="knowledge-view-actions">
-                            <button type="button" id="knowledgeCatalogToggle" class="active" aria-pressed="true" onclick="showKnowledgeSearchView()">知识目录</button>
-                            <button type="button" id="knowledgeComposeToggle" aria-pressed="false" onclick="toggleKnowledgeComposer()">管理文档</button>
-                        </div>
+</div></details>
                     </div>
                 </div>
+                <section class="resource-catalog" id="knowledgeCatalog" aria-label="知识列表"></section>
                 <div class="knowledge-results" id="knowledgeResults">
                     <aside class="knowledge-library" aria-label="知识目录">
                         <div class="knowledge-library-header">
@@ -168,8 +155,8 @@
             </div>
         </section>
     </div>
-    <div class="memory-overlay" id="memoryOverlay" aria-hidden="true">
-        <section class="memory-console" role="dialog" aria-modal="true" aria-labelledby="memoryConsoleTitle">
+    <div class="memory-overlay management-workspace" id="memoryOverlay" aria-hidden="true">
+        <section class="management-surface memory-console" role="region" aria-labelledby="memoryConsoleTitle">
             <header class="memory-console-header">
                 <div><div class="memory-console-kicker">AGENT MEMORY</div><div class="memory-console-title" id="memoryConsoleTitle">用户记忆</div><div class="memory-console-subtitle">记忆只作为当前用户的辅助上下文，不能授予工具、权限、账户范围或凭证。</div></div>
                 <div class="memory-console-actions"><span class="memory-updated" id="memoryUpdated">尚未读取</span><button class="btn btn-secondary" type="button" onclick="loadMemories()">刷新</button><button class="icon-btn" type="button" onclick="closeMemoryManager()" aria-label="关闭用户记忆">×</button></div>
@@ -227,8 +214,8 @@
             </div>
         </section>
     </div>
-    <div class="monitoring-overlay service-settings-overlay" id="agentSettingsOverlay" aria-hidden="true" onclick="if (event.target === this) closeAgentSettings()">
-        <section class="monitoring-console service-settings-console" role="dialog" aria-modal="true" aria-labelledby="agentSettingsTitle" onclick="event.stopPropagation()">
+    <div class="monitoring-overlay service-settings-overlay management-workspace" id="agentSettingsOverlay" aria-hidden="true" onclick="if (event.target === this) closeAgentSettings()">
+        <section class="management-surface monitoring-console service-settings-console" role="region" aria-labelledby="agentSettingsTitle" onclick="event.stopPropagation()">
             <header class="monitoring-console-header service-settings-header">
                 <div>
                     <div class="monitoring-console-kicker">MODEL & PROVIDER CONFIGURATION</div>
@@ -236,6 +223,8 @@
                     <div class="monitoring-console-subtitle">密钥仅写入服务端加密存储，读取接口只返回配置状态。</div>
                 </div>
                 <div class="monitoring-console-actions">
+                    <button class="btn btn-secondary" id="settingsDiscardDraft" type="button" onclick="discardAgentSettingsDraft()" hidden>放弃当前编辑</button>
+                    <button class="btn btn-secondary" type="button" onclick="loadAgentSettings()">刷新配置</button>
                     <button class="icon-btn" type="button" onclick="closeAgentSettings()" aria-label="关闭模型与密钥管理">×</button>
                 </div>
             </header>
@@ -301,21 +290,61 @@
             </div>
         </section>
     </div>
-    <div class="monitoring-overlay" id="scheduleOverlay" aria-hidden="true">
-        <section class="monitoring-console schedule-console" role="dialog" aria-modal="true" aria-labelledby="scheduleConsoleTitle">
+    <div class="monitoring-overlay management-workspace" id="scheduleOverlay" aria-hidden="true">
+        <section class="management-surface monitoring-console schedule-console" role="region" aria-labelledby="scheduleConsoleTitle">
             <header class="monitoring-console-header">
                 <div><div class="monitoring-console-kicker">SCHEDULED AGENT WORK</div><div class="monitoring-console-title" id="scheduleConsoleTitle">定时任务</div><div class="monitoring-console-subtitle">每次到期都会重新进入当前 Agent Runtime，继续使用已注册 Skills、Tools 和权限边界。</div></div>
                 <div class="monitoring-console-actions"><span class="monitoring-updated" id="scheduleUpdated">尚未读取</span><button class="btn btn-secondary" type="button" onclick="loadSchedules()">刷新</button><button class="icon-btn" type="button" onclick="closeSchedules()" aria-label="关闭定时任务">×</button></div>
             </header>
             <div class="monitoring-console-body">
-                <div class="monitoring-stat-grid schedule-stat-grid"><article class="monitoring-stat-card accent-cyan"><span>任务总数</span><strong id="scheduleTotal">—</strong><small>已创建的周期任务</small></article><article class="monitoring-stat-card accent-violet"><span>待执行</span><strong id="scheduleQueued">—</strong><small>等待 Agent Task</small></article><article class="monitoring-stat-card accent-amber"><span>执行中</span><strong id="scheduleRunning">—</strong><small>已提交到任务队列</small></article><article class="monitoring-stat-card accent-red"><span>失败</span><strong id="scheduleFailed">—</strong><small>最近累计失败</small></article></div>
-                <section class="monitoring-panel"><div class="monitoring-panel-heading"><div><h2>调度任务列表</h2><p>可暂停、恢复、立即执行或查看每次触发记录。</p></div><span class="monitoring-panel-mark">CRON</span></div><div class="schedule-list" id="scheduleList"><div class="monitoring-empty">等待数据…</div></div></section>
-                <section class="monitoring-panel"><div class="monitoring-panel-heading"><div><h2>最近触发</h2><p>任务到期后创建的普通 Agent Task 及其最终结果。</p></div><span class="monitoring-panel-mark">RUNS</span></div><div class="monitoring-tool-table-wrap"><table class="monitoring-tool-table"><thead><tr><th>时间</th><th>任务</th><th>状态</th><th>Task</th><th>错误</th></tr></thead><tbody id="scheduleRunRows"><tr><td colspan="5" class="monitoring-empty">等待数据…</td></tr></tbody></table></div></section>
+                <section class="schedule-page" id="scheduleListView" aria-label="定时任务列表">
+                    <form class="schedule-browser-filters" onsubmit="event.preventDefault(); applyScheduleFilters('tasks')">
+                        <label class="schedule-search">搜索任务<input type="search" id="scheduleTasksQuery" maxlength="200" placeholder="任务名称或执行指令"></label>
+                        <label>任务状态<select id="scheduleTasksStatus" onchange="applyScheduleFilters('tasks')"><option value="">全部状态</option><option value="active">已启用</option><option value="paused">已暂停</option></select></label>
+                        <button class="btn btn-secondary" type="submit">搜索</button>
+                    </form>
+                    <div class="schedule-list" id="scheduleList"><div class="monitoring-empty">正在读取任务…</div></div>
+                    <nav class="schedule-pagination" aria-label="任务列表分页">
+                        <span id="scheduleTasksPageInfo" role="status"></span>
+                        <label>每页<select id="scheduleTasksSize" onchange="applyScheduleFilters('tasks')"><option value="10">10 条</option><option value="20" selected>20 条</option><option value="50">50 条</option></select></label>
+                        <button type="button" id="scheduleTasksPrevious" onclick="changeSchedulePage('tasks',-1)" disabled>上一页</button>
+                        <button type="button" id="scheduleTasksNext" onclick="changeSchedulePage('tasks',1)" disabled>下一页</button>
+                    </nav>
+                </section>
+                <section class="schedule-page" id="scheduleHistoryView" hidden aria-labelledby="scheduleHistoryTitle">
+                    <button class="schedule-back" type="button" onclick="showScheduleList()">← 返回任务列表</button>
+                    <header class="schedule-history-heading"><div><h2 id="scheduleHistoryTitle">运行历史</h2><p id="scheduleHistoryMeta"></p></div><button class="btn btn-secondary" type="button" onclick="editSchedule(schedulePages.selectedId)">编辑任务</button></header>
+                    <details class="schedule-instruction"><summary>查看执行指令</summary><p id="scheduleHistoryPrompt"></p></details>
+                    <form class="schedule-browser-filters" onsubmit="event.preventDefault(); applyScheduleFilters('runs')">
+                        <label class="schedule-search">搜索运行历史<input type="search" id="scheduleRunsQuery" maxlength="200" placeholder="记录 ID、Task ID 或错误信息"></label>
+                        <label>执行状态<select id="scheduleRunsStatus" onchange="applyScheduleFilters('runs')"><option value="">全部状态</option><option value="queued">排队中</option><option value="running">执行中</option><option value="succeeded">成功</option><option value="failed">失败</option><option value="partially_failed">部分失败</option><option value="awaiting_input">等待补充</option><option value="recovery_required">需核实</option><option value="cancelled">已取消</option><option value="skipped">已跳过</option></select></label>
+                        <label>触发时间<select id="scheduleRunsRange" onchange="applyScheduleFilters('runs')"><option value="">全部时间</option><option value="7">最近 7 天</option><option value="30">最近 30 天</option><option value="90">最近 90 天</option></select></label>
+                        <button class="btn btn-secondary" type="submit">搜索</button>
+                    </form>
+                    <div class="monitoring-tool-table-wrap" role="region" tabindex="0" aria-label="运行历史表格，窄屏可左右滚动"><table class="monitoring-tool-table"><thead><tr><th>触发时间 / 记录</th><th>状态</th><th>耗时</th><th>执行摘要</th><th>操作</th></tr></thead><tbody id="scheduleRunRows"><tr><td colspan="5">选择任务后加载运行历史</td></tr></tbody></table></div>
+                    <nav class="schedule-pagination" aria-label="运行历史分页">
+                        <span id="scheduleRunsPageInfo" role="status"></span>
+                        <label>每页<select id="scheduleRunsSize" onchange="applyScheduleFilters('runs')"><option value="10">10 条</option><option value="20" selected>20 条</option><option value="50">50 条</option></select></label>
+                        <button type="button" id="scheduleRunsPrevious" onclick="changeSchedulePage('runs',-1)" disabled>上一页</button>
+                        <button type="button" id="scheduleRunsNext" onclick="changeSchedulePage('runs',1)" disabled>下一页</button>
+                    </nav>
+                </section>
+                <section class="monitoring-panel" id="scheduleRunDetail" hidden aria-labelledby="scheduleRunDetailTitle">
+                    <header class="schedule-result-toolbar">
+                        <button class="schedule-back" type="button" onclick="closeScheduleRun()" aria-label="返回运行历史">← 返回运行历史</button>
+                        <div class="monitoring-panel-heading"><div><h2 id="scheduleRunDetailTitle">执行结果</h2><p id="scheduleRunDetailStatus" role="status" aria-live="polite"></p></div>
+                            <div class="monitoring-console-actions"><button class="btn btn-secondary" id="scheduleRunConversation" type="button" hidden>打开执行会话</button><button class="btn btn-secondary" id="scheduleRunDetailRefresh" type="button">刷新结果</button></div>
+                        </div>
+                    </header>
+                    <p class="schedule-run-error" id="scheduleRunError" role="alert"></p>
+                    <div class="message-content schedule-result-content" id="scheduleRunContent"></div>
+                    <details id="scheduleRunTechnical"><summary>技术详情</summary><pre id="scheduleRunRaw"></pre></details>
+                </section>
             </div>
         </section>
     </div>
     <div class="monitoring-overlay schedule-edit-overlay" id="scheduleEditOverlay" aria-hidden="true">
-        <section class="monitoring-console schedule-edit-console" role="dialog" aria-modal="true" aria-labelledby="scheduleEditTitle">
+        <section class="management-surface monitoring-console schedule-edit-console" role="dialog" aria-modal="true" aria-labelledby="scheduleEditTitle">
             <header class="monitoring-console-header">
                 <div>
                     <div class="monitoring-console-kicker">EDIT SCHEDULE</div>
@@ -337,8 +366,8 @@
             </form>
         </section>
     </div>
-    <div class="monitoring-overlay" id="monitoringOverlay" aria-hidden="true">
-        <section class="monitoring-console" role="dialog" aria-modal="true" aria-labelledby="monitoringConsoleTitle">
+    <div class="monitoring-overlay management-workspace" id="monitoringOverlay" aria-hidden="true">
+        <section class="management-surface monitoring-console" role="region" aria-labelledby="monitoringConsoleTitle">
             <header class="monitoring-console-header">
                 <div>
                     <div class="monitoring-console-kicker">RUNTIME CONTROL ROOM</div>
@@ -351,10 +380,20 @@
                     <button class="icon-btn" type="button" onclick="closeMonitoring()" aria-label="关闭运行监控">×</button>
                 </div>
             </header>
+            <nav class="monitoring-view-tabs" aria-label="运维视图">
+                <button id="monitoringTab-overview" type="button" aria-pressed="true" onclick="openMonitoring('overview')">运行监控</button>
+                <button id="monitoringTab-health" type="button" aria-pressed="false" onclick="openMonitoring('health')">服务健康</button>
+                <button id="monitoringTab-events" type="button" aria-pressed="false" onclick="openMonitoring('events')">事件投递</button>
+            </nav>
             <div class="monitoring-console-body">
                 <div class="monitoring-status-banner" id="monitoringStatusBanner" role="status">
                     <span class="monitoring-status-dot"></span><span id="monitoringStatusText">正在读取监控数据…</span>
                 </div>
+                <section class="monitoring-health-panel">
+                    <h2>服务就绪检查</h2>
+                    <p>检查当前进程与依赖配置是否就绪，不调用广告渠道 API。</p>
+                    <div id="monitoringHealthChecks" role="status">等待检查…</div>
+                </section>
                 <div class="monitoring-stat-grid">
                     <article class="monitoring-stat-card accent-cyan"><span>任务队列</span><strong id="monitoringQueueDepth">—</strong><small id="monitoringQueueHint">等待数据</small></article>
                     <article class="monitoring-stat-card accent-amber"><span>租约风险</span><strong id="monitoringLeaseRisk">—</strong><small id="monitoringLeaseHint">已过期 / 即将过期</small></article>
@@ -387,9 +426,9 @@
                         <div class="monitoring-lease-list" id="monitoringLeaseList"><div class="monitoring-empty">等待数据…</div></div>
                     </section>
                 </div>
-                <div class="monitoring-grid monitoring-grid-secondary">
+                <div class="monitoring-grid monitoring-grid-secondary monitoring-events-panel">
                     <section class="monitoring-panel">
-                        <div class="monitoring-panel-heading"><div><h2>事件投递</h2><p>Outbox 是事件消费链路，不负责执行 Agent Task</p></div><span class="monitoring-panel-mark">03</span></div>
+                        <div class="monitoring-panel-heading"><div><h2>事件投递</h2><p>当前权限范围内的投递状态汇总，重试由后台消费者按策略处理</p></div><span class="monitoring-panel-mark">03</span></div>
                         <div class="monitoring-event-summary" id="monitoringOutboxSummary"></div>
                         <div class="monitoring-mini-note" id="monitoringRunSummary"></div>
                     </section>
@@ -405,8 +444,8 @@
             </div>
         </section>
     </div>
-    <div class="monitoring-overlay feedback-trend-overlay" id="feedbackTrendOverlay" aria-hidden="true">
-        <section class="monitoring-console feedback-trend-console" role="dialog" aria-modal="true" aria-labelledby="feedbackTrendTitle">
+    <div class="monitoring-overlay feedback-trend-overlay management-workspace" id="feedbackTrendOverlay" aria-hidden="true">
+        <section class="management-surface monitoring-console feedback-trend-console" role="region" aria-labelledby="feedbackTrendTitle">
             <header class="monitoring-console-header">
                 <div>
                     <div class="monitoring-console-kicker">ANSWER FEEDBACK</div>
@@ -452,17 +491,24 @@
                     <div class="monitoring-panel-heading feedback-review-heading">
                         <div><h2 id="feedbackReviewTitle">负反馈审核</h2><p>人工确认后才会进入回归样例导出，不会自动训练或发布。</p></div>
                         <div class="feedback-review-actions">
-                            <select id="feedbackReviewStatus" aria-label="反馈审核状态" onchange="loadFeedbackReviewQueue()">
-                                <option value="pending">待审核</option>
-                                <option value="candidate">已收录</option>
-                                <option value="dismissed">已忽略</option>
-                            </select>
                             <button class="btn btn-secondary" type="button" onclick="loadFeedbackReviewQueue()">刷新列表</button>
                             <button class="btn btn-secondary" type="button" onclick="exportFeedbackRegressionCases()">导出回归 JSON</button>
                         </div>
                     </div>
+                    <form class="feedback-review-filters" onsubmit="event.preventDefault(); applyFeedbackReviewFilters()">
+                        <label class="feedback-review-search">搜索反馈<input id="feedbackReviewQuery" type="search" maxlength="200" placeholder="用户问题、回答、反馈原因或期望行为"></label>
+                        <label>审核状态<select id="feedbackReviewStatus" onchange="applyFeedbackReviewFilters()"><option value="all">全部状态</option><option value="pending" selected>待审核</option><option value="candidate">已收录</option><option value="dismissed">已忽略</option></select></label>
+                        <label>提交时间<select id="feedbackReviewRange" onchange="applyFeedbackReviewFilters()"><option value="">全部时间</option><option value="7">最近 7 天</option><option value="30">最近 30 天</option><option value="90">最近 90 天</option></select></label>
+                        <button class="btn btn-secondary" type="submit">搜索</button>
+                    </form>
                     <div class="feedback-review-status" id="feedbackReviewStatusText" role="status" aria-live="polite">打开页面后加载当前租户的待审核反馈。</div>
                     <div class="feedback-review-list" id="feedbackReviewList"></div>
+                    <nav class="feedback-review-pagination" aria-label="反馈审核分页">
+                        <span id="feedbackReviewPageInfo" role="status"></span>
+                        <label>每页<select id="feedbackReviewSize" onchange="applyFeedbackReviewFilters()"><option value="10">10 条</option><option value="20">20 条</option><option value="50">50 条</option></select></label>
+                        <button type="button" id="feedbackReviewPrevious" onclick="changeFeedbackReviewPage(-1)" disabled>上一页</button>
+                        <button type="button" id="feedbackReviewNext" onclick="changeFeedbackReviewPage(1)" disabled>下一页</button>
+                    </nav>
                 </section>
                 <p class="feedback-trend-note">这是用户主动提交的反馈样本，不代表全部回答质量或模型评测结果；未反馈的回答不计入分母。</p>
             </div>
@@ -489,14 +535,27 @@
             <span class="nav-icon">▤</span>
             <span>知识库</span>
         </button>
-        <button class="new-chat-btn blueprint-nav-btn workspace-nav" onclick="openBlueprintManager()" aria-label="广告创建向导">
-            <span class="nav-icon">◇</span>
-            <span>广告创建向导</span>
-        </button>
         <button class="new-chat-btn blueprint-nav-btn workspace-nav" onclick="openCreationTemplateManager()" aria-label="模板管理">
             <span class="nav-icon">▦</span>
             <span>模板管理</span>
         </button>
+        <button class="new-chat-btn workspace-nav" type="button" onclick="openSchedules()" aria-label="定时任务">
+            <span class="nav-icon" aria-hidden="true">◷</span>
+            <span>定时任务</span>
+        </button>
+
+        <div class="sidebar-settings workspace-nav">
+            <div class="system-ops-wrap">
+                <button class="sidebar-settings-button system-ops-trigger" id="systemOpsButton" type="button" onclick="toggleSystemOpsMenu()" aria-label="系统运维" aria-expanded="false"><span class="system-ops-icon" aria-hidden="true">⌘</span><span class="sidebar-settings-label">系统运维</span><span class="monitoring-nav-badge" id="monitoringNavBadge" hidden></span><span class="system-ops-chevron" aria-hidden="true"></span></button>
+                <div class="system-ops-menu" id="systemOpsMenu" role="menu" aria-label="系统运维菜单">
+                    <div class="system-ops-menu-head"><strong>系统运维</strong><span>配置管理与运行状态</span></div>
+                    <button class="system-ops-item active" id="agentSettingsButton" type="button" role="menuitem" onclick="openAgentSettings()" aria-label="模型与密钥管理"><span class="system-ops-item-icon" aria-hidden="true">⚙</span><span><strong>模型与密钥</strong><small>模型切换、渠道密钥与搜索配置</small></span><span class="system-ops-item-arrow" aria-hidden="true">›</span></button>
+                    <button class="system-ops-item active" type="button" role="menuitem" onclick="openMonitoring()"><span class="system-ops-item-icon">◉</span><span><strong>运行监控</strong><small>运行状态、服务健康与事件投递</small></span><span class="system-ops-item-arrow">›</span></button>
+                    <button class="system-ops-item active" type="button" role="menuitem" onclick="openFeedbackTrend()"><span class="system-ops-item-icon">↗</span><span><strong>反馈趋势</strong><small>回答评分与每日变化</small></span><span class="system-ops-item-arrow">›</span></button>
+                    <button class="system-ops-item active" type="button" role="menuitem" onclick="openMemoryManager()"><span class="system-ops-item-icon">✦</span><span><strong>用户记忆</strong><small>偏好、事实与记忆生命周期</small></span><span class="system-ops-item-arrow">›</span></button>
+                </div>
+            </div>
+        </div>
 
         <div class="chat-history-header">
             <span>最近对话</span>
@@ -525,54 +584,33 @@
 
     <!-- 主内容区 -->
     <main class="main-content">
-        <div class="topbar">
-            <span class="topbar-title">广告投放工作区</span>
-            <div class="platform-tags">
-                <span class="platform-tag meta">Meta</span>
-                <span class="platform-tag tiktok">TikTok</span>
-                <span class="platform-tag google">Google Ads</span>
-                <span class="platform-tag dv360">DV360</span>
-            </div>
-        </div>
-        
+        <header class="topbar workspace-chat-header">
+            <div class="workspace-chat-heading"><span class="topbar-title">对话工作区</span><span class="workspace-chat-caption">研究、创作与执行</span></div>
+            <button class="workspace-trace-link" type="button" onclick="openTraceWorkbench()" aria-label="查看完整执行轨迹"><span aria-hidden="true">⌁</span> 执行轨迹</button>
+        </header>
+
         <div class="chat-area" id="chatArea">
             <div class="conversation-history-pagination" id="conversationHistoryPagination" hidden>
                 <button type="button" id="loadOlderConversationButton">加载更早的消息</button>
                 <span id="conversationHistoryPaginationStatus" role="status" aria-live="polite"></span>
             </div>
-            <div class="chat-container" id="chatContainer">
-                <!-- 欢迎页 -->
+            <template id="welcomeTemplate">
                 <div class="welcome-page" id="welcomePage">
-                    <div class="welcome-icon">🤖</div>
-                    <h1 class="welcome-title">把投放问题，交给一个懂执行的 Agent。</h1>
-                    <p class="welcome-desc" id="welcomeModeDescription">从账户查询、效果分析到广告创建，先在安全的 dry-run 环境里看清每一步，再决定是否执行。</p>
-                    
-                    <div class="feature-grid">
-                        <div class="feature-card" onclick="setInput('帮我列出 Meta 账户')">
-                            <div class="icon">📘</div>
-                            <div class="title">查看账户</div>
-                            <div class="desc">账户与 Campaign 概览</div>
-                        </div>
-                        <div class="feature-card" onclick="setInput('创建 TikTok 广告系列')">
-                            <div class="icon">🎵</div>
-                            <div class="title">创建 Campaign</div>
-                            <div class="desc">从蓝图开始配置广告</div>
-                        </div>
-                        <div class="feature-card" onclick="setInput('查询 Google Ads 报表')">
-                            <div class="icon">🔍</div>
-                            <div class="title">分析报表</div>
-                            <div class="desc">读懂渠道效果与趋势</div>
-                        </div>
-                        <div class="feature-card" onclick="setInput('跨渠道预算优化')">
-                            <div class="icon">⚡</div>
-                            <div class="title">优化预算</div>
-                            <div class="desc">比较渠道，找到增长空间</div>
-                        </div>
+                    <h1 class="welcome-title">今天想完成什么？</h1>
+                    <p class="welcome-desc">查找资料、分析数据、创作内容，或把重复工作交给自动化。<br>从一个问题、一份文件，或一个想法开始。</p>
+                    <div class="workspace-starters" aria-label="任务示例">
+                        <button type="button" onclick="setInput('请结合知识库，帮我梳理增长实验的设计方法和适用场景。')"><span class="starter-icon" aria-hidden="true">▤</span><span><strong>知识与研究</strong><small>检索知识，整理方法与思路</small></span></button>
+                        <button type="button" onclick="setInput('帮我搜索近期 AI Agent 的发展动态，注明来源与发布日期。')"><span class="starter-icon" aria-hidden="true">◎</span><span><strong>搜索与阅读</strong><small>查找新信息，阅读网页与文章</small></span></button>
+                        <button type="button" onclick="setInput('我想分析一份报表，请先告诉我需要上传哪些数据，以及可以分析哪些问题。')"><span class="starter-icon" aria-hidden="true">▥</span><span><strong>数据分析</strong><small>读懂报表，发现趋势与异常</small></span></button>
+                        <button type="button" onclick="setInput('帮我策划一组产品推广素材，先和我明确目标受众、核心卖点与创意方向。')"><span class="starter-icon" aria-hidden="true">✎</span><span><strong>内容与创意</strong><small>构思文案、图片与视频素材</small></span></button>
+                        <button type="button" onclick="setInput('帮我制定增长方案，结合广告投放、SEO 和 GEO，先明确目标与衡量指标。')"><span class="starter-icon" aria-hidden="true">↗</span><span><strong>广告与增长</strong><small>规划投放，探索增长机会</small></span></button>
+                        <button type="button" onclick="setInput('我想定期汇总行业动态，请先帮我确认内容范围、执行时间和结果形式。')"><span class="starter-icon" aria-hidden="true">◷</span><span><strong>任务自动化</strong><small>安排定时任务，跟进执行结果</small></span></button>
                     </div>
                 </div>
-            </div>
+            </template>
+            <div class="chat-container" id="chatContainer"></div>
         </div>
-        
+
         <div class="confirm-card-container" id="confirmCardContainer"></div>
         
         <div class="input-area">
@@ -602,7 +640,8 @@
                 <textarea 
                     class="input-box" 
                     id="userInput" 
-                    placeholder="描述您的投放需求，例如：帮我创建一个 Meta 广告系列..."
+                    placeholder="描述你的问题或任务，也可以上传文件…"
+                    aria-label="消息内容"
                     rows="1"
                     onkeydown="handleKeyDown(event)"
                     oninput="autoResize(this)"
@@ -628,25 +667,32 @@
                     </svg>
                 </button>
             </div>
-            <div class="input-hint" id="chatInputHint">按 Enter 发送，Shift+Enter 换行；可添加图片或视频</div>
+            <div class="composer-footer">
+                <div class="composer-settings">
+                    <button class="global-readonly" id="modeToggleButton" type="button" onclick="toggleModePopover()" aria-expanded="false">
+                        <span id="modeToggleIcon">◈</span> <span id="modeToggleLabel">dry-run</span>
+                    </button>
+                </div>
+                <div class="input-hint" id="chatInputHint">Enter 发送 · Shift+Enter 换行 · 支持图片、视频和文档</div>
+            </div>
         </div>
     </main>
     
     <!-- 右侧工作区：轨迹、创建向导和提交确认共享同一个可切换面板。 -->
     <aside class="right-panel" id="agentWorkbench" aria-label="右侧工作区">
-        <div class="workbench-tabbar" role="tablist" aria-label="右侧工作区">
+        <div class="workbench-tabbar" id="workbenchTabbar" role="tablist" aria-label="右侧工作区" hidden>
             <button class="workbench-tab active" id="workbench-tab-trace" type="button" role="tab" aria-selected="true" onclick="setWorkbenchView('trace')">
                 <span class="workbench-tab-icon" aria-hidden="true">⌁</span><span>执行轨迹</span>
             </button>
-            <button class="workbench-tab" id="workbench-tab-creation" type="button" role="tab" aria-selected="false" onclick="setWorkbenchView('creation')">
-                <span class="workbench-tab-icon" aria-hidden="true">◇</span><span>创建工作区</span><span class="workbench-tab-count" id="workbenchCreationCount" hidden></span>
+            <button class="workbench-tab" id="workbench-tab-creation" type="button" role="tab" aria-selected="false" onclick="setWorkbenchView('creation')" hidden>
+                <span class="workbench-tab-icon" aria-hidden="true">◇</span><span id="workbenchContextLabel">广告创建</span><span class="workbench-tab-count" id="workbenchCreationCount" hidden></span>
             </button>
         </div>
         <section id="trace-workbench-view" class="workbench-view">
             <div class="trace-header">
                 <div>
-                    <div class="trace-title">执行轨迹 <span class="trace-live-dot"></span><span id="traceStatus">待命</span></div>
-                    <div class="trace-subtitle" id="traceSubtitle">等待下一次 Agent 回合</div>
+                    <div class="trace-title">执行轨迹 <span class="trace-live-dot"></span><span id="traceStatus">尚未开始</span></div>
+                    <div class="trace-subtitle" id="traceSubtitle">任务的处理步骤与执行结果</div>
                 </div>
                 <div class="trace-header-actions">
                     <button class="trace-expand-btn trace-icon-btn" type="button" onclick="toggleTraceExpanded()" aria-label="展开轨迹视图" title="展开轨迹视图">
@@ -654,11 +700,11 @@
                             <path d="M8 3H3v5M16 3h5v5M8 21H3v-5M21 16v5h-5"></path>
                         </svg>
                     </button>
-                    <button class="trace-icon-btn" type="button" onclick="toggleTracePanel()" aria-label="收起执行轨迹">−</button>
+                    <button class="trace-icon-btn" type="button" onclick="closeAgentWorkbench()" aria-label="关闭执行轨迹">×</button>
                     <button class="trace-clear-btn" type="button" onclick="resetExecutionTrace()">清空</button>
                 </div>
             </div>
-            <div class="trace-toolbar">
+            <div class="trace-toolbar"><button class="global-action" id="filterToggleButton" type="button" onclick="toggleFilterPopover()" aria-label="筛选" aria-expanded="false"><span aria-hidden="true">▽</span><span class="global-action-label">筛选</span></button>
                 <span class="trace-legend"><i class="legend-line planned"></i>计划中</span>
                 <span class="trace-legend"><i class="legend-line running"></i>运行中</span>
                 <span class="trace-legend"><i class="legend-line succeeded"></i>已成功</span>
@@ -681,11 +727,10 @@
         <section id="creation-workbench-view" class="workbench-view" hidden>
             <header class="creation-workbench-header">
                 <div>
-                    <div class="creation-workbench-kicker">AD CREATION WORKSPACE</div>
                     <h2 id="workbenchCreationTitle">广告创建参数</h2>
                     <p id="workbenchCreationSubtitle">在右侧完成参数、联动校验和预览；提交前仍需要你的明确确认。</p>
                 </div>
-                <button class="trace-icon-btn" type="button" onclick="closeCreationWorkbench()" aria-label="关闭创建工作区" title="关闭创建工作区">×</button>
+                <button class="trace-icon-btn" type="button" onclick="closeCreationWorkbench()" aria-label="关闭工作面板" title="关闭工作面板">×</button>
             </header>
             <div class="creation-workbench-body">
                 <div id="creation-workbench-host"></div>
@@ -694,22 +739,24 @@
         </section>
     </aside>
 
-    <!-- 横跨聊天与轨迹区的事件时间线。 -->
-    <section class="activity-dock" aria-label="活动日志">
-        <div class="activity-dock-header">
-            <div><strong>活动日志</strong><span>全部</span><span class="activity-chevron">⌄</span></div>
-            <div class="activity-dock-actions">
-                <span><i></i>自动滚动</span>
-                <button class="open-trace-button" type="button" onclick="openTraceWorkbench()" aria-label="查看完整执行轨迹">查看轨迹</button>
-                <button type="button" onclick="resetExecutionTrace()">清空</button>
-            </div>
+    <!-- 可折叠的执行动态；完整轨迹仍在工作区内查看。 -->
+    <details class="activity-dock" id="activityDock" aria-label="执行动态">
+        <summary class="activity-summary">
+            <span class="activity-heading">执行动态</span>
+            <span class="activity-status" id="activityStatus" role="status">尚未开始</span>
+            <span class="activity-summary-text" id="activitySummary">任务运行后，这里会显示执行动态</span>
+            <span class="activity-count" id="activityCount"></span>
+            <span class="activity-chevron" aria-hidden="true">⌃</span>
+        </summary>
+        <div class="activity-expanded">
+            <div class="activity-dock-actions"><span>最近执行事件</span><button type="button" onclick="resetExecutionTrace()">清空显示</button></div>
+            <div class="trace-ticker dock-ticker" id="globalTraceTicker"></div>
         </div>
-        <div class="trace-ticker dock-ticker" id="globalTraceTicker"></div>
-    </section>
+    </details>
 
     <!-- 标准 Agent Skills 管理台：只管理 advisory context，不注册 Tool。 -->
-    <div class="skill-overlay" id="skillOverlay" aria-hidden="true">
-        <section class="skill-console" role="dialog" aria-modal="true" aria-labelledby="skillConsoleTitle">
+    <div class="skill-overlay management-workspace" id="skillOverlay" aria-hidden="true">
+        <section class="management-surface skill-console" role="region" aria-labelledby="skillConsoleTitle">
             <header class="skill-console-header">
                 <div>
                     <div class="skill-console-title" id="skillConsoleTitle">Skills 管理</div>
@@ -724,7 +771,9 @@
                 <input id="skillZipInput" type="file" accept=".zip,application/zip" onchange="uploadSkillZip()">
             </div>
             <div class="skill-notice" id="skillNotice" role="status"></div>
+            <div class="resource-catalog-back" id="skillsCatalogBack" hidden><button class="schedule-back" type="button" onclick="showResourceList('skills')">← 返回 Skills 列表</button></div>
             <div class="skill-console-body">
+                <section class="resource-catalog" id="skillsCatalog" aria-label="Skills 列表"></section>
                 <div class="skill-list" id="skillList">
                     <div class="skill-list-empty">打开管理台后加载当前租户的 Skill 版本。</div>
                 </div>
@@ -737,7 +786,7 @@
                     <div class="skill-files" id="skillFiles"></div>
                     <div class="skill-editor-footer">
                         <div class="skill-eval-summary" id="skillEvalSummary">选择一个版本，或新建一个标准 Skill 目录。</div>
-                        <button class="btn btn-secondary" type="button" onclick="addSkillFile()">+ 添加文件</button>
+                        <button class="btn btn-secondary skill-edit-action" type="button" onclick="addSkillFile()">+ 添加文件</button>
                         <span class="spacer"></span>
                         <button class="btn btn-secondary" id="skillEvaluateButton" type="button" onclick="evaluateSelectedSkill()">Skill-up 评测</button>
                         <button class="btn btn-secondary" id="skillUnpublishButton" type="button" onclick="unpublishSelectedSkill()">下线</button>
@@ -751,8 +800,8 @@
     </div>
 
     <!-- MCP control plane: remote HTTP declarations and discovered Tool policy. -->
-    <div class="mcp-overlay" id="mcpOverlay" aria-hidden="true">
-        <section class="mcp-console" role="dialog" aria-modal="true" aria-labelledby="mcpConsoleTitle" onclick="event.stopPropagation()">
+    <div class="mcp-overlay management-workspace" id="mcpOverlay" aria-hidden="true">
+        <section class="management-surface mcp-console" role="region" aria-labelledby="mcpConsoleTitle" onclick="event.stopPropagation()">
             <header class="mcp-console-header">
                 <div>
                     <div class="mcp-console-kicker">EXTENSION CONTROL PLANE</div>
@@ -767,10 +816,12 @@
                 <span class="mcp-toolbar-note">支持 Runtime / 外部 Streamable HTTP · 禁止命令、脚本和 URL 内嵌密钥</span>
             </div>
             <div class="mcp-notice" id="mcpNotice" role="status" aria-live="polite"></div>
+            <div class="resource-catalog-back" id="mcpCatalogBack" hidden><button class="schedule-back" type="button" onclick="showResourceList('mcp')">← 返回 MCP 列表</button></div>
             <div class="mcp-console-body">
+                <section class="resource-catalog" id="mcpCatalog" aria-label="MCP 列表"></section>
                 <aside class="mcp-server-list" id="mcpServerList"><div class="mcp-empty">打开管理台后加载 MCP Server。</div></aside>
                 <main class="mcp-detail">
-                    <div class="mcp-detail-header"><div><span class="mcp-section-kicker">SERVER DECLARATION</span><h2 id="mcpDetailTitle">新建 MCP Server</h2></div><span class="mcp-status-pill" id="mcpServerStatus">草稿</span></div>
+                    <div class="mcp-detail-header"><div><span class="mcp-section-kicker">SERVER DECLARATION</span><h2 id="mcpDetailTitle">新建 MCP Server</h2></div><div class="monitoring-console-actions"><span class="mcp-status-pill" id="mcpServerStatus">草稿</span><button class="btn btn-secondary" id="mcpEditConfigButton" type="button" onclick="selectMCPServer(mcpState.selectedId,true)" hidden>编辑配置</button></div></div>
                     <div class="mcp-managed-summary" id="mcpManagedSummary" hidden>
                         <div class="mcp-managed-summary-grid">
                             <div><span class="mcp-section-kicker">SERVER ENDPOINT</span><code id="mcpManagedEndpoint"></code></div>
@@ -834,19 +885,47 @@
         </section>
     </div>
 
-    <div class="blueprint-overlay" id="blueprintOverlay" aria-hidden="true">
-        <section class="blueprint-console" role="dialog" aria-modal="true" aria-labelledby="blueprintConsoleTitle" onclick="event.stopPropagation()">
+    <div class="blueprint-overlay management-workspace" id="blueprintOverlay" aria-hidden="true">
+        <section class="management-surface blueprint-console creation-studio" role="region" aria-labelledby="blueprintConsoleTitle" onclick="event.stopPropagation()">
             <header class="blueprint-console-header">
                 <div>
-                    <div class="blueprint-console-title" id="blueprintConsoleTitle">广告创建向导</div>
+                    <div class="blueprint-console-title" id="blueprintConsoleTitle">模板管理</div>
                     <div class="blueprint-console-subtitle">选择渠道与投放目标，按业务阶段完成参数；系统会实时校验联动关系，当前只生成草稿。</div>
                 </div>
-                <button class="icon-btn" type="button" onclick="closeBlueprintManager()" aria-label="关闭">×</button>
+<div class="monitoring-console-actions"><button class="btn btn-secondary" type="button" onclick="refreshTemplateManager()">刷新</button><button class="btn btn-primary" type="button" onclick="openTemplateCreator()">新建模板</button><button class="icon-btn" type="button" onclick="closeBlueprintManager()" aria-label="关闭">×</button></div>
             </header>
+            <div class="template-library-navigation" id="templateLibraryBack" hidden><button class="schedule-back" type="button" onclick="showTemplateLibrary()">← 返回模板列表</button></div>
+            <p class="template-manager-notice" id="templateManagerNotice" role="status" hidden></p>
             <div class="blueprint-console-body">
+                <section class="template-library" id="templateLibrary" aria-label="模板列表">
+                    <form class="template-library-filters" onsubmit="event.preventDefault(); applyTemplateFilters()">
+                        <label class="template-search">搜索模板<input type="search" id="templateFilterQuery" maxlength="200" placeholder="模板名称、账号或标签"></label>
+                        <label>渠道<select id="templateFilterProvider" onchange="applyTemplateFilters('provider')"><option value="">全部渠道</option></select></label>
+                        <label>账号<select id="templateFilterAccount" onchange="applyTemplateFilters()"><option value="">全部账号</option></select></label>
+                        <label>广告类型<select id="templateFilterFormat" onchange="applyTemplateFilters()"><option value="">全部广告类型</option></select></label>
+                        <label>状态<select id="templateFilterStatus" onchange="applyTemplateFilters()"><option value="">全部状态</option><option value="active">已启用</option><option value="inactive">已停用</option></select></label>
+                        <button class="btn btn-secondary" type="submit">搜索</button>
+                    </form>
+                    <button class="template-resume" id="templateResumeDraft" type="button" onclick="resumeTemplateDraft()" hidden>继续编辑未保存的模板</button>
+                    <table class="template-library-table" aria-label="创建参数模板">
+                        <colgroup><col class="template-name-column"><col class="template-provider-column"><col class="template-account-column"><col><col class="template-status-column"><col class="template-action-column"></colgroup>
+                        <thead><tr><th scope="col">模板名称</th><th scope="col">渠道</th><th scope="col">账号</th><th scope="col">广告类型</th><th scope="col">状态</th><th scope="col">操作</th></tr></thead>
+                        <tbody id="templateLibraryRows"><tr><td colspan="6" class="monitoring-empty">正在读取模板…</td></tr></tbody>
+                    </table>
+                    <nav class="schedule-pagination" aria-label="模板列表分页"><span id="templatePageInfo" role="status"></span><label>每页<select id="templatePageSize" onchange="applyTemplateFilters()"><option value="10">10 条</option><option value="20" selected>20 条</option><option value="50">50 条</option></select></label><button type="button" id="templatePrevious" onclick="changeTemplatePage(-1)" disabled>上一页</button><button type="button" id="templateNext" onclick="changeTemplatePage(1)" disabled>下一页</button></nav>
+                </section>
+                <section class="template-detail" id="templateDetail" aria-label="模板详情"></section>
                 <div class="blueprint-list" id="blueprintList">
                     <div class="blueprint-empty">正在加载广告创建蓝图…</div>
                 </div>
+                <section class="template-create-picker" aria-labelledby="templateCreateTitle">
+                    <div class="template-create-intro"><h2 id="templateCreateTitle">创建模板</h2><p>选择渠道和广告类型，加载蓝图字段与起步预设；填写后保存为可编辑的模板。</p></div>
+                    <label>广告渠道<select id="templateCreateProvider" onchange="updateTemplateCreationTypes()"><option value="">请选择渠道</option></select></label>
+                    <label>广告类型<select id="templateCreateType" disabled onchange="updateTemplateCreationPresets()"><option value="">请选择广告类型</option></select></label>
+                    <label>蓝图预设<select id="templateCreatePreset" disabled><option value="">仅使用蓝图字段默认值</option></select></label>
+                    <div class="template-create-actions"><button class="btn btn-secondary" type="button" onclick="showTemplateLibrary()">取消</button><button class="btn btn-primary" type="button" id="templateCreateStart" onclick="beginTemplateDraft()" disabled>填写模板参数</button></div>
+                    <small>起步与账户参考预设仅用于填充参数，不会被修改。保存后的模板会进入列表，可继续编辑；保存模板不会创建广告。</small>
+                </section>
                 <div class="blueprint-editor">
                     <div class="blueprint-editor-header">
                         <div>
@@ -864,10 +943,10 @@
                             <button class="btn btn-secondary blueprint-template-action danger" id="blueprintTemplateDeleteButton" type="button" onclick="deleteSelectedCreationTemplate()" hidden>删除</button>
                         </div>
                     </div>
+                    <button class="btn btn-secondary studio-catalog-toggle" type="button" onclick="document.querySelector('.creation-studio').classList.toggle('studio-catalog-open')">切换广告类型 / 模板</button>
                     <div class="blueprint-flowbar" id="blueprintFlowbar" aria-label="创建步骤"></div>
-                    <div class="blueprint-contract-overview" id="blueprintContractOverview" aria-live="polite"></div>
                     <div class="blueprint-workbench">
-                        <aside class="blueprint-field-nav" id="blueprintFieldNav" aria-label="参数填写目录">
+                        <aside class="blueprint-field-nav" id="blueprintFieldNav" aria-label="参数填写目录" hidden>
                             <div class="blueprint-empty">选择蓝图后显示填写目录。</div>
                         </aside>
                         <div class="blueprint-editor-main">
@@ -908,15 +987,21 @@
                                 </div>
                                 <div class="blueprint-template-panel-footer"><small>模板保存后仍可修改；应用模板只会填充草稿，不会直接创建广告。</small><button class="btn btn-primary" id="creationTemplateSubmitButton" type="button" onclick="saveCreationTemplate()">保存模板</button></div>
                             </div>
-                            <div class="blueprint-summary" id="blueprintSummary" aria-live="polite"></div>
+                            <div class="studio-view-tabs" role="tablist" aria-label="模板内容"><button id="studioTab-fields" class="active" type="button" role="tab" aria-selected="true" onclick="setBlueprintStudioView('fields')">编辑参数</button><button id="studioTab-review" type="button" role="tab" aria-selected="false" onclick="setBlueprintStudioView('review')">参数概览与说明</button></div>
+                            <section class="studio-review" aria-label="参数概览与说明"><div class="studio-review-body">
+                                <div class="blueprint-summary" id="blueprintSummary" aria-live="polite"></div>
+                                <div class="blueprint-contract-overview" id="blueprintContractOverview"></div>
+                            </div></section>
                             <div class="blueprint-fields" id="blueprintFields">
                                 <div class="blueprint-empty">选择左侧蓝图后开始填写。</div>
                             </div>
                             <div class="blueprint-editor-footer">
                                 <span class="blueprint-readiness" id="blueprintReadiness">等待选择蓝图</span>
+                                <button class="btn btn-secondary" id="blueprintStepPrevious" type="button" onclick="moveBlueprintStage(-1)">上一步</button>
+                                <button class="btn btn-secondary" id="blueprintStepNext" type="button" onclick="moveBlueprintStage(1)">下一步</button>
                                 <button class="btn btn-secondary blueprint-focus-action" type="button" onclick="focusBlueprintIssue()">定位待填项</button>
                                 <button class="btn btn-secondary" type="button" onclick="resetBlueprintDraft()">清空草稿</button>
-                                <button class="btn btn-primary" type="button" onclick="useBlueprintInChat()">带入对话</button>
+                                <button class="btn btn-secondary" type="button" onclick="useBlueprintInChat()">带入对话</button><button class="btn btn-primary" id="studioSaveTemplateButton" type="button" onclick="toggleCreationTemplatePanel(true, true)">保存模板</button>
                             </div>
                         </div>
                     </div>
@@ -925,6 +1010,6 @@
         </section>
     </div>
     
-    <script src="/static/js/chat.js?v=20261028-svg-render-v1" defer></script>
+    <script src="/static/js/chat.js?v=20261029-workspace-resilience-v1" defer></script>
 </body>
 </html>

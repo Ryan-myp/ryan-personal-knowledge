@@ -128,19 +128,7 @@ class AgentStatePersistence:
     ) -> None:
         """Keep durable transcript state bounded while retaining system context."""
         state.messages.append(message)
-        system_messages = [item for item in state.messages if item.role == "system"]
-        non_system = [item for item in state.messages if item.role != "system"]
-        keep_from = max(
-            0,
-            len(system_messages) + len(non_system) - self.max_transcript_messages,
-        )
-        total_chars = sum(
-            len(str(item.content)) for item in system_messages + non_system[keep_from:]
-        )
-        while total_chars > self.max_transcript_chars and keep_from < len(non_system):
-            total_chars -= len(str(non_system[keep_from].content))
-            keep_from += 1
-        state.messages = system_messages + non_system[keep_from:]
+        self._trim_completed_turns(state)
         if (
             persist
             and request is not None
@@ -160,6 +148,29 @@ class AgentStatePersistence:
                 tenant_id=str(request.tenant_id or "default"),
                 user_id=str(request.user_id or "anonymous"),
             )
+
+    def over_budget(self, messages: Sequence[AgentMessage]) -> bool:
+        return len(messages) > self.max_transcript_messages or sum(
+            len(str(item.content)) for item in messages
+        ) > self.max_transcript_chars
+
+    def _trim_completed_turns(self, state: AgentState) -> None:
+        system = [item for item in state.messages if item.role == "system"]
+        history = [item for item in state.messages if item.role != "system"]
+        starts = [index for index, item in enumerate(history) if item.role == "user"]
+        keep_from = starts[0] if starts else len(history)
+        total_chars = sum(len(str(item.content)) for item in [*system, *history[keep_from:]])
+        for next_start in starts[1:]:
+            if len(system) + len(history) - keep_from <= self.max_transcript_messages and (
+                total_chars <= self.max_transcript_chars
+            ):
+                break
+            total_chars -= sum(len(str(item.content)) for item in history[keep_from:next_start])
+            keep_from = next_start
+        # Keep an oversized current group intact until the next model admission
+        # check. The whole executed batch must reach durable storage first;
+        # dropping its user message would lose the goal and orphan Tool calls.
+        state.messages = system + history[keep_from:]
 
     def save_checkpoint(
         self,

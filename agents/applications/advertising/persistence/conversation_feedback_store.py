@@ -7,6 +7,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any
 from agents.agent_platform.evals.regression import RegressionAssertions
+from .feedback_review_pages import FeedbackReviewQuery, read_feedback_review_page
 
 
 def save_conversation_feedback(
@@ -204,58 +205,10 @@ def list_conversation_feedback_review_queue(
 ) -> list[dict[str, Any]]:
     if status not in {"pending", "candidate", "dismissed"}:
         raise ValueError("unsupported feedback review status")
-    bounded_limit = max(1, min(int(limit), 100))
-    rows = connection.execute(
-        """SELECT feedback.feedback_id, feedback.session_id, feedback.turn_id,
-                  feedback.user_id, feedback.rating, feedback.reason,
-                  feedback.submitted_at, feedback.review_status,
-                  feedback.reviewer_id, feedback.reviewed_at,
-                  feedback.expected_behavior, feedback.assertions,
-                  (SELECT message.content
-                   FROM conversation_messages AS message
-                   WHERE message.session_id = feedback.session_id
-                     AND message.turn_id = feedback.turn_id
-                     AND message.role = 'user'
-                   ORDER BY message.created_at DESC, message.message_id DESC
-                   LIMIT 1) AS user_input,
-                  (SELECT message.content
-                   FROM conversation_messages AS message
-                   WHERE message.session_id = feedback.session_id
-                     AND message.turn_id = feedback.turn_id
-                     AND message.role = 'assistant'
-                   ORDER BY message.created_at DESC, message.message_id DESC
-                   LIMIT 1) AS assistant_reply
-           FROM conversation_feedback AS feedback
-           JOIN sessions AS session
-             ON session.session_id = feedback.session_id
-            AND session.tenant_id = feedback.tenant_id
-           WHERE feedback.tenant_id = ? AND feedback.rating = 'negative'
-             AND feedback.review_status = ?
-           ORDER BY feedback.submitted_at DESC, feedback.feedback_id
-           LIMIT ?""",
-        (str(tenant_id), status, bounded_limit),
-    ).fetchall()
-    return [
-        {
-            "feedback_id": str(row["feedback_id"]),
-            "session_id": str(row["session_id"]),
-            "turn_id": str(row["turn_id"]),
-            "user_id": str(row["user_id"]),
-            "rating": str(row["rating"]),
-            "reason": str(row["reason"] or "")[:1000],
-            "submitted_at": str(row["submitted_at"]),
-            "review_status": str(row["review_status"]),
-            "reviewer_id": row["reviewer_id"],
-            "reviewed_at": row["reviewed_at"],
-            "expected_behavior": str(row["expected_behavior"] or "")[:2000],
-            "assertions": RegressionAssertions.model_validate_json(
-                row["assertions"] or "{}",
-            ).model_dump(exclude_defaults=True),
-            "user_input": str(row["user_input"] or "")[:4000],
-            "assistant_reply": str(row["assistant_reply"] or "")[:4000],
-        }
-        for row in rows
-    ]
+    filters = FeedbackReviewQuery(
+        tenant_id=tenant_id, status=status, limit=max(1, min(int(limit), 100)),
+    )
+    return read_feedback_review_page(connection, filters)['items']
 
 
 def review_conversation_feedback(

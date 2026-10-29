@@ -30,6 +30,8 @@ def tool_outcome_status(results: Any) -> RunStatus:
     }
     outcomes = []
     for row in rows:
+        if row.get("execution_role") == "control" and _tool_succeeded(row):
+            continue
         content = row.get("result", row.get("content", row))
         content = content if isinstance(content, Mapping) else {}
         signals = row.get("runtime_signals") or {}

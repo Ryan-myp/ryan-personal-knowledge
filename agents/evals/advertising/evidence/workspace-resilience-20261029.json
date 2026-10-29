@@ -1,0 +1,179 @@
+{
+  "date": "2026-10-29",
+  "scope": "Workspace loading, catalog recovery, settings draft preservation and shared JSON request lifecycle",
+  "asset_version": "20261029-workspace-resilience-v1",
+  "changes": [
+    "bounded preload of four scripts with ordered execution and failed-module retry",
+    "shared JSON validation, response-body deadlines, cancellation and honest unknown-write outcomes",
+    "catalog load/error/retry presentation with per-source stale-response protection",
+    "settings single-flight reads, serialized writes and in-page dirty-form preservation",
+    "readable single-column model profiles on narrow screens"
+  ],
+  "validation": {
+    "make_ad_agent_check": {
+      "exit_code": 0,
+      "python_tests_passed": 3302,
+      "dependency_warnings": 1,
+      "capability_audit": "passed",
+      "knowledge_check": "passed"
+    },
+    "static_js_tests": {
+      "passed": 213,
+      "failed": 0
+    },
+    "api_contract_targeted": {
+      "passed": 114
+    },
+    "git_diff_check": "passed",
+    "qguard": {
+      "passed": false,
+      "files": 765,
+      "findings": 5002,
+      "score": 0,
+      "note": "Existing whole-workspace debt; not a passing gate"
+    },
+    "quality_delta_vs_HEAD": {
+      "passed": false,
+      "findings": 15,
+      "note": "Includes prior uncommitted changes; none points to this round's modified Python contract test"
+    },
+    "resilience_browser": {
+      "network": "All requests fulfilled from local files or in-memory fixtures; no live API calls",
+      "errors": [],
+      "checks": [
+        "failed-module-retry-without-replaying-loaded-modules",
+        "knowledge-preserved-and-recovered",
+        "skills-preserved-and-recovered",
+        "mcp-preserved-and-recovered",
+        "settings-drafts-survive-tab-reopen-refresh-and-can-be-discarded",
+        "settings-failure-preserves-input-success-clears-secret",
+        "light-dark-desktop-mobile-layout"
+      ],
+      "startup": {
+        "simulatedDelayPerScriptMs": 50,
+        "sequentialMs": 1506,
+        "preloadedMs": 458,
+        "requests": 27,
+        "uniqueScripts": 27
+      },
+      "mobile-light": {
+        "headerCount": 1,
+        "header": {
+          "x": 0,
+          "y": 0,
+          "width": 390,
+          "height": 60,
+          "top": 0,
+          "right": 390,
+          "bottom": 60,
+          "left": 0
+        },
+        "surface": {
+          "x": 0,
+          "y": 56,
+          "width": 390,
+          "height": 844,
+          "top": 56,
+          "right": 390,
+          "bottom": 900,
+          "left": 0
+        },
+        "bottomElement": "INPUT"
+      },
+      "mobile-dark": {
+        "headerCount": 1,
+        "header": {
+          "x": 0,
+          "y": 0,
+          "width": 390,
+          "height": 60,
+          "top": 0,
+          "right": 390,
+          "bottom": 60,
+          "left": 0
+        },
+        "surface": {
+          "x": 0,
+          "y": 56,
+          "width": 390,
+          "height": 844,
+          "top": 56,
+          "right": 390,
+          "bottom": 900,
+          "left": 0
+        },
+        "bottomElement": "INPUT"
+      }
+    },
+    "management_browser": {
+      "page_errors": [],
+      "surfaces_checked": [
+        "knowledge-list",
+        "knowledge",
+        "knowledge-editor",
+        "blueprint",
+        "blueprint-review",
+        "templates-empty",
+        "templates",
+        "templates-wide",
+        "template-detail",
+        "new-template",
+        "save-template",
+        "schedules",
+        "schedules-wide",
+        "schedule-instances",
+        "schedule-result",
+        "skills-list",
+        "skills",
+        "mcp-list",
+        "mcp",
+        "settings",
+        "operations-menu",
+        "health",
+        "events",
+        "country-dropdown",
+        "meta-targeting",
+        "memory",
+        "monitoring",
+        "feedback",
+        "feedback-review",
+        "knowledge-dark",
+        "feedback-review-mobile",
+        "schedules-mobile",
+        "schedule-instances-mobile",
+        "schedule-result-mobile",
+        "templates-mobile",
+        "template-detail-mobile",
+        "knowledge-list-mobile",
+        "knowledge-mobile",
+        "skills-list-mobile",
+        "skills-mobile",
+        "mcp-list-mobile",
+        "mcp-mobile",
+        "blueprint-mobile",
+        "operations-menu-mobile",
+        "health-mobile",
+        "blueprint-dark"
+      ]
+    },
+    "live_readonly_browser": {
+      "checks": 6,
+      "page_errors": [],
+      "network": "Local GET only; all drafts, confirmations and execution events are synthetic browser data"
+    }
+  },
+  "deployment": {
+    "port": 8766,
+    "listen": "0.0.0.0",
+    "version_verified": true,
+    "static_refresh_only": true,
+    "database_migration": false,
+    "credentials_changed": false,
+    "live_provider_calls": false
+  },
+  "remaining_limits": [
+    "some resource catalogs still fetch bounded sets (100/200) before client-side pagination",
+    "no complete changed-line coverage claim",
+    "no new live advertising API or media-provider validation"
+  ]
+}

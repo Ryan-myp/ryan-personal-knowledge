@@ -20,7 +20,7 @@ if str(ROOT) not in sys.path:
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from agents.agent_platform.evals.regression import RegressionAssertions, evaluate_regression
-from agents.agent_platform.evals.execution_evidence import regression_calls
+from agents.agent_platform.evals.execution_evidence import regression_calls, run_status_evidence
 from agents.deployments.advertising.local_config import load_default_local_env
 from agents.evals.advertising.skill_up_engine import configured_model_adapter
 
@@ -60,6 +60,50 @@ class ReleaseGate:
             limit = -1
         if not math.isfinite(limit) or limit < 0:
             raise ValueError("max_p95_ms must be a non-negative finite number")
+
+
+def _write_report(path: Path, rendered: str) -> None:
+    """Replace a report atomically, retaining the previous file on failure."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w", encoding="utf-8", dir=path.parent,
+            prefix=f".{path.name}.", delete=False,
+        ) as handle:
+            temporary = Path(handle.name)
+            handle.write(rendered)
+        temporary.replace(path)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+
+
+class RegressionProgressWriter:
+    """Retain safe case evidence while a long suite is still in progress."""
+
+    def __init__(self, output: Path | None, *, total: int, mode: str):
+        self.output, self.total, self.mode = output, total, mode
+        self.cases: list[dict[str, Any]] = []
+        self._save()
+
+    def _save(self) -> None:
+        if self.output is not None:
+            _write_report(self.output, json.dumps({
+                "schema_version": "agent-regression-report/v1", "mode": self.mode,
+                "provider_e2e": False, "complete": False, "total": self.total,
+                "completed_cases": len(self.cases), "cases": self.cases,
+                "gate_passed": False, "release_ready": False,
+                "release_blockers": ["suite_incomplete"],
+            }, ensure_ascii=False, indent=2) + "\n")
+
+    def record(self, case: Mapping[str, Any]) -> None:
+        self.cases.append(dict(case))
+        self._save()
+        print(
+            f"评测 {len(self.cases)}/{self.total}: {case['id']} ({case['status']})",
+            file=sys.stderr, flush=True,
+        )
 
 
 _SAFE_TOOL_NAME = re.compile(r"[A-Za-z][A-Za-z0-9_.:-]{0,119}\Z")
@@ -112,6 +156,7 @@ def run_suite(
     *,
     mode: str,
     release_gate: ReleaseGate | None = None,
+    on_case_complete: Callable[[Mapping[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
     results = []
     for case in cases:
@@ -119,6 +164,9 @@ def run_suite(
         tool_names: list[str] = []
         tool_call_count = 0
         phase_ms: dict[str, float] = {}
+        runtime_state: dict[str, Any] = {}
+        execution_states: list[str] = []
+        execution_evidence: list[dict[str, Any]] = []
         if not case.assertions.executable:
             result = {"status": "ungraded", "checks": 0, "failures": []}
         else:
@@ -126,6 +174,23 @@ def run_suite(
                 response = execute(case)
                 phase_ms = _safe_phase_timings(response)
                 calls = regression_calls(response)
+                if "status" in response:
+                    runtime_state["status"] = run_status_evidence(response["status"])
+                runtime_state.update({
+                    key: response[key] for key in ("needs_input", "needs_confirmation")
+                    if type(response.get(key)) is bool
+                })
+                execution_states = [str(call.get("state") or "unknown") for call in calls]
+                execution_evidence = [{
+                    "tool": (
+                        str(call.get("tool")) if _SAFE_TOOL_NAME.fullmatch(str(call.get("tool")))
+                        else "<invalid>"
+                    ),
+                    **{
+                        key: call[key] for key in ("success", "state", "argument_fingerprints")
+                        if key in call
+                    },
+                } for call in calls]
                 tool_call_count = len(calls)
                 tool_names = [
                     name if _SAFE_TOOL_NAME.fullmatch(name) else "<invalid>"
@@ -141,8 +206,12 @@ def run_suite(
             "tool_call_count": tool_call_count,
             "tool_names": tool_names,
             "phase_ms": phase_ms,
+            "runtime_state": runtime_state, "execution_states": execution_states,
+            "tool_execution_evidence": execution_evidence,
             "duration_ms": round((time.perf_counter() - started) * 1000, 3),
         })
+        if on_case_complete is not None:
+            on_case_complete(dict(results[-1]))
     totals = {
         status: sum(result["status"] == status for result in results)
         for status in ("passed", "failed", "ungraded", "error")
@@ -164,6 +233,7 @@ def run_suite(
             blockers.append("latency_p95_exceeded")
     return {
         "schema_version": "agent-regression-report/v1", "mode": mode,
+        "complete": True, "completed_cases": len(results),
         "provider_e2e": False, "total": len(results), **totals, "cases": results,
         "gate_passed": totals["passed"] == len(results) and bool(results),
         "latency_samples": len(durations),
@@ -223,6 +293,10 @@ def main() -> int:
         if args.release_gate else None
     )
     cases = load_cases(args.cases)
+    progress = RegressionProgressWriter(
+        args.output, total=len(cases),
+        mode="model_backed_offline_providers" if args.model_backed else "replay_assertions",
+    )
     if args.model_backed:
         load_default_local_env()
         adapter = configured_model_adapter()
@@ -233,16 +307,19 @@ def main() -> int:
             partial(_model_response, model_adapter=adapter),
             mode="model_backed_offline_providers",
             release_gate=release_gate,
+            on_case_complete=progress.record,
         )
     else:
         if args.responses.stat().st_size > 4_194_304:
             raise ValueError("response evidence exceeds 4 MiB")
         responses = json.loads(args.responses.read_text(encoding="utf-8"))
-        report = run_suite(cases, lambda case: responses[case.id], mode="replay_assertions")
+        report = run_suite(
+            cases, lambda case: responses[case.id], mode="replay_assertions",
+            on_case_complete=progress.record,
+        )
     rendered = json.dumps(report, ensure_ascii=False, indent=2)
     if args.output:
-        args.output.parent.mkdir(parents=True, exist_ok=True)
-        args.output.write_text(rendered + "\n", encoding="utf-8")
+        _write_report(args.output, rendered + "\n")
     print(rendered)
     passed = report["release_ready"] if release_gate else report["gate_passed"]
     return 0 if passed else 1

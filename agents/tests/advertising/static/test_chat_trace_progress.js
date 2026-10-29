@@ -53,6 +53,27 @@ function environment() {
     return { context, elements };
 }
 
+test('compact activity summary follows real run status without exposing tool payloads', () => {
+    const { context, elements } = environment();
+    context.applyExecutionEvent({ type: 'start', status: 'running' });
+    assert.equal(elements.get('activityStatus')?.textContent, '运行中');
+    assert.match(elements.get('activitySummary')?.textContent || '', /回合开始/);
+    context.applyExecutionEvent({
+        type: 'error', status: 'failed', safe_input: { private_value: 'do-not-display' },
+    });
+    assert.equal(elements.get('activityStatus')?.textContent, '失败');
+    assert.equal(elements.get('activitySummary')?.textContent.includes('do-not-display'), false);
+});
+
+test('clearing activity returns the compact summary to an honest empty state', () => {
+    const { context, elements } = environment();
+    context.applyExecutionEvent({ type: 'start', status: 'running' });
+    context.resetExecutionTrace();
+    assert.equal(elements.get('activityStatus')?.textContent, '尚未开始');
+    assert.equal(elements.get('activityCount')?.textContent, '');
+    assert.match(elements.get('activitySummary')?.textContent || '', /任务运行后/);
+});
+
 test('model lifecycle events become safe, readable trace stages', () => {
     const { context, elements } = environment();
 
@@ -118,7 +139,7 @@ test('model lifecycle events become safe, readable trace stages', () => {
     );
 });
 
-test('schedule list uses one global runs request instead of sequential details', async () => {
+test('schedule list fetches one task page without any run history', async () => {
     const calls = [];
     const elements = new Map();
     const context = {
@@ -151,14 +172,12 @@ test('schedule list uses one global runs request instead of sequential details',
     const source = path.resolve(
         __dirname, '../../../deployments/advertising/static/js/chat-workspace.js',
     );
-    vm.runInNewContext(fs.readFileSync(source, 'utf8'), context, { filename: source });
+    vm.runInNewContext(fs.readFileSync(source, 'utf8') + '\n' + fs.readFileSync(path.join(path.dirname(source), 'chat-schedules.js'), 'utf8'), Object.assign(context, {URLSearchParams}), { filename: source });
 
     await context.loadSchedules();
 
     assert.deepEqual(calls, [
-        '/schedules?limit=100',
-        '/monitoring/overview',
-        '/schedule-runs?limit=100',
+        '/schedules?page=1&limit=20',
     ]);
     assert.equal(calls.some(endpoint => /^\/schedules\/[^?]+$/.test(endpoint)), false);
 });
@@ -198,12 +217,12 @@ test('running a schedule refreshes its visible queued run state', async () => {
                     },
                 };
             }
-            if (endpoint === '/schedules?limit=100') {
+            if (endpoint === '/schedules?page=1&limit=20') {
                 return {
                     schedules: [{
                         schedule_id: 'schedule-1',
                         name: 'Daily report',
-                        status: 'active',
+                        status: 'active', has_pending_run:true, latest_run_status:'queued',
                     }],
                 };
             }
@@ -226,7 +245,7 @@ test('running a schedule refreshes its visible queued run state', async () => {
     const source = path.resolve(
         __dirname, '../../../deployments/advertising/static/js/chat-workspace.js',
     );
-    vm.runInNewContext(fs.readFileSync(source, 'utf8'), context, { filename: source });
+    vm.runInNewContext(fs.readFileSync(source, 'utf8') + '\n' + fs.readFileSync(path.join(path.dirname(source), 'chat-schedules.js'), 'utf8'), Object.assign(context, {URLSearchParams}), { filename: source });
     const button = {
         textContent: '立即执行',
         disabled: false,
@@ -239,7 +258,6 @@ test('running a schedule refreshes its visible queued run state', async () => {
 
     assert.equal(calls[0][0], '/schedules/schedule-1/run-now');
     assert.equal(calls[0][1].method, 'POST');
-    assert.match(elements.get('scheduleList').innerHTML, /最近执行/);
     assert.match(elements.get('scheduleList').innerHTML, /排队中/);
     assert.match(elements.get('scheduleList').innerHTML, /disabled aria-busy="true"/);
 });
@@ -282,7 +300,7 @@ test('schedule editor loads an existing schedule and saves it through scoped PAT
             if (endpoint === '/schedules/schedule-1') {
                 return { schedule: { schedule_id: 'schedule-1' } };
             }
-            if (endpoint === '/schedules?limit=100') {
+            if (endpoint === '/schedules?page=1&limit=20') {
                 return { schedules: [] };
             }
             if (endpoint === '/monitoring/overview') return { schedules: {} };
@@ -293,7 +311,7 @@ test('schedule editor loads an existing schedule and saves it through scoped PAT
     const source = path.resolve(
         __dirname, '../../../deployments/advertising/static/js/chat-workspace.js',
     );
-    vm.runInNewContext(fs.readFileSync(source, 'utf8'), context, { filename: source });
+    vm.runInNewContext(fs.readFileSync(source, 'utf8') + '\n' + fs.readFileSync(path.join(path.dirname(source), 'chat-schedules.js'), 'utf8'), Object.assign(context, {URLSearchParams}), { filename: source });
 
     context.renderSchedules({
         schedules: [{

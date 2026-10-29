@@ -10,6 +10,7 @@ know that its values are dynamic and must not be hard-coded here.
 from typing import Any, Optional
 
 from agents.tools.advertising.clients.tiktok_client import TIKTOK_SMART_PLUS_CTA_VALUES
+from agents.tools.advertising.clients.tiktok_lead_contract import LEAD_DESTINATION_GOALS
 
 
 TIKTOK_OBJECTIVE_TYPES = [
@@ -245,7 +246,8 @@ def tiktok_campaign_schema() -> dict[str, Any]:
                 input_aliases=["名称", "广告系列名称", "campaign name"],
             ),
             "objective_type": _field(
-                "string", "Campaign optimization objective", enum=TIKTOK_OBJECTIVE_TYPES,
+                "string", "Campaign optimization objective",
+                enum=TIKTOK_OBJECTIVE_TYPES, creation_selector=True,
                 option_aliases={
                     "APP_PROMOTION": ["app promotion", "app conversion", "app install", "App 转化", "App 广告", "应用推广", "应用转化", "应用安装"],
                     "PRODUCT_SALES": ["product sales", "product ad", "销售", "销售广告", "商品销售", "商品广告"],
@@ -1968,7 +1970,7 @@ def tiktok_smart_plus_campaign_schema() -> dict[str, Any]:
             "campaign_name": _field("string", "Campaign name", minLength=1, maxLength=512),
             "objective_type": _field(
                 "string", "Business objective or Smart+ API objective",
-                enum=TIKTOK_SMART_PLUS_OBJECTIVES,
+                enum=TIKTOK_SMART_PLUS_OBJECTIVES, creation_selector=True,
                 option_labels={
                     "APP_PROMOTION": "App promotion",
                     "WEB_CONVERSIONS": "Web conversions",
@@ -2043,6 +2045,22 @@ def tiktok_smart_plus_adgroup_schema() -> dict[str, Any]:
         # objectives. Omitting it would silently treat Traffic as Sales.
         "conditional_rules": [
             {
+                "if": {
+                    "bid_type": "BID_TYPE_CUSTOM",
+                    "optimization_goal": {"in": ["CONVERT", "TRAFFIC_LANDING_PAGE_VIEW"]},
+                },
+                "required": ["conversion_bid_price"],
+                "message": "此优化目标的自定义出价需要 conversion_bid_price",
+            },
+            {
+                "if": {
+                    "bid_type": "BID_TYPE_CUSTOM",
+                    "optimization_goal": {"not_in": ["CONVERT", "TRAFFIC_LANDING_PAGE_VIEW"]},
+                },
+                "required": ["bid_price"],
+                "message": "此优化目标的自定义出价需要 bid_price",
+            },
+            {
                 "if": {"objective_type": "APP_PROMOTION"},
                 "required": ["app_id", "operating_systems"],
                 "allowed": {
@@ -2055,15 +2073,27 @@ def tiktok_smart_plus_adgroup_schema() -> dict[str, Any]:
                 "if": {"objective_type": "LEAD_GENERATION"},
                 "required": ["promotion_target_type"],
                 "allowed": {
-                    "promotion_type": [
-                        "LEAD_GENERATION",
-                        "LEAD_GEN_CLICK_TO_TT_DIRECT_MESSAGE",
-                        "LEAD_GEN_CLICK_TO_SOCIAL_MEDIA_APP_MESSAGE",
-                    ],
-                    "optimization_goal": ["LEAD_GENERATION", "CLICK", "CONVERSATION"],
+                    "promotion_type": ["LEAD_GENERATION"],
+                    "optimization_goal": ["LEAD_GENERATION", "CONVERT"],
+                    "billing_event": ["OCPM"],
                 },
                 "message": "LEAD_GENERATION requires a supported lead promotion type, target and goal",
             },
+            *[
+                {
+                    "if": {
+                        "objective_type": "LEAD_GENERATION",
+                        "promotion_target_type": destination,
+                    },
+                    "allowed": {"optimization_goal": goals},
+                    "required": (
+                        ["pixel_id", "optimization_event"]
+                        if destination == "EXTERNAL_WEBSITE" else []
+                    ),
+                    "message": "Lead 承接位置、优化目标和事件必须一致",
+                }
+                for destination, goals in LEAD_DESTINATION_GOALS.items()
+            ],
             {
                 "if": {"objective_type": "TRAFFIC"},
                 "allowed": {
@@ -2172,9 +2202,21 @@ def tiktok_smart_plus_ad_schema() -> dict[str, Any]:
         "requires_any_of": [["tiktok_item_id", "video_id", "image_ids"]],
         "conditional_rules": [
             {
-                "if": {"objective_type": "LEAD_GENERATION"},
+                "if": {
+                    "objective_type": "LEAD_GENERATION",
+                    "promotion_target_type": "INSTANT_PAGE",
+                },
                 "required": ["page_list"],
-                "message": "LEAD_GENERATION Smart+ ads require a selected Instant Page",
+                "message": "Lead Instant Form 必须选择 Instant Page",
+            },
+            {
+                "if": {
+                    "objective_type": "LEAD_GENERATION",
+                    "promotion_target_type": "EXTERNAL_WEBSITE",
+                    "landing_page_url_list": {"exists": False},
+                },
+                "required": ["landing_page_url"],
+                "message": "Lead 网站表单必须填写落地页链接",
             },
             {
                 "if": {"any": [
@@ -2201,6 +2243,10 @@ def tiktok_smart_plus_ad_schema() -> dict[str, Any]:
                     "leads": "LEAD_GENERATION",
                 },
                 ui_hidden=True,
+            ),
+            "promotion_target_type": _field(
+                "string", "父 Ad Group 的线索承接位置；仅校验上下文，不发送到 Ad API",
+                enum=list(LEAD_DESTINATION_GOALS), ui_hidden=True,
             ),
             "ad_name": _field("string", "Ad name", minLength=1, maxLength=512),
             "operation_status": _field("string", "Create status", enum=["DISABLE", "ENABLE"], default="DISABLE"),
@@ -2375,7 +2421,31 @@ def tiktok_ad_format_catalog() -> list[dict[str, Any]]:
     all_in_one_spark = ["tiktok_create_all_in_one_spark_ad"]
     return [
         {
+            "format_id": "legacy_objectives", "blueprint_ids": [],
+            "objective_values": ["APP_INSTALL", "CATALOG_SALES", "CONVERSIONS", "SHOP_PURCHASES"],
+            "category": "legacy", "resource_type": "campaign", "coverage": "declared_only",
+            "tool_names": [], "creation_available": False,
+            "creation_limitation": {
+                "reason": "这些旧目标未接入向导；请改选 APP_PROMOTION、WEB_CONVERSIONS 或 Sales，并重新核对目的地和素材。",
+                "source_url": "https://business-api.tiktok.com/portal/docs?id=1739318962329602",
+            },
+            "dependencies": [], "supported_fields": [],
+            "gaps": ["旧目标只保留兼容字段，不作为已验证的创建入口"],
+            "source_document": source_document,
+        },
+        {
+            "format_id": "web_conversions", "blueprint_ids": ["tiktok.web_conversions"],
+            "category": "conversion", "resource_type": "campaign", "coverage": "partial_dry_run",
+            "tool_names": smart_plus_chain,
+            "payload_adapter": "TikTokAPIClient.create_smart_plus_campaign/create_smart_plus_adgroup/create_smart_plus_ad",
+            "dependencies": ["pixel_id", "optimization_event", "landing_page_url"],
+            "supported_fields": ["WEB_CONVERSIONS", "CONVERT", "VALUE"],
+            "gaps": ["本轮离线验证；需有效 Pixel、素材和账户资格"],
+            "source_document": source_document,
+        },
+        {
             "format_id": "product_sales",
+            "blueprint_ids": ["tiktok.product_sales_video"],
             "category": "product_sales",
             "resource_type": "campaign",
             "coverage": "supported_dry_run",
@@ -2388,6 +2458,7 @@ def tiktok_ad_format_catalog() -> list[dict[str, Any]]:
         },
         {
             "format_id": "product_sales.shop",
+            "blueprint_ids": ["tiktok.product_sales_video"],
             "category": "product_sales",
             "resource_type": "ad_group",
             "coverage": "supported_dry_run",
@@ -2400,6 +2471,7 @@ def tiktok_ad_format_catalog() -> list[dict[str, Any]]:
         },
         {
             "format_id": "spark",
+            "blueprint_ids": ["tiktok.spark"],
             "category": "spark",
             "resource_type": "ad",
             "coverage": "supported_dry_run",
@@ -2412,6 +2484,7 @@ def tiktok_ad_format_catalog() -> list[dict[str, Any]]:
         },
         {
             "format_id": "traffic",
+            "blueprint_ids": ["tiktok.traffic_video"],
             "category": "traffic",
             "resource_type": "campaign",
             "coverage": "supported_dry_run",
@@ -2424,6 +2497,7 @@ def tiktok_ad_format_catalog() -> list[dict[str, Any]]:
         },
         {
             "format_id": "sales",
+            "blueprint_ids": ["tiktok.product_sales_video"],
             "category": "sales",
             "resource_type": "campaign",
             "coverage": "supported_dry_run",
@@ -2436,6 +2510,7 @@ def tiktok_ad_format_catalog() -> list[dict[str, Any]]:
         },
         {
             "format_id": "single_video",
+            "blueprint_ids": ["tiktok.single_video"],
             "category": "product_sales",
             "resource_type": "ad",
             "coverage": "supported_dry_run",
@@ -2448,6 +2523,7 @@ def tiktok_ad_format_catalog() -> list[dict[str, Any]]:
         },
         {
             "format_id": "single_image",
+            "blueprint_ids": ["tiktok.single_image"],
             "category": "product_sales",
             "resource_type": "ad",
             "coverage": "supported_dry_run",
@@ -2460,6 +2536,7 @@ def tiktok_ad_format_catalog() -> list[dict[str, Any]]:
         },
         {
             "format_id": "carousel",
+            "blueprint_ids": ["tiktok.carousel"],
             "category": "product_sales",
             "resource_type": "ad",
             "coverage": "supported_dry_run",
@@ -2472,23 +2549,25 @@ def tiktok_ad_format_catalog() -> list[dict[str, Any]]:
         },
         {
             "format_id": "lead",
+            "blueprint_ids": ["tiktok.lead_generation"],
             "category": "lead",
             "resource_type": "campaign",
             "coverage": "partial_dry_run",
-            "tool_names": ["tiktok_create_campaign", "tiktok_create_adgroup", "tiktok_create_lead_ad"],
-            "payload_adapter": "TikTokAPIClient.create_lead_ad",
-            "dependencies": ["LEAD_GENERATION", "TIKTOK_NATIVE_PAGE", "page_id"],
+            "tool_names": smart_plus_chain,
+            "payload_adapter": "TikTokAPIClient.create_smart_plus_campaign/create_smart_plus_adgroup/create_smart_plus_ad",
+            "dependencies": ["LEAD_GENERATION", "page_list_or_website_pixel_and_event"],
             "supported_fields": ["objective_type", "page_id", "media"],
-            "gaps": ["Instant Page Editor SDK integration", "page lookup/validation", "live mutation approval"],
+            "gaps": ["消息与电话获客参数合同尚未接入", "Instant Page 需提供有效 ID", "本轮仅离线验证"],
             "source_document": source_document,
         },
         {
             "format_id": "lead.instant_form",
+            "blueprint_ids": ["tiktok.lead_generation"],
             "category": "lead",
             "resource_type": "ad",
             "coverage": "supported_dry_run",
-            "tool_names": ["tiktok_create_adgroup", "tiktok_create_lead_ad"],
-            "payload_adapter": "TikTokAPIClient.create_lead_ad",
+            "tool_names": smart_plus_chain,
+            "payload_adapter": "TikTokAPIClient.create_smart_plus_ad",
             "dependencies": ["LEAD_GENERATION", "TIKTOK_NATIVE_PAGE", "page_id"],
             "supported_fields": ["page_id"],
             "gaps": ["Instant Page Editor SDK integration", "page lookup/validation", "live mutation approval"],
@@ -2496,6 +2575,7 @@ def tiktok_ad_format_catalog() -> list[dict[str, Any]]:
         },
         {
             "format_id": "app",
+            "blueprint_ids": ["tiktok.app_conversion_video"],
             "category": "app",
             "resource_type": "campaign",
             "coverage": "partial_dry_run",
@@ -2508,6 +2588,7 @@ def tiktok_ad_format_catalog() -> list[dict[str, Any]]:
         },
         {
             "format_id": "app.install",
+            "blueprint_ids": ["tiktok.app_conversion_video"],
             "category": "app",
             "resource_type": "ad",
             "coverage": "supported_dry_run",
@@ -2520,6 +2601,7 @@ def tiktok_ad_format_catalog() -> list[dict[str, Any]]:
         },
         {
             "format_id": "brand",
+            "blueprint_ids": ["tiktok.spark"],
             "category": "brand",
             "resource_type": "campaign",
             "coverage": "partial_dry_run",
@@ -2532,6 +2614,7 @@ def tiktok_ad_format_catalog() -> list[dict[str, Any]]:
         },
         {
             "format_id": "brand.topview",
+            "blueprint_ids": [],
             "category": "brand",
             "resource_type": "ad_group",
             "coverage": "declared_only",
@@ -2542,6 +2625,7 @@ def tiktok_ad_format_catalog() -> list[dict[str, Any]]:
         },
         {
             "format_id": "brand.takeover",
+            "blueprint_ids": [],
             "category": "brand",
             "resource_type": "ad_group",
             "coverage": "declared_only",

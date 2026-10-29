@@ -172,6 +172,120 @@ def test_contextual_read_does_not_reuse_prior_write_tool():
     assert selected == []
 
 
+@pytest.mark.parametrize("prompt", ["再按状态筛选，只看 PAUSED 的 record", "filter records to archived status"])
+def test_filter_preserves_prior_report_operation_even_when_resource_is_named(prompt):
+    tools = [
+        {"name": "alpha_report", "namespace": "alpha", "resource_type": "record",
+         "action": "report", "effect_class": "read", "intent_aliases": ["record 报表"]},
+        {"name": "alpha_list", "namespace": "alpha", "resource_type": "record",
+         "action": "list", "effect_class": "read", "intent_aliases": ["record 列表"]},
+    ]
+    selected = ToolSelector().select_relevant(
+        prompt, tools, prior_tool_names=("alpha_report",),
+        conversation_context=("查询 alpha record 报表", "需要按 record 汇总"),
+    )
+    assert [tool["name"] for tool in selected] == ["alpha_report"]
+
+
+def test_filter_recovers_report_anchor_past_an_intermediate_toolless_instruction():
+    tools = [
+        {"name": "alpha_report", "namespace": "alpha", "resource_type": "record",
+         "action": "report", "effect_class": "read", "intent_aliases": ["record 报表"]},
+        {"name": "alpha_list", "namespace": "alpha", "resource_type": "record",
+         "action": "list", "effect_class": "read", "intent_aliases": ["record 列表"]},
+    ]
+    selected = ToolSelector().select_relevant(
+        "再按状态筛选，只看 PAUSED 的 record", tools,
+        conversation_context=("查询 alpha record 报表", "需要按 record 汇总"),
+    )
+    assert [tool["name"] for tool in selected] == ["alpha_report"]
+
+
+@pytest.mark.parametrize("prompt", [
+    "再按 PAUSED 状态筛选 record，不要改成列表查询",
+    "filter paused records; do not switch to a list",
+])
+def test_negated_list_operation_does_not_override_report_refinement(prompt):
+    tools = [
+        {"name": "alpha_report", "namespace": "alpha", "resource_type": "record",
+         "action": "report", "effect_class": "read", "intent_aliases": ["record 报表"]},
+        {"name": "alpha_list", "namespace": "alpha", "resource_type": "record",
+         "action": "list", "effect_class": "read", "intent_aliases": ["record 列表"]},
+    ]
+    selected = ToolSelector().select_relevant(
+        prompt, tools, prior_tool_names=("alpha_report",),
+        conversation_context=("查询 alpha record 报表",),
+    )
+    assert [tool["name"] for tool in selected] == ["alpha_report"]
+
+
+@pytest.mark.parametrize("prompt", [
+    "从内部手册解释 alpha record 的原理", "explain alpha records from the internal manual",
+])
+def test_explanation_preserves_an_explicit_discovery_source(prompt):
+    tools = [
+        {"name": "internal_lookup", "namespace": "manual", "resource_type": "knowledge",
+         "action": "search", "effect_class": "read", "traits": ["semantic_discovery", "knowledge"],
+         "intent_aliases": ["内部手册", "internal manual"]},
+        {"name": "public_lookup", "namespace": "public", "resource_type": "web",
+         "action": "search", "effect_class": "read", "traits": ["semantic_discovery"]},
+        {"name": "alpha_update", "namespace": "alpha", "resource_type": "record",
+         "action": "update", "effect_class": "write", "description": "Update alpha records"},
+    ]
+    selected = ToolSelector().select_relevant(prompt, tools)
+    assert [tool["name"] for tool in selected] == ["internal_lookup"]
+
+
+def test_explanation_excludes_a_negated_discovery_source():
+    tools = [
+        {"name": "internal_lookup", "namespace": "manual", "resource_type": "knowledge",
+         "action": "search", "effect_class": "read", "traits": ["semantic_discovery"],
+         "intent_aliases": ["internal manual"]},
+        {"name": "public_lookup", "namespace": "public", "resource_type": "web",
+         "action": "search", "effect_class": "read", "traits": ["semantic_discovery"]},
+    ]
+    selected = ToolSelector().select_relevant(
+        "explain records; do not use the internal manual", tools,
+    )
+    assert [tool["name"] for tool in selected] == ["public_lookup"]
+
+
+@pytest.mark.parametrize("prompt", [
+    "再筛选一下，排除已删除状态", "list paused records", "query deleted records",
+])
+def test_read_filters_do_not_treat_described_states_as_write_commands(prompt):
+    selector = ToolSelector()
+    assert selector.is_read_only_request(prompt, ())
+
+
+@pytest.mark.parametrize("prompt", [
+    "查询 record 后暂停它", "list records then pause one", "先筛选再删除记录",
+])
+def test_mixed_read_and_imperative_write_is_not_mistaken_for_a_filter(prompt):
+    assert not ToolSelector().is_read_only_request(prompt, ())
+
+
+@pytest.mark.parametrize("prompt", [
+    "继续 alpha record 创建状态的要求，只列当前有效约束", "帮我复述 alpha record 的创建要求",
+    "请解释创建 record 需要哪些信息",
+])
+def test_recap_does_not_force_a_tool_call_for_a_mentioned_write(prompt):
+    tool = {"name": "alpha_create", "namespace": "alpha", "resource_type": "record",
+            "action": "create", "effect_class": "write"}
+    assert ToolSelector().requires_tool_call(prompt, [tool]) is False
+
+
+@pytest.mark.parametrize("prompt", ["创建 record", "帮我在 alpha 创建 record", "这个再暂停一下"])
+def test_explicit_imperative_write_still_requires_a_registered_tool(prompt):
+    tool = {"name": "alpha_create", "namespace": "alpha", "resource_type": "record",
+            "action": "create", "effect_class": "write"}
+    if "暂停" in prompt:
+        tool = {**tool, "name": "alpha_pause", "action": "pause"}
+        assert ToolSelector().requires_tool_call(prompt, [tool], prior_tool_names=("alpha_pause",))
+    else:
+        assert ToolSelector().requires_tool_call(prompt, [tool])
+
+
 def test_explicit_contextual_write_reuses_registered_prior_write_tool():
     write = _definition(
         "alpha_pause_record",

@@ -2,6 +2,10 @@
             snapshot: null,
             provider: 'google',
             tab: 'models',
+            loadPromise: null,
+            revision: 0,
+            mutationPending: false,
+            dirty: new Set(),
         };
 
         const providerCredentialFields = {
@@ -36,24 +40,61 @@
         };
 
         async function settingsRequest(url, options = {}) {
-            const response = await serviceFetch(url, {
-                ...options,
-                headers: {
-                    'Content-Type': 'application/json',
-                    ...(options.headers || {}),
-                },
-            });
-            const text = await response.text();
-            let payload = {};
+            const mutation = !['GET', 'HEAD'].includes(String(options.method || 'GET').toUpperCase());
+            if (mutation && agentSettingsState.mutationPending) throw new Error('正在保存，请等待当前操作完成。');
+            const controls = mutation ? [...document.querySelectorAll('#agentSettingsOverlay input, #agentSettingsOverlay select, #agentSettingsOverlay button')]
+                .map(control => ({control, disabled: control.disabled})) : [];
+            if (mutation) {
+                agentSettingsState.revision++;
+                agentSettingsState.mutationPending = true;
+                controls.forEach(({control}) => {control.disabled = true;});
+            }
             try {
-                payload = text ? JSON.parse(text) : {};
-            } catch (_) {
-                payload = {};
+                return await apiFetch(url, {
+                    ...options, headers: {'Content-Type': 'application/json', ...(options.headers || {})},
+                });
+            } finally {
+                if (mutation) agentSettingsState.mutationPending = false;
+                controls.forEach(({control, disabled}) => {control.disabled = disabled;});
             }
-            if (!response.ok) {
-                throw new Error(payload.detail || `请求失败（${response.status}）`);
+        }
+
+        function markSettingsDirty(section) {
+            agentSettingsState.dirty.add(section);
+            updateSettingsDraftAction();
+        }
+
+        function updateSettingsDraftAction() {
+            const button = document.getElementById('settingsDiscardDraft');
+            if (button) button.hidden = !agentSettingsState.dirty.has(agentSettingsState.tab);
+        }
+
+        function bindSettingsDrafts() {
+            for (const [section, id] of [['models','agentModelForm'],['providers','agentProviderForm'],['web-search','webSearchSettingsForm']]) {
+                const form = document.getElementById(id);
+                if (!form || form.dataset.draftTracked) continue;
+                form.dataset.draftTracked = 'true';
+                for (const event of ['input','change']) form.addEventListener(event, () => markSettingsDirty(section));
             }
-            return payload;
+        }
+
+        function canReplaceSettingsDraft(section) {
+            if (!agentSettingsState.dirty.has(section)) return true;
+            setAgentSettingsStatus('当前表单有未保存的修改，请先保存，或点击“放弃当前编辑”后再切换。');
+            return false;
+        }
+
+        function discardAgentSettingsDraft() {
+            const section = agentSettingsState.tab;
+            agentSettingsState.dirty.delete(section);
+            if (section === 'models') {
+                document.getElementById('agentModelForm')?.reset();
+                document.getElementById('agentModelProfileId').value = '';
+                renderAgentModelProfiles();
+            } else if (section === 'providers') renderAgentProviderFields();
+            else renderWebSearchSettings();
+            updateSettingsDraftAction();
+            setAgentSettingsStatus('已放弃当前表单的未保存修改。');
         }
         function setAgentSettingsStatus(message, isError = false) {
             const status = document.getElementById('agentSettingsStatus');
@@ -80,8 +121,9 @@
             if (!overlay) return;
             overlay.classList.add('active');
             overlay.setAttribute('aria-hidden', 'false');
+            bindSettingsDrafts();
             selectAgentSettingsTab(tab);
-            loadAgentSettings();
+            if (!agentSettingsState.snapshot) loadAgentSettings();
         }
 
         function closeAgentSettings() {
@@ -112,19 +154,29 @@
             if (modelsPanel) modelsPanel.hidden = !modelsActive;
             if (providersPanel) providersPanel.hidden = !providersActive;
             if (webSearchPanel) webSearchPanel.hidden = !webSearchActive;
-            if (providersActive) renderAgentProviderFields();
-            if (webSearchActive) renderWebSearchSettings();
+            updateSettingsDraftAction();
         }
 
-        async function loadAgentSettings() {
+        function loadAgentSettings() {
+            if (agentSettingsState.mutationPending) return Promise.resolve();
+            if (agentSettingsState.loadPromise) return agentSettingsState.loadPromise;
+            agentSettingsState.loadPromise = readAgentSettings().finally(() => {agentSettingsState.loadPromise = null;});
+            return agentSettingsState.loadPromise;
+        }
+
+        async function readAgentSettings() {
+            const revision = agentSettingsState.revision;
             setAgentSettingsStatus('读取配置中…');
             try {
-                agentSettingsState.snapshot = await settingsRequest('/settings');
-                renderAgentModelProfiles();
-                renderAgentProviderFields();
-                renderWebSearchSettings();
-                setAgentSettingsStatus('');
+                const snapshot = await settingsRequest('/settings');
+                if (revision !== agentSettingsState.revision) return;
+                agentSettingsState.snapshot = snapshot;
+                if (!agentSettingsState.dirty.has('models')) renderAgentModelProfiles();
+                if (!agentSettingsState.dirty.has('providers')) renderAgentProviderFields();
+                if (!agentSettingsState.dirty.has('web-search')) renderWebSearchSettings();
+                setAgentSettingsStatus(agentSettingsState.dirty.size ? '配置状态已刷新，未保存的编辑已保留。' : '');
             } catch (error) {
+                if (revision !== agentSettingsState.revision) return;
                 setAgentSettingsStatus(error.message || '读取设置失败。', true);
             }
         }
@@ -193,7 +245,7 @@
                 list.appendChild(empty);
             }
             renderAgentMediaModelCatalog();
-            if (!document.getElementById('agentModelProfileId')?.value) {
+            if (!agentSettingsState.dirty.has('models') && !document.getElementById('agentModelProfileId')?.value) {
                 const active = (settings.profiles || []).find(item => item.active);
                 if (active?.source === 'vault') editAgentModelProfile(active);
                 else {
@@ -254,6 +306,7 @@
         }
 
         function configureMediaModel(purpose) {
+            if (!canReplaceSettingsDraft('models')) return;
             const settings = agentSettingsState.snapshot;
             const option = settings?.media_model_catalog?.[purpose];
             if (!option) return;
@@ -312,6 +365,7 @@
         }
 
         function newAgentModelProfile() {
+            if (!canReplaceSettingsDraft('models')) return;
             const form = document.getElementById('agentModelForm');
             form?.reset();
             const profileId = document.getElementById('agentModelProfileId');
@@ -324,9 +378,11 @@
             updateAgentModelChoices();
             setAgentSettingsStatus('');
             document.getElementById('agentModelName')?.focus();
+            markSettingsDirty('models');
         }
 
         function editAgentModelProfile(profile) {
+            if (!canReplaceSettingsDraft('models')) return;
             document.getElementById('agentModelProfileId').value = profile.id;
             document.getElementById('agentModelName').value = profile.name || '';
             document.getElementById('agentModelPurpose').value = profile.purpose || 'chat';
@@ -361,6 +417,8 @@
                     method: profileId ? 'PUT' : 'POST',
                     body: JSON.stringify(body),
                 });
+                agentSettingsState.dirty.delete('models');
+                updateSettingsDraftAction();
                 document.getElementById('agentModelApiKey').value = '';
                 document.getElementById('agentModelProfileId').value = '';
                 renderAgentModelProfiles();
@@ -371,6 +429,7 @@
         }
 
         async function activateAgentModelProfile(profileId) {
+            if (!canReplaceSettingsDraft('models')) return;
             setAgentSettingsStatus('切换模型中…');
             try {
                 agentSettingsState.snapshot = await settingsRequest(
@@ -386,6 +445,7 @@
         }
 
         async function deleteAgentModelProfile(profile) {
+            if (!canReplaceSettingsDraft('models')) return;
             if (!window.confirm(`删除模型配置“${profile.name}”？`)) return;
             setAgentSettingsStatus('删除中…');
             try {
@@ -403,6 +463,7 @@
 
         function selectSettingsProvider(provider) {
             if (!providerCredentialFields[provider]) return;
+            if (!canReplaceSettingsDraft('providers')) return;
             agentSettingsState.provider = provider;
             document.querySelectorAll('.service-provider-tab').forEach(button => {
                 button.classList.toggle('active', button.dataset.provider === provider);
@@ -489,6 +550,8 @@
                         body: JSON.stringify({ fields, clear_fields: clearFields }),
                     },
                 );
+                agentSettingsState.dirty.delete('providers');
+                updateSettingsDraftAction();
                 renderAgentProviderFields();
                 setAgentSettingsStatus('凭证已保存。');
             } catch (error) {
@@ -599,6 +662,8 @@
                         }),
                     },
                 );
+                agentSettingsState.dirty.delete('web-search');
+                updateSettingsDraftAction();
                 renderWebSearchSettings();
                 setAgentSettingsStatus('网页搜索密钥设置已保存。');
             } catch (error) {

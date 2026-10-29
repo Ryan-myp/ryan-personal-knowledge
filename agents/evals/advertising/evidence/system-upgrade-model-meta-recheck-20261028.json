@@ -1,0 +1,108 @@
+{
+  "schema_version": "agent-regression-report/v1",
+  "mode": "model_backed_offline_providers",
+  "complete": true,
+  "completed_cases": 2,
+  "provider_e2e": false,
+  "total": 2,
+  "passed": 2,
+  "failed": 0,
+  "ungraded": 0,
+  "error": 0,
+  "cases": [
+    {
+      "id": "upgrade-meta-status-query",
+      "status": "passed",
+      "failures": [],
+      "checks": 5,
+      "tool_call_count": 1,
+      "tool_names": [
+        "meta_get_campaign_report"
+      ],
+      "phase_ms": {
+        "run_wall": 41366.526,
+        "tool_duration_sum": 3.342,
+        "model": 41029.29,
+        "model_prepare": 317.1,
+        "context_build": 60.125,
+        "run_event_persistence": 3.898
+      },
+      "runtime_state": {
+        "status": "succeeded",
+        "needs_input": false,
+        "needs_confirmation": false
+      },
+      "execution_states": [
+        "completed"
+      ],
+      "tool_execution_evidence": [
+        {
+          "tool": "meta_get_campaign_report",
+          "success": true,
+          "state": "completed",
+          "argument_fingerprints": {
+            "account_id": "3fc9daf32e987550135bae5e3026ec229e35a7e410a128b0b2143131a96468a9",
+            "date_preset": "4a07fe7a85f31c51520c6e8a9dcaa2d33199e1c282a31e48885d353fa8847c76",
+            "effective_status": "bc84ea8cc715e62a1bb6e09a878993f9163bb54bb3aa86ccd081b665f6a3e540"
+          }
+        }
+      ],
+      "duration_ms": 42197.965
+    },
+    {
+      "id": "upgrade-meta-report-followup",
+      "status": "passed",
+      "failures": [],
+      "checks": 8,
+      "tool_call_count": 1,
+      "tool_names": [
+        "meta_get_campaign_report"
+      ],
+      "phase_ms": {
+        "run_wall": 114225.215,
+        "tool_duration_sum": 16.494,
+        "model": 113499.35,
+        "model_prepare": 686.35,
+        "context_build": 276.0,
+        "run_event_persistence": 6.829
+      },
+      "runtime_state": {
+        "status": "succeeded",
+        "needs_input": false,
+        "needs_confirmation": false
+      },
+      "execution_states": [
+        "completed"
+      ],
+      "tool_execution_evidence": [
+        {
+          "tool": "meta_get_campaign_report",
+          "success": true,
+          "state": "completed",
+          "argument_fingerprints": {
+            "account_id": "3fc9daf32e987550135bae5e3026ec229e35a7e410a128b0b2143131a96468a9",
+            "date_preset": "4a07fe7a85f31c51520c6e8a9dcaa2d33199e1c282a31e48885d353fa8847c76",
+            "effective_status": "bc84ea8cc715e62a1bb6e09a878993f9163bb54bb3aa86ccd081b665f6a3e540"
+          }
+        }
+      ],
+      "duration_ms": 114814.276
+    }
+  ],
+  "gate_passed": true,
+  "latency_samples": 2,
+  "latency_p50_ms": 42197.965,
+  "latency_p95_ms": 114814.276,
+  "release_ready": false,
+  "release_blockers": [
+    "release_gate_not_configured"
+  ],
+  "phase_p95_ms": {
+    "run_wall": 114225.215,
+    "tool_duration_sum": 16.494,
+    "model": 113499.35,
+    "model_prepare": 686.35,
+    "context_build": 276.0,
+    "run_event_persistence": 6.829
+  }
+}

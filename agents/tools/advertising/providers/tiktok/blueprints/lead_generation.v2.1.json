@@ -1,0 +1,518 @@
+{
+  "id": "tiktok.lead_generation",
+  "version": "2.1.0",
+  "provider": "tiktok",
+  "ad_format": "SINGLE_VIDEO",
+  "title": "TikTok Smart+ 潜在客户广告",
+  "description": "使用 Upgraded Smart+ 创建原生表单或网站表单获客广告；网站表单需 Pixel、转化事件和落地页，原生表单需 Instant Page。消息与电话目的地暂未接入。",
+  "match_terms": [
+    "潜在客户",
+    "线索获客",
+    "表单获客",
+    "lead generation",
+    "lead gen",
+    "instant page"
+  ],
+  "selector": {
+    "dimension": "objective",
+    "field": "campaign.objective_type",
+    "values": [
+      "LEAD_GENERATION"
+    ],
+    "label": "TikTok 推广目标",
+    "options": [
+      {
+        "value": "LEAD_GENERATION",
+        "label": "潜在客户"
+      }
+    ]
+  },
+  "tools": [
+    "tiktok_smart_plus_create_campaign",
+    "tiktok_smart_plus_create_adgroup",
+    "tiktok_smart_plus_create_ad"
+  ],
+  "resources": [
+    "campaign",
+    "ad_group",
+    "ad"
+  ],
+  "fields": [
+    {
+      "path": "campaign.campaign_name",
+      "tool_ref": "tiktok_smart_plus_create_campaign.campaign_name",
+      "label": "Campaign 名称",
+      "required": true
+    },
+    {
+      "path": "campaign.objective_type",
+      "tool_ref": "tiktok_smart_plus_create_campaign.objective_type",
+      "label": "推广目标（已根据入口匹配）",
+      "required": true,
+      "source": "enum",
+      "options": [
+        "LEAD_GENERATION"
+      ],
+      "presentation": "derived_readonly"
+    },
+    {
+      "path": "campaign.campaign_type",
+      "tool_ref": "tiktok_smart_plus_create_campaign.campaign_type",
+      "label": "Campaign 类型",
+      "required": true,
+      "source": "enum",
+      "options": [
+        "REGULAR_CAMPAIGN"
+      ]
+    },
+    {
+      "path": "campaign.budget_mode",
+      "tool_ref": "tiktok_smart_plus_create_campaign.budget_mode",
+      "label": "Campaign 预算模式",
+      "required": true,
+      "source": "enum",
+      "options": [
+        "BUDGET_MODE_DYNAMIC_DAILY_BUDGET",
+        "BUDGET_MODE_TOTAL"
+      ]
+    },
+    {
+      "path": "campaign.budget",
+      "tool_ref": "tiktok_smart_plus_create_campaign.budget",
+      "label": "Campaign 预算（最低 20）",
+      "required": true
+    },
+    {
+      "path": "ad_group.adgroup_name",
+      "tool_ref": "tiktok_smart_plus_create_adgroup.adgroup_name",
+      "label": "广告组名称",
+      "required": true
+    },
+    {
+      "path": "ad_group.promotion_type",
+      "tool_ref": "tiktok_smart_plus_create_adgroup.promotion_type",
+      "label": "推广方式",
+      "required": true,
+      "source": "enum",
+      "options": [
+        "LEAD_GENERATION"
+      ]
+    },
+    {
+      "path": "ad_group.promotion_target_type",
+      "tool_ref": "tiktok_smart_plus_create_adgroup.promotion_target_type",
+      "label": "线索承接位置",
+      "required": true,
+      "source": "enum",
+      "options": [
+        "INSTANT_PAGE",
+        "EXTERNAL_WEBSITE"
+      ]
+    },
+    {
+      "path": "ad_group.optimization_goal",
+      "tool_ref": "tiktok_smart_plus_create_adgroup.optimization_goal",
+      "label": "优化目标",
+      "required": true,
+      "source": "enum",
+      "options": [
+        "LEAD_GENERATION",
+        "CONVERT"
+      ],
+      "options_from": [
+        "ad_group.promotion_target_type"
+      ],
+      "option_rules": [
+        {
+          "when": {
+            "field": "ad_group.promotion_target_type",
+            "equals": "INSTANT_PAGE"
+          },
+          "options": [
+            "LEAD_GENERATION"
+          ]
+        },
+        {
+          "when": {
+            "field": "ad_group.promotion_target_type",
+            "equals": "EXTERNAL_WEBSITE"
+          },
+          "options": [
+            "CONVERT"
+          ]
+        }
+      ]
+    },
+    {
+      "path": "ad_group.billing_event",
+      "tool_ref": "tiktok_smart_plus_create_adgroup.billing_event",
+      "label": "计费事件",
+      "required": true,
+      "source": "enum",
+      "options": [
+        "OCPM"
+      ]
+    },
+    {
+      "path": "ad_group.budget_mode",
+      "tool_ref": "tiktok_smart_plus_create_adgroup.budget_mode",
+      "label": "广告组预算模式",
+      "required": true,
+      "source": "enum",
+      "options": [
+        "BUDGET_MODE_DYNAMIC_DAILY_BUDGET",
+        "BUDGET_MODE_TOTAL",
+        "BUDGET_MODE_INFINITE"
+      ]
+    },
+    {
+      "path": "ad_group.budget",
+      "tool_ref": "tiktok_smart_plus_create_adgroup.budget",
+      "label": "广告组预算（最低 20）",
+      "required_when": {
+        "field": "ad_group.budget_mode",
+        "in": [
+          "BUDGET_MODE_DYNAMIC_DAILY_BUDGET",
+          "BUDGET_MODE_TOTAL"
+        ]
+      }
+    },
+    {
+      "path": "ad_group.schedule_type",
+      "tool_ref": "tiktok_smart_plus_create_adgroup.schedule_type",
+      "label": "投放时间设置",
+      "required": true,
+      "source": "enum",
+      "options": [
+        "SCHEDULE_FROM_NOW",
+        "SCHEDULE_START_END"
+      ]
+    },
+    {
+      "path": "ad_group.schedule_start_time",
+      "tool_ref": "tiktok_smart_plus_create_adgroup.schedule_start_time",
+      "label": "开始投放时间",
+      "required": true
+    },
+    {
+      "path": "ad_group.schedule_end_time",
+      "tool_ref": "tiktok_smart_plus_create_adgroup.schedule_end_time",
+      "label": "结束投放时间",
+      "required_when": {
+        "field": "ad_group.schedule_type",
+        "equals": "SCHEDULE_START_END"
+      }
+    },
+    {
+      "path": "ad_group.location_ids",
+      "tool_ref": "tiktok_smart_plus_create_adgroup.location_ids",
+      "label": "投放地区",
+      "required": true,
+      "source": "lookup",
+      "lookup_tool": "tiktok_list_regions",
+      "presentation": "asset_picker"
+    },
+    {
+      "path": "ad_group.gender",
+      "tool_ref": "tiktok_smart_plus_create_adgroup.gender",
+      "label": "性别",
+      "source": "enum",
+      "options": [
+        "GENDER_UNLIMITED",
+        "GENDER_MALE",
+        "GENDER_FEMALE"
+      ]
+    },
+    {
+      "path": "ad_group.age_groups",
+      "tool_ref": "tiktok_smart_plus_create_adgroup.age_groups",
+      "label": "年龄段",
+      "source": "enum",
+      "options": [
+        "AGE_13_17",
+        "AGE_18_24",
+        "AGE_25_34",
+        "AGE_35_44",
+        "AGE_45_54",
+        "AGE_55_100"
+      ]
+    },
+    {
+      "path": "ad_group.placement_type",
+      "tool_ref": "tiktok_smart_plus_create_adgroup.placement_type",
+      "label": "版位模式",
+      "source": "enum",
+      "options": [
+        "PLACEMENT_TYPE_NORMAL",
+        "PLACEMENT_TYPE_AUTOMATIC"
+      ]
+    },
+    {
+      "path": "ad_group.bid_type",
+      "tool_ref": "tiktok_smart_plus_create_adgroup.bid_type",
+      "label": "出价方式",
+      "required": true,
+      "source": "enum",
+      "options": [
+        "BID_TYPE_NO_BID",
+        "BID_TYPE_CUSTOM"
+      ]
+    },
+    {
+      "path": "ad_group.bid_price",
+      "tool_ref": "tiktok_smart_plus_create_adgroup.bid_price",
+      "label": "出价",
+      "visible_when": {
+        "field": "ad_group.promotion_target_type",
+        "equals": "INSTANT_PAGE"
+      },
+      "required_when": {
+        "all": [
+          {
+            "field": "ad_group.bid_type",
+            "equals": "BID_TYPE_CUSTOM"
+          },
+          {
+            "field": "ad_group.optimization_goal",
+            "equals": "LEAD_GENERATION"
+          }
+        ]
+      }
+    },
+    {
+      "path": "ad.ad_name",
+      "tool_ref": "tiktok_smart_plus_create_ad.ad_name",
+      "label": "广告名称",
+      "required": true
+    },
+    {
+      "path": "ad.ad_format",
+      "tool_ref": "tiktok_smart_plus_create_ad.ad_format",
+      "label": "素材形式",
+      "required": true,
+      "source": "enum",
+      "options": [
+        "SINGLE_VIDEO"
+      ],
+      "presentation": "derived_readonly"
+    },
+    {
+      "path": "ad.video_id",
+      "tool_ref": "tiktok_smart_plus_create_ad.video_id",
+      "label": "视频素材",
+      "required": true,
+      "source": "lookup",
+      "lookup_tool": "tiktok_get_video",
+      "presentation": "asset_picker",
+      "accept": "video/*"
+    },
+    {
+      "path": "ad.ad_text",
+      "tool_ref": "tiktok_smart_plus_create_ad.ad_text",
+      "label": "广告文案",
+      "required": true
+    },
+    {
+      "path": "ad.identity_type",
+      "tool_ref": "tiktok_smart_plus_create_ad.identity_type",
+      "label": "广告身份类型",
+      "required": true,
+      "source": "enum",
+      "options": [
+        "AUTH_CODE",
+        "TT_USER",
+        "BC_AUTH_TT"
+      ]
+    },
+    {
+      "path": "ad.identity_id",
+      "tool_ref": "tiktok_smart_plus_create_ad.identity_id",
+      "label": "广告身份",
+      "required": true,
+      "source": "lookup",
+      "lookup_tool": "tiktok_list_identities"
+    },
+    {
+      "path": "ad.call_to_action_id",
+      "tool_ref": "tiktok_smart_plus_create_ad.call_to_action_id",
+      "label": "行动号召",
+      "required": true
+    },
+    {
+      "path": "ad.page_list",
+      "tool_ref": "tiktok_smart_plus_create_ad.page_list",
+      "label": "Instant Page",
+      "presentation": "advanced_json",
+      "manual_entry": {
+        "title": "Instant Page ID",
+        "instructions": "请输入 TikTok Ads Manager 中已创建并可用于该广告账户的 Instant Page ID；当前没有确认稳定的可用列表接口，系统不会根据名称猜测。",
+        "source": "provider_instant_page"
+      },
+      "visible_when": {
+        "field": "ad_group.promotion_target_type",
+        "equals": "INSTANT_PAGE"
+      },
+      "required_when": {
+        "field": "ad_group.promotion_target_type",
+        "equals": "INSTANT_PAGE"
+      }
+    },
+    {
+      "path": "ad.landing_page_url",
+      "tool_ref": "tiktok_smart_plus_create_ad.landing_page_url",
+      "label": "外部落地页链接",
+      "required_when": {
+        "field": "ad_group.promotion_target_type",
+        "equals": "EXTERNAL_WEBSITE"
+      }
+    },
+    {
+      "path": "ad_group.objective_type",
+      "tool_ref": "tiktok_smart_plus_create_adgroup.objective_type",
+      "label": "父 Campaign 目标",
+      "source": "enum",
+      "options": [
+        "LEAD_GENERATION"
+      ],
+      "presentation": "derived_readonly",
+      "derived_from": "campaign.objective_type",
+      "derive_map": {
+        "LEAD_GENERATION": "LEAD_GENERATION"
+      }
+    },
+    {
+      "path": "ad.objective_type",
+      "tool_ref": "tiktok_smart_plus_create_ad.objective_type",
+      "label": "父 Campaign 目标",
+      "source": "enum",
+      "options": [
+        "LEAD_GENERATION"
+      ],
+      "presentation": "derived_readonly",
+      "derived_from": "campaign.objective_type",
+      "derive_map": {
+        "LEAD_GENERATION": "LEAD_GENERATION"
+      }
+    },
+    {
+      "path": "ad.promotion_target_type",
+      "tool_ref": "tiktok_smart_plus_create_ad.promotion_target_type",
+      "label": "线索承接位置",
+      "source": "enum",
+      "options": [
+        "INSTANT_PAGE",
+        "EXTERNAL_WEBSITE"
+      ],
+      "presentation": "derived_readonly",
+      "derived_from": "ad_group.promotion_target_type",
+      "derive_map": {
+        "INSTANT_PAGE": "INSTANT_PAGE",
+        "EXTERNAL_WEBSITE": "EXTERNAL_WEBSITE"
+      }
+    },
+    {
+      "path": "ad_group.pixel_id",
+      "tool_ref": "tiktok_smart_plus_create_adgroup.pixel_id",
+      "label": "Pixel",
+      "visible_when": {
+        "field": "ad_group.promotion_target_type",
+        "equals": "EXTERNAL_WEBSITE"
+      },
+      "required_when": {
+        "field": "ad_group.promotion_target_type",
+        "equals": "EXTERNAL_WEBSITE"
+      },
+      "source": "lookup",
+      "lookup_tool": "tiktok_list_pixels"
+    },
+    {
+      "path": "ad_group.optimization_event",
+      "tool_ref": "tiktok_smart_plus_create_adgroup.optimization_event",
+      "label": "转化事件",
+      "visible_when": {
+        "field": "ad_group.promotion_target_type",
+        "equals": "EXTERNAL_WEBSITE"
+      },
+      "required_when": {
+        "field": "ad_group.promotion_target_type",
+        "equals": "EXTERNAL_WEBSITE"
+      },
+      "default": "FORM",
+      "manual_entry": {
+        "source": "provider_conversion_event",
+        "instructions": "选择此 Pixel 已配置的表单转化事件；通常为 FORM。"
+      }
+    },
+    {
+      "path": "ad_group.conversion_bid_price",
+      "tool_ref": "tiktok_smart_plus_create_adgroup.conversion_bid_price",
+      "label": "目标转化出价",
+      "visible_when": {
+        "field": "ad_group.promotion_target_type",
+        "equals": "EXTERNAL_WEBSITE"
+      },
+      "required_when": {
+        "all": [
+          {
+            "field": "ad_group.bid_type",
+            "equals": "BID_TYPE_CUSTOM"
+          },
+          {
+            "field": "ad_group.optimization_goal",
+            "equals": "CONVERT"
+          }
+        ]
+      }
+    }
+  ],
+  "rules": [
+    {
+      "id": "promotion_type_changed",
+      "when": {
+        "field": "ad_group.promotion_type",
+        "changed": true
+      },
+      "reset": [
+        "ad_group.promotion_target_type",
+        "ad_group.optimization_goal",
+        "ad_group.billing_event"
+      ]
+    },
+    {
+      "id": "optimization_goal_changed",
+      "when": {
+        "field": "ad_group.optimization_goal",
+        "changed": true
+      },
+      "reset": [
+        "ad_group.bid_price"
+      ]
+    },
+    {
+      "id": "schedule_type_changed",
+      "when": {
+        "field": "ad_group.schedule_type",
+        "changed": true
+      },
+      "reset": [
+        "ad_group.schedule_end_time"
+      ]
+    },
+    {
+      "id": "lead_destination_changed",
+      "when": {
+        "field": "ad_group.promotion_target_type",
+        "changed": true
+      },
+      "reset": [
+        "ad_group.optimization_goal",
+        "ad_group.pixel_id",
+        "ad_group.optimization_event",
+        "ad_group.bid_price",
+        "ad_group.conversion_bid_price",
+        "ad.page_list",
+        "ad.landing_page_url"
+      ]
+    }
+  ]
+}

@@ -1,3 +1,7 @@
+        let knowledgeReadSequence = 0;
+        let knowledgeEditSequence = 0;
+        let knowledgeSavePending = false;
+
         function traceNodeMatchesFilter(node) {
             if (traceFilter.status !== 'all' && node.state !== traceFilter.status) return false;
             if (traceFilter.kind !== 'all') {
@@ -43,6 +47,8 @@
         }
 
         function setKnowledgeWriteStatus(message, isError = false) {
+            const notice = document.getElementById('knowledgeNotice');
+            if (notice) { notice.textContent = message || ''; notice.hidden = !message; notice.classList.toggle('error', isError); }
             const status = document.getElementById('knowledgeWriteStatus');
             if (!status) return;
             status.textContent = message || '';
@@ -110,50 +116,19 @@
         }
 
         function toggleKnowledgeComposer() {
-            const composer = document.getElementById('knowledgeComposer');
-            const results = document.getElementById('knowledgeResults');
-            if (!composer || !results) return;
-            const active = !composer.classList.contains('active');
-            if (active) {
-                showKnowledgeManagementView();
-                return;
-            }
-            composer.classList.toggle('active', active);
-            results.classList.toggle('view-hidden', active);
-            const toggle = document.getElementById('knowledgeComposeToggle');
-            if (toggle) toggle.textContent = active ? '返回目录' : '管理文档';
-            const catalogToggle = document.getElementById('knowledgeCatalogToggle');
-            catalogToggle?.classList.toggle('active', !active);
-            catalogToggle?.setAttribute('aria-pressed', String(!active));
-            toggle?.classList.toggle('active', active);
-            toggle?.setAttribute('aria-pressed', String(active));
+            newKnowledgeCatalogDocument();
         }
 
         function showKnowledgeManagementView(focusTitle = true) {
-            const composer = document.getElementById('knowledgeComposer');
-            const results = document.getElementById('knowledgeResults');
-            const toggle = document.getElementById('knowledgeComposeToggle');
-            if (!composer || !results) return;
-            composer.classList.add('active');
-            results.classList.add('view-hidden');
-            if (toggle) { toggle.textContent = '返回目录'; toggle.classList.add('active'); toggle.setAttribute('aria-pressed', 'true'); }
-            document.getElementById('knowledgeCatalogToggle')?.classList.remove('active');
-            document.getElementById('knowledgeCatalogToggle')?.setAttribute('aria-pressed', 'false');
-            loadManagedKnowledgeDocuments();
+            setResourceView('knowledge', 'edit');
+            resourceCatalogs.knowledge.hasDraft = true;
+            trackResourceDraft('knowledge', '#knowledgeComposer');
+            document.getElementById('knowledgeComposer')?.classList.add('active');
             if (focusTitle) document.getElementById('knowledgeTitle')?.focus();
         }
 
         function showKnowledgeSearchView() {
-            const composer = document.getElementById('knowledgeComposer');
-            const results = document.getElementById('knowledgeResults');
-            const toggle = document.getElementById('knowledgeComposeToggle');
-            composer?.classList.remove('active');
-            results?.classList.remove('view-hidden');
-            if (toggle) toggle.textContent = '管理文档';
-            document.getElementById('knowledgeCatalogToggle')?.classList.add('active');
-            document.getElementById('knowledgeCatalogToggle')?.setAttribute('aria-pressed', 'true');
-            toggle?.classList.remove('active');
-            toggle?.setAttribute('aria-pressed', 'false');
+            showResourceList('knowledge');
         }
 
         function setKnowledgeEditorMode(documentId = '') {
@@ -168,6 +143,7 @@
         }
 
         function resetKnowledgeEditor() {
+            knowledgeEditSequence += 1;
             setKnowledgeEditorMode('');
             for (const id of ['knowledgeTitle', 'knowledgeTags', 'knowledgeSource', 'knowledgeContent']) {
                 const field = document.getElementById(id);
@@ -183,72 +159,28 @@
         }
 
         function renderManagedKnowledgeDocuments(items) {
-            const list = document.getElementById('knowledgeManagedList');
-            if (!list) return;
             knowledgeState.managedItems = Array.isArray(items) ? items : [];
-            const toggle = document.getElementById('knowledgeComposeToggle');
-            if (toggle && !document.getElementById('knowledgeComposer')?.classList.contains('active')) {
-                toggle.textContent = knowledgeState.managedItems.length ? `管理文档 · ${knowledgeState.managedItems.length}` : '管理文档';
-            }
-            list.replaceChildren();
-            if (!knowledgeState.managedItems.length) {
-                const empty = document.createElement('div');
-                empty.className = 'knowledge-managed-empty';
-                empty.textContent = '当前没有自建文档。内置知识为只读；回到知识目录点击“复制为我的草稿”即可编辑并发布。';
-                list.appendChild(empty);
-                return;
-            }
-            knowledgeState.managedItems.forEach(item => {
-                const row = document.createElement('article');
-                row.className = 'knowledge-managed-item';
-                const main = document.createElement('div');
-                const title = document.createElement('strong');
-                title.textContent = item.title || '未命名知识';
-                const meta = document.createElement('span');
-                meta.textContent = [item.status === 'published' ? '已发布' : item.status === 'deprecated' ? '已归档' : '草稿', knowledgePlatformLabel(item.platform), `v${item.version || '1.0.0'}`].join(' · ');
-                main.append(title, meta);
-                const actions = document.createElement('div');
-                actions.className = 'knowledge-managed-actions';
-                if (item.status !== 'deprecated') {
-                    const edit = document.createElement('button');
-                    edit.type = 'button'; edit.textContent = '编辑';
-                    edit.onclick = () => editKnowledgeDocument(item.document_id);
-                    actions.appendChild(edit);
-                }
-                if (item.status === 'draft') {
-                    const publish = document.createElement('button');
-                    publish.type = 'button'; publish.textContent = '发布';
-                    publish.onclick = () => changeKnowledgePublication(item.document_id, true);
-                    actions.appendChild(publish);
-                } else if (item.status === 'published') {
-                    const unpublish = document.createElement('button');
-                    unpublish.type = 'button'; unpublish.textContent = '下线';
-                    unpublish.onclick = () => changeKnowledgePublication(item.document_id, false);
-                    actions.appendChild(unpublish);
-                }
-                const remove = document.createElement('button');
-                remove.type = 'button'; remove.className = 'danger'; remove.textContent = item.status === 'published' ? '归档' : '删除';
-                remove.onclick = () => deleteKnowledgeDocument(item.document_id, item.status);
-                actions.appendChild(remove);
-                row.append(main, actions);
-                list.appendChild(row);
-            });
+            renderKnowledgeCatalogTable();
         }
 
         async function loadManagedKnowledgeDocuments() {
-            const list = document.getElementById('knowledgeManagedList');
-            if (list && !knowledgeState.managedItems.length) list.innerHTML = '<div class="knowledge-managed-empty">正在加载知识文档…</div>';
+            const request = beginCatalogLoad('knowledge', {slot: 'managed', retry: () => loadManagedKnowledgeDocuments()});
             try {
                 const data = await apiFetch('/knowledge/documents?limit=100');
+                if (!isCurrentCatalogLoad(request)) return;
                 renderManagedKnowledgeDocuments(data.documents || []);
             } catch (error) {
-                if (list) list.innerHTML = `<div class="knowledge-managed-empty error">${escapeHtml(error.message || '知识文档读取失败')}</div>`;
+                request.error = error.message || '自建知识读取失败';
+            } finally {
+                finishCatalogLoad(request, request.error);
             }
         }
 
         async function editKnowledgeDocument(documentId) {
+            const sequence = ++knowledgeEditSequence;
             try {
                 const item = await apiFetch(`/knowledge/documents/${encodeURIComponent(documentId)}`);
+                if (sequence !== knowledgeEditSequence) return;
                 document.getElementById('knowledgeTitle').value = item.title || '';
                 document.getElementById('knowledgeContent').value = item.content || '';
                 document.getElementById('knowledgeWritePlatform').value = item.platform || 'all';
@@ -261,6 +193,7 @@
                 showKnowledgeManagementView(false);
                 document.getElementById('knowledgeContent')?.focus();
             } catch (error) {
+                if (sequence !== knowledgeEditSequence) return;
                 setKnowledgeWriteStatus(error.message || '知识文档读取失败。', true);
             }
         }
@@ -270,6 +203,7 @@
                 await apiFetch(`/knowledge/documents/${encodeURIComponent(documentId)}/${publish ? 'publish' : 'unpublish'}`, { method: 'POST' });
                 setKnowledgeWriteStatus(publish ? '知识已发布，Agent 后续可以检索。' : '知识已下线，Agent 不会再检索。');
                 await Promise.all([loadManagedKnowledgeDocuments(), loadKnowledgeCatalog()]);
+                showResourceList('knowledge');
             } catch (error) { window.alert(`${publish ? '发布' : '下线'}失败：${error.message || '请稍后重试'}`); }
         }
 
@@ -279,8 +213,13 @@
             try {
                 await apiFetch(`/knowledge/documents/${encodeURIComponent(documentId)}`, { method: 'DELETE' });
                 if (knowledgeState.editingDocumentId === documentId) resetKnowledgeEditor();
+                if (resourceCatalogs.knowledge.draft?.documentId === documentId) {
+                    resourceCatalogs.knowledge.draft = null;
+                    resourceCatalogs.knowledge.hasDraft = false;
+                }
                 setKnowledgeWriteStatus(status === 'published' ? '知识已归档。' : '草稿已删除。');
                 await Promise.all([loadManagedKnowledgeDocuments(), loadKnowledgeCatalog()]);
+                showResourceList('knowledge');
             } catch (error) { window.alert(`操作失败：${error.message || '请稍后重试'}`); }
         }
 
@@ -330,7 +269,7 @@
                 await new Promise(resolve => window.setTimeout(resolve, attempt ? 1200 : 250));
                 const source = await apiFetch(`/knowledge/raw/${encodeURIComponent(sourceId)}`);
                 if (source.status === 'draft_ready') {
-                    setKnowledgeWriteStatus('自动 ingest 完成，Wiki 草稿已生成；请在“管理文档”中审核并发布。');
+                    setKnowledgeWriteStatus('自动 ingest 完成，Wiki 草稿已生成；请在知识列表中审核并发布。');
                     await loadManagedKnowledgeDocuments();
                     return source;
                 }
@@ -339,7 +278,7 @@
                 }
                 setKnowledgeWriteStatus(`原始文档已保存，自动 ingest 中…（${source.status || 'queued'}）`);
             }
-            setKnowledgeWriteStatus('原始文档已保存，ingest 仍在后台进行；稍后刷新“管理文档”查看草稿。');
+            setKnowledgeWriteStatus('原始文档已保存，ingest 仍在后台进行；稍后刷新知识列表查看草稿。');
             return null;
         }
 
@@ -540,9 +479,12 @@
             const reader = document.getElementById('knowledgeReader');
             if (!item || !reader) return;
             knowledgeState.selectedKey = key;
-            document.querySelectorAll('#knowledgeList .knowledge-list-item').forEach(node => {
-                node.classList.toggle('active', node.dataset.key === key);
-            });
+            setResourceView('knowledge', 'detail');
+            renderKnowledgeReader(item);
+        }
+
+        function renderKnowledgeReader(item) {
+            const reader = document.getElementById('knowledgeReader');
             reader.replaceChildren();
             if (knowledgeState.summary) {
                 const summaryCard = document.createElement('section');
@@ -566,7 +508,7 @@
             title.textContent = item.title || item.topic || item.document_id || '未命名知识';
             const badge = document.createElement('span');
             badge.className = 'knowledge-reader-badge';
-            badge.textContent = item.confidence != null ? `可信度 ${Math.round(Number(item.confidence) * 100)}%` : '已发布';
+            badge.textContent = item.status === 'draft' ? '草稿' : item.status === 'deprecated' ? '已归档' : item.confidence != null ? `可信度 ${Math.round(Number(item.confidence) * 100)}%` : '已发布';
             const meta = document.createElement('div');
             meta.className = 'knowledge-reader-meta';
             meta.textContent = [item.source || item.source_ref, item.version ? `v${item.version}` : '', item.updated_at ? `更新于 ${String(item.updated_at).slice(0, 10)}` : ''].filter(Boolean).join('  ·  ');
@@ -594,12 +536,14 @@
                 edit.type = 'button'; edit.textContent = '编辑文档';
                 edit.onclick = () => editKnowledgeDocument(managedId);
                 const unpublish = document.createElement('button');
-                unpublish.type = 'button'; unpublish.textContent = '下线';
-                unpublish.onclick = () => changeKnowledgePublication(managedId, false);
+                const published = !item.status || item.status === 'published';
+                unpublish.type = 'button'; unpublish.textContent = published ? '下线' : '发布';
+                unpublish.onclick = () => changeKnowledgePublication(managedId, !published);
                 const archive = document.createElement('button');
-                archive.type = 'button'; archive.className = 'danger'; archive.textContent = '归档';
-                archive.onclick = () => deleteKnowledgeDocument(managedId, 'published');
-                actions.append(edit, unpublish, archive);
+                archive.type = 'button'; archive.className = 'danger'; archive.textContent = published ? '归档' : '删除';
+                archive.onclick = () => deleteKnowledgeDocument(managedId, item.status || 'published');
+                if (item.status !== 'deprecated') actions.append(edit, unpublish);
+                actions.append(archive);
             } else {
                 const readOnly = document.createElement('span');
                 readOnly.className = 'knowledge-reader-readonly';
@@ -634,60 +578,10 @@
         }
 
         function renderKnowledgeResults(results, summary = '', summaryMode = 'lexical') {
-            const container = document.getElementById('knowledgeResults');
-            const list = document.getElementById('knowledgeList');
-            const reader = document.getElementById('knowledgeReader');
-            const count = document.getElementById('knowledgeCatalogCount');
-            if (!container || !list || !reader) return;
             knowledgeState.items = Array.isArray(results) ? results : [];
             knowledgeState.summary = summary || '';
             knowledgeState.summaryMode = summaryMode || 'lexical';
-            knowledgeState.selectedKey = '';
-            list.replaceChildren();
-            if (count) count.textContent = `${knowledgeState.items.length} 条已发布知识`;
-            if (!knowledgeState.items.length) {
-                const emptyList = document.createElement('div');
-                emptyList.className = 'knowledge-list-empty';
-                emptyList.textContent = '没有匹配的已发布知识';
-                list.appendChild(emptyList);
-                reader.innerHTML = '<div class="knowledge-reader-empty"><span class="knowledge-reader-empty-mark">⌕</span><strong>没有找到相关知识</strong><span>换个关键词或平台试试</span></div>';
-                return;
-            }
-            const groups = new Map();
-            knowledgeState.items.forEach((item, index) => {
-                const groupKey = `${item.platform || 'all'}::${item.category || item.layer || 'general'}`;
-                if (!groups.has(groupKey)) groups.set(groupKey, []);
-                groups.get(groupKey).push({ item, index });
-            });
-            groups.forEach((groupItems, groupKey) => {
-                const [platform, category] = groupKey.split('::');
-                const groupHeader = document.createElement('div');
-                groupHeader.className = 'knowledge-list-group';
-                const groupTitle = document.createElement('strong');
-                groupTitle.textContent = `${knowledgePlatformLabel(platform)} · ${knowledgeCategoryLabel(category)}`;
-                const groupCount = document.createElement('span');
-                groupCount.textContent = `${groupItems.length}`;
-                groupHeader.append(groupTitle, groupCount);
-                list.appendChild(groupHeader);
-                groupItems.forEach(({ item, index }) => {
-                const key = knowledgeItemKey(item, index);
-                const button = document.createElement('button');
-                button.type = 'button';
-                button.className = 'knowledge-list-item';
-                button.dataset.key = key;
-                button.onclick = () => selectKnowledgeResult(key);
-                const title = document.createElement('strong');
-                title.textContent = item.title || item.topic || item.document_id || '未命名知识';
-                const meta = document.createElement('span');
-                meta.textContent = [knowledgeTypeLabel(item.knowledge_type || item.layer),
-                    item.version ? `v${item.version}` : ''].filter(Boolean).join(' · ');
-                const section = document.createElement('small');
-                section.textContent = Array.isArray(item.heading_path) && item.heading_path.length ? item.heading_path.join(' / ') : '文档正文';
-                button.append(title, meta, section);
-                list.appendChild(button);
-                });
-            });
-            selectKnowledgeResult(knowledgeItemKey(knowledgeState.items[0], 0));
+            renderKnowledgeCatalogTable();
         }
 
         async function searchKnowledge() {
@@ -698,48 +592,53 @@
                 await loadKnowledgeCatalog();
                 return;
             }
+            const sequence = ++knowledgeReadSequence;
+            const request = beginCatalogLoad('knowledge', {retry: () => searchKnowledge()});
             setKnowledgeStatus('正在检索已发布知识…');
             try {
                 const summarize = document.getElementById('knowledgeSmartSummary')?.checked || false;
                 const params = new URLSearchParams({ query, limit: '10', summarize: String(summarize) });
                 if (platform) params.set('platform', platform);
-                const response = await serviceFetch(`/knowledge/search?${params.toString()}`);
-                const text = await response.text();
-                let data = {};
-                try { data = text ? JSON.parse(text) : {}; } catch (_) { data = {}; }
-                if (!response.ok) throw new Error(data.detail || data.error || `知识库请求失败（${response.status}）`);
+                const data = await apiFetch(`/knowledge/search?${params.toString()}`, {timeoutMs: summarize ? 120000 : 30000});
+                if (sequence !== knowledgeReadSequence) return;
                 const results = Array.isArray(data.results) ? data.results : [];
                 renderKnowledgeResults(results, data.summary || '', data.summary_mode || 'lexical');
                 setKnowledgeStatus(summarize
                     ? `找到 ${results.length} 条已发布知识 · 已完成 BM25 检索与智能总结。`
                     : `找到 ${results.length} 条已发布知识 · 本地 BM25 快速检索完成。`);
             } catch (error) {
-                renderKnowledgeResults([]);
+                if (sequence !== knowledgeReadSequence) return;
+                request.error = error.message || '知识库暂时不可用';
                 setKnowledgeStatus(error.message || '知识库暂时不可用。', true);
+            } finally {
+                finishCatalogLoad(request, request.error);
             }
         }
 
         async function loadKnowledgeCatalog() {
+            const sequence = ++knowledgeReadSequence;
+            const request = beginCatalogLoad('knowledge', {retry: () => loadKnowledgeCatalog()});
             const platform = document.getElementById('knowledgePlatform')?.value || '';
             setKnowledgeStatus('正在加载已发布知识目录…');
             try {
                 const params = new URLSearchParams({ limit: '100' });
                 if (platform) params.set('platform', platform);
-                const response = await serviceFetch(`/knowledge/catalog?${params.toString()}`);
-                const text = await response.text();
-                let data = {};
-                try { data = text ? JSON.parse(text) : {}; } catch (_) { data = {}; }
-                if (!response.ok) throw new Error(data.detail || data.error || `知识目录请求失败（${response.status}）`);
+                const data = await apiFetch(`/knowledge/catalog?${params.toString()}`);
+                if (sequence !== knowledgeReadSequence) return;
                 const results = Array.isArray(data.documents) ? data.documents : [];
                 renderKnowledgeResults(results);
                 setKnowledgeStatus(`知识目录 · ${Number(data.count ?? results.length)} 条已发布知识`);
             } catch (error) {
-                renderKnowledgeResults([]);
+                if (sequence !== knowledgeReadSequence) return;
+                request.error = error.message || '知识目录暂时不可用';
                 setKnowledgeStatus(error.message || '知识目录暂时不可用。', true);
+            } finally {
+                finishCatalogLoad(request, request.error);
             }
         }
 
         async function saveKnowledgeDocument(publishNow = false) {
+            if (knowledgeSavePending) return;
             const title = document.getElementById('knowledgeTitle')?.value.trim() || '';
             const content = document.getElementById('knowledgeContent')?.value.trim() || '';
             if (!title || !content) {
@@ -747,6 +646,12 @@
                 return;
             }
             setKnowledgeWriteStatus('正在保存知识文档…');
+            knowledgeSavePending = true;
+            const sequence = knowledgeEditSequence;
+            for (const id of ['knowledgeSaveDraftButton', 'knowledgeSavePublishButton']) {
+                const button = document.getElementById(id);
+                if (button) button.disabled = true;
+            }
             const payload = {
                 title,
                 content,
@@ -764,18 +669,30 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload),
                 });
+                if (sequence !== knowledgeEditSequence) return;
+                setKnowledgeEditorMode(created.document_id);
                 if (publishNow) {
                     await apiFetch(`/knowledge/documents/${encodeURIComponent(created.document_id)}/publish`, { method: 'POST' });
+                    if (sequence !== knowledgeEditSequence) return;
                     setKnowledgeWriteStatus('已保存并发布；后续检索和 Agent 对话可以使用这份知识。');
                 } else {
                     setKnowledgeWriteStatus(created.version_mode === 'new_draft' ? '已生成新版本草稿；发布后才会进入检索和 Agent 上下文。' : '已保存为草稿；发布后才会进入检索和 Agent 上下文。');
                 }
-                setKnowledgeEditorMode(publishNow || !created.version_mode ? '' : created.document_id);
+                setKnowledgeEditorMode(created.document_id);
+                resourceCatalogs.knowledge.hasDraft = false;
                 if (document.getElementById('knowledgeQuery')?.value.trim()) await searchKnowledge();
                 else await loadKnowledgeCatalog();
                 await loadManagedKnowledgeDocuments();
-                if (publishNow || !editingId) resetKnowledgeEditor();
+                if (sequence !== knowledgeEditSequence) return;
+                showResourceList('knowledge');
             } catch (error) {
+                if (sequence !== knowledgeEditSequence) return;
                 setKnowledgeWriteStatus(error.message || '知识文档保存失败，请检查权限和内容。', true);
+            } finally {
+                knowledgeSavePending = false;
+                for (const id of ['knowledgeSaveDraftButton', 'knowledgeSavePublishButton']) {
+                    const button = document.getElementById(id);
+                    if (button) button.disabled = false;
+                }
             }
         }

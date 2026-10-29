@@ -25,6 +25,8 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from scripts.advertising.audit_objective_coverage import audit_objective_coverage
+
 from agents.tools.advertising.providers.source_factory import (  # noqa: E402
     discover_tool_source_factory,
 )
@@ -252,29 +254,8 @@ def _format_tokens(value: Any) -> set[str]:
 
 
 def _blueprint_match_score(entry: Mapping[str, Any], blueprint: Any) -> int:
-    """Score a non-authoritative catalog-to-Blueprint relationship.
-
-    Exact and family matches are preferred.  Shared Tool references are a
-    useful fallback for formats such as TikTok App/Lead variants, whose
-    Blueprint selects the family through an objective rather than repeating
-    the catalog's format id.  The score is surfaced as audit evidence only.
-    """
-    format_id = str(entry.get("format_id") or "")
-    category = str(entry.get("category") or "")
-    blueprint_format = str(getattr(blueprint, "ad_format", "") or "")
-    if format_id.casefold() == blueprint_format.casefold():
-        return 100
-    if category and category.casefold() == blueprint_format.casefold():
-        return 80
-    entry_tokens = _format_tokens(format_id) | _format_tokens(category)
-    blueprint_tokens = _format_tokens(blueprint_format)
-    if entry_tokens & blueprint_tokens:
-        return 60
-    entry_tools = {str(item) for item in (entry.get("tool_names") or [])}
-    blueprint_tools = {str(item) for item in (getattr(blueprint, "tools", ()) or ())}
-    if entry_tools & blueprint_tools:
-        return 20
-    return 0
+    """Audit only explicit provider-owned mappings, never shared words/tools."""
+    return 100 if blueprint.blueprint_id in entry.get("blueprint_ids", []) else 0
 
 
 def _audit_blueprint_coverage(runtime: AdvertisingComposition) -> dict[str, Any]:
@@ -544,6 +525,12 @@ def audit_creation_contracts(runtime: AdvertisingComposition) -> dict[str, Any]:
         )
 
     blueprint_coverage = _audit_blueprint_coverage(runtime)
+    objective_coverage = audit_objective_coverage(runtime)
+    for provider, coverage in objective_coverage.items():
+        issues.extend(
+            f"{provider}: objective {value} has no guided contract or explicit limitation"
+            for value in coverage["missing"]
+        )
     source_count_dict = {
         provider: {
             source: counts.get(source, 0)
@@ -567,6 +554,7 @@ def audit_creation_contracts(runtime: AdvertisingComposition) -> dict[str, Any]:
         "unresolved_fields": unresolved_fields,
         "blueprint_required_gaps": blueprint_required_gaps,
         "blueprint_coverage": blueprint_coverage,
+        "objective_coverage": objective_coverage,
         "issues": issues,
     }
 

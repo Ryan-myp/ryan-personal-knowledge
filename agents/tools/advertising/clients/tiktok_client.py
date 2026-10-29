@@ -17,6 +17,8 @@ import requests
 
 from .base import BasePlatformClient, APIError, AuthError, RateLimitError, TemporaryError, RetryConfig, RateLimiter
 
+from .tiktok_lead_contract import validate_lead_group, validate_lead_ad
+
 logger = logging.getLogger(__name__)
 
 
@@ -83,7 +85,7 @@ class TikTokAPIClient(BasePlatformClient):
     SMART_PLUS_GOALS = {
         "APP_PROMOTION": {"INSTALL", "IN_APP_EVENT", "VALUE"},
         "WEB_CONVERSIONS": {"CLICK", "CONVERT", "TRAFFIC_LANDING_PAGE_VIEW", "VALUE"},
-        "LEAD_GENERATION": {"LEAD_GENERATION", "CLICK", "CONVERSATION"},
+        "LEAD_GENERATION": {"LEAD_GENERATION", "CONVERT"},
     }
     SMART_PLUS_CAMPAIGN_BUDGET_MODES = {
         "BUDGET_MODE_DYNAMIC_DAILY_BUDGET", "BUDGET_MODE_TOTAL",
@@ -1760,13 +1762,7 @@ class TikTokAPIClient(BasePlatformClient):
         elif public_objective == "TRAFFIC" and promotion_type != "WEBSITE":
             raise ValueError("TRAFFIC requires promotion_type=WEBSITE")
         elif public_objective == "LEAD_GENERATION":
-            if promotion_type not in {
-                "LEAD_GENERATION", "LEAD_GEN_CLICK_TO_TT_DIRECT_MESSAGE",
-                "LEAD_GEN_CLICK_TO_SOCIAL_MEDIA_APP_MESSAGE",
-            }:
-                raise ValueError("LEAD_GENERATION requires a lead promotion_type")
-            if adgroup.get("promotion_target_type") in (None, ""):
-                raise ValueError("LEAD_GENERATION requires promotion_target_type")
+            validate_lead_group(adgroup)
         catalog_authorization = None
         if adgroup.get("catalog_id") not in (None, "", []) and live:
             catalog_authorization = self._resolve_catalog_authorization(
@@ -1886,6 +1882,10 @@ class TikTokAPIClient(BasePlatformClient):
             raise ValueError(
                 "Provider authorization context is resolved privately by the client"
             )
+        objective = str(ad.get("objective_type") or "").upper()
+        if objective == "LEAD_GENERATION":
+            validate_lead_ad(ad)
+
         configuration = ad.get("ad_configuration") or {}
         has_portfolio = ad.get("call_to_action_id") or (
             configuration.get("call_to_action_id") if isinstance(configuration, dict) else None
@@ -2028,10 +2028,6 @@ class TikTokAPIClient(BasePlatformClient):
                     image_values, advertiser_id, live=live,
                 )
             ]
-
-        objective = str(ad.get("objective_type") or "").upper()
-        if objective == "LEAD_GENERATION" and ad.get("page_list") in (None, "", []):
-            raise ValueError("LEAD_GENERATION Smart+ ads require page_list")
 
         configuration = ad.get("ad_configuration")
         if configuration in (None, ""):

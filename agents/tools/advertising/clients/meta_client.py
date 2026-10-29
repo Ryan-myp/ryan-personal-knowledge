@@ -16,11 +16,13 @@ import time
 import threading
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Optional, TypedDict, Unpack
 from urllib.parse import urlparse
 import requests
 
 from .base import BasePlatformClient, APIError, AuthError, RateLimitError, TemporaryError, RetryConfig, RateLimiter
+
+from .meta_objectives import normalize_meta_objective
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +31,11 @@ _META_INSIGHTS_DATE_PRESET_ALIASES = {
     "last_14_days": "last_14d",
     "last_30_days": "last_30d",
 }
+
+
+class MetaReportOptions(TypedDict, total=False):
+    time_increment: int
+    effective_status: list[str]
 
 
 class MetaAPIClient(BasePlatformClient):
@@ -42,6 +49,46 @@ class MetaAPIClient(BasePlatformClient):
     - App 级: 2000 次/小时
     - 广告账户级: 50 次/10秒
     """
+
+    REPORT_EFFECTIVE_STATUSES = ("ACTIVE", "PAUSED", "DELETED", "ARCHIVED")
+    # Meta Business SDK AdsInsights.DatePreset; this is also the Tool schema source.
+    REPORT_DATE_PRESETS = (
+        "data_maximum", "last_14d", "last_28d", "last_30d", "last_3d", "last_7d", "last_90d",
+        "last_month", "last_quarter", "last_week_mon_sun", "last_week_sun_sat", "last_year",
+        "maximum", "this_month", "this_quarter", "this_week_mon_today", "this_week_sun_today",
+        "this_year", "today", "yesterday",
+    )
+    REPORT_DATE_PRESET_ALIASES = {
+        key.upper(): value for key, value in _META_INSIGHTS_DATE_PRESET_ALIASES.items()
+    }
+
+    @classmethod
+    def normalize_report_preset(cls, value: Any) -> str:
+        if value is not None and not isinstance(value, str):
+            raise ValueError("date_preset must be a supported string")
+        preset = str(value or "last_7d").strip().lower()
+        preset = _META_INSIGHTS_DATE_PRESET_ALIASES.get(preset, preset)
+        if preset not in cls.REPORT_DATE_PRESETS:
+            raise ValueError("unsupported Meta report date_preset")
+        return preset
+
+    @classmethod
+    def normalize_report_statuses(cls, values: Any) -> list[str] | None:
+        if values is None:
+            return None
+        if (
+            not isinstance(values, (list, tuple))
+            or not 1 <= len(values) <= len(cls.REPORT_EFFECTIVE_STATUSES)
+        ):
+            raise ValueError("effective_status must be a non-empty bounded array")
+        if any(
+            not isinstance(value, str) or value not in cls.REPORT_EFFECTIVE_STATUSES
+            for value in values
+        ):
+            raise ValueError("effective_status contains an unsupported status")
+        if len(set(values)) != len(values):
+            raise ValueError("effective_status must not contain duplicates")
+        return list(values)
 
     CAMPAIGN_DETAIL_FIELDS = (
         "id", "account_id", "name", "status", "effective_status",
@@ -1515,18 +1562,8 @@ class MetaAPIClient(BasePlatformClient):
         """
         self.acquire_rate_limit(self._get_account_limiter(account_id))
         
-        # 验证 objective
-        valid_objectives = [
-            'APP_INSTALLS', 'PRODUCT_CATALOG_SALES', 'CONVERSIONS', 
-            'TRAFFIC', 'LINK_CLICKS', 'OUTCOME_SALES', 
-            'OUTCOME_APP_PROMOTION', 'OUTCOME_TRAFFIC',
-            'OUTCOME_AWARENESS', 'OUTCOME_LEADS', 'OUTCOME_ENGAGEMENT',
-            'OUTCOME_MESSAGES'
-        ]
-        objective = campaign.get('objective', 'OUTCOME_SALES')
-        if objective not in valid_objectives:
-            raise ValueError(f"Invalid objective '{objective}'. Valid values: {valid_objectives}")
-        
+        objective = normalize_meta_objective(campaign.get("objective", "OUTCOME_SALES"))
+
         special_ad_categories = campaign.get('special_ad_categories', 'NONE')
         if isinstance(special_ad_categories, str):
             special_ad_categories = [special_ad_categories]
@@ -2606,7 +2643,7 @@ class MetaAPIClient(BasePlatformClient):
         fields: list = None,
         level: str = "campaign",
         limit: int = 1000,
-        time_increment: Optional[int] = None,
+        **options: Unpack[MetaReportOptions],
     ) -> list[dict[str, Any]]:
         """
         Query bounded Insights rows at Campaign, Ad Set or Ad level.
@@ -2620,6 +2657,10 @@ class MetaAPIClient(BasePlatformClient):
             limit: Maximum total result rows across cursor pages
         """
         account_id = self._clean_meta_id(account_id, "account_id")
+        if set(options) - MetaReportOptions.__annotations__.keys():
+            raise ValueError("unsupported Meta report options")
+        time_increment = options.get("time_increment")
+        statuses = self.normalize_report_statuses(options.get("effective_status"))
         level = str(level or "campaign").strip().lower()
         level_id_fields = {
             "campaign": ("campaign.id", "campaign_id"),
@@ -2674,14 +2715,21 @@ class MetaAPIClient(BasePlatformClient):
             if not 1 <= time_increment <= 90:
                 raise ValueError("time_increment must be between 1 and 90")
             params["time_increment"] = time_increment
+        filters = []
         if normalized_ids:
-            params["filtering"] = json.dumps([
+            filters.append(
                 {
                     'field': filter_field,
                     'operator': 'IN',
                     'value': normalized_ids,
                 }
-            ])
+            )
+        if statuses:
+            filters.append({
+                "field": f"{level}.effective_status", "operator": "IN", "value": statuses,
+            })
+        if filters:
+            params["filtering"] = json.dumps(filters)
         if isinstance(time_range, dict):
             since = time_range.get("since", time_range.get("start_date"))
             until = time_range.get("until", time_range.get("end_date"))
@@ -2694,10 +2742,7 @@ class MetaAPIClient(BasePlatformClient):
                 separators=(",", ":"),
             )
         else:
-            preset = str(time_range or "last_7d").strip().lower()
-            params["date_preset"] = _META_INSIGHTS_DATE_PRESET_ALIASES.get(
-                preset, preset
-            )
+            params["date_preset"] = self.normalize_report_preset(time_range)
 
         return self._list_graph_pages(
             account_id,

@@ -65,6 +65,26 @@ def _is_internal_write(definition: Any) -> bool:
     return str(effect or "").strip().lower() == "internal_write"
 
 
+def _has_trait(definition: Any, expected: str) -> bool:
+    traits = _value(definition, "traits", ()) or ()
+    if isinstance(traits, str):
+        traits = (traits,)
+    return expected in {
+        str(item or "").strip().lower() for item in traits
+    }
+
+
+def _is_placeholder_clarification_question(arguments: Mapping[str, Any]) -> bool:
+    question = str(arguments.get("question") or "").strip().casefold()
+    normalized = "".join(
+        character for character in question
+        if character.isalnum() or "\u3400" <= character <= "\u9fff"
+    )
+    return normalized in {
+        "question", "yourquestion", "问题", "请填写问题", "请输入问题",
+    }
+
+
 def _permissions(request: Any) -> frozenset[str]:
     principal = getattr(request, "principal", None)
     values = getattr(principal, "permissions", None)
@@ -232,11 +252,19 @@ class ToolExecutionPolicy:
             reason_code == "input_schema"
             and self._can_repair_extra_fields(definition, dict(call.arguments))
         )
+        malformed_clarification = (
+            reason_code in {"input_schema", "clarification_question_invalid"}
+            and _has_trait(definition, "clarification")
+        )
         result = {
             "block": True,
-            "reason": message,
-            "terminate": not repairable,
-            "needs_input": not repairable and reason_code in {
+            "reason": (
+                "Clarification Tool requires a concrete user-facing question; "
+                "retry with a question grounded in the request or answer directly."
+                if malformed_clarification else message
+            ),
+            "terminate": not repairable and not malformed_clarification,
+            "needs_input": not repairable and not malformed_clarification and reason_code in {
                 "confirmation_required", "scope_required", "scope_mismatch",
                 "input_schema", "creation_input_required",
             },
@@ -247,6 +275,10 @@ class ToolExecutionPolicy:
         }
         if repairable:
             result["runtime_signals"] = {"tool_input_repairable": True}
+        elif malformed_clarification:
+            result["runtime_signals"] = {
+                "clarification_tool_input_missing": True,
+            }
         if result["needs_input"] and callable(self.interaction_builder):
             interaction = self.interaction_builder(context, reason_code, message)
             if isinstance(interaction, Mapping):
@@ -540,6 +572,14 @@ class ToolExecutionPolicy:
         schema_error = self._validate_schema(definition, arguments)
         if schema_error:
             return "input_schema", schema_error
+        if (
+            _has_trait(definition, "clarification")
+            and _is_placeholder_clarification_question(arguments)
+        ):
+            return (
+                "clarification_question_invalid",
+                "Clarification Tool requires a concrete user-facing question",
+            )
 
         request_context = getattr(request, "context", {})
         if not isinstance(request_context, Mapping):

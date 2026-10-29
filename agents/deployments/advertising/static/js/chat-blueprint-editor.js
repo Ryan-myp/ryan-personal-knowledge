@@ -1,10 +1,36 @@
+        let blueprintEvaluationSequence = 0;
+        const blueprintAdvancedState = new Map();
+
+        function blueprintFieldIsPrimary(field, state) {
+            if (state.state === 'invalid' || state.state === 'missing') return true;
+            return Boolean(state.required) && field.presentation !== 'derived_readonly';
+        }
+
+        function selectBlueprintStage(stage) {
+            blueprintState.activeHierarchy = stage;
+            document.querySelectorAll('#blueprintFields .blueprint-field-group').forEach(section => {
+                const active = section.dataset.hierarchy === stage;
+                section.classList.toggle('studio-active-step', active);
+                if (active) setCreationSectionExpanded(section, true);
+            });
+            renderBlueprintFlowbar(blueprintState.selected, blueprintState.evaluation);
+        }
+
+        function moveBlueprintStage(direction) {
+            const groups = blueprintHierarchyGroups(blueprintState.selected?.fields || [], blueprintState.evaluation);
+            const index = groups.findIndex(group => group.id === blueprintState.activeHierarchy);
+            const next = groups[index + direction];
+            if (next) selectBlueprintStage(next.id);
+        }
+
         function creationTemplateVerificationLabel(status) {
             return ({
                 live_verified: '已验证',
                 partial_live_verified: '部分验证',
                 live_verified_with_provider_limits: '已验证 · 渠道限制',
                 provider_limited: '渠道限制',
-                dry_run_only: '仅草稿',
+                dry_run_only: '草稿预设 · 未实测',
+                pending_live_verification: '待真实验证',
             }[status] || status || '未标注');
         }
 
@@ -302,7 +328,6 @@
                         }))
                         .sort((left, right) => {
                             const priority = item => {
-                                if (item.state.status === 'missing' || item.state.status === 'invalid') return 0;
                                 if (item.state.required) return 1;
                                 if (creationFieldIsAuto(item.field)) return 2;
                                 return 3;
@@ -342,7 +367,10 @@
         function blueprintScrollTo(target, activeNode = null) {
             if (!target) return;
             const section = target.closest('.blueprint-field-group, .creation-card-section');
+            if (section?.classList.contains('blueprint-field-group')) selectBlueprintStage(section.dataset.hierarchy);
             if (section) setCreationSectionExpanded(section, true);
+            const advanced = target.closest('details');
+            if (advanced) advanced.open = true;
             scrollCreationTarget(target);
             const focusable = target.querySelector('input:not([disabled]), select:not([disabled]), textarea:not([disabled]), button:not([disabled])');
             focusable?.focus({ preventScroll: true });
@@ -488,58 +516,42 @@
                 AGE_35_44: '35–44 岁', AGE_45_54: '45–54 岁', AGE_55_64: '55–64 岁', 'AGE_65+': '65 岁以上',
             };
             if (known[text]) return known[text];
+            if (/^[A-Z0-9]{2,3}$/.test(text)) return text;
             return text.toLowerCase().split(/[_-]+/).map(part => part ? part[0].toUpperCase() + part.slice(1) : '').join(' ');
         }
 
-        function renderChoiceTiles(options, selectedValues, multiple, labelFor, onChange) {
-            const control = document.createElement('div');
-            control.className = `choice-tiles${multiple ? ' multiple' : ''}`;
-            const groupName = `choice-${Math.random().toString(36).slice(2)}`;
-            const selected = new Set((Array.isArray(selectedValues) ? selectedValues : [selectedValues])
-                .filter(value => value !== undefined && value !== null && value !== '').map(String));
-            options.forEach(option => {
-                const value = typeof option === 'object' ? String(option.value ?? '') : String(option);
-                if (!value) return;
-                const suppliedLabel = typeof option === 'object' ? (option.label || labelFor?.(option.value) || '') : (labelFor?.(option) || '');
-                const label = choiceDisplayLabel(value, suppliedLabel);
-                const item = document.createElement('label');
-                item.className = `choice-tile${selected.has(value) ? ' selected' : ''}`;
-                const input = document.createElement('input');
-                input.type = multiple ? 'checkbox' : 'radio';
-                input.name = groupName;
-                input.value = value;
-                input.checked = selected.has(value);
-                input.addEventListener('change', () => {
-                    if (multiple) {
-                        item.classList.toggle('selected', input.checked);
-                        const values = Array.from(control.querySelectorAll('input:checked')).map(node => node.value);
-                        onChange(values);
-                    } else if (input.checked) {
-                        control.querySelectorAll('.choice-tile').forEach(node => node.classList.remove('selected'));
-                        item.classList.add('selected');
-                        onChange(value);
-                    }
+        function renderChoiceControl(options, selectedValues, multiple, labelFor, onChange) {
+            if (!multiple) {
+                const select = document.createElement('select');
+                select.className = 'compact-choice-select';
+                select.appendChild(new Option('请选择…', ''));
+                options.forEach(option => {
+                    const value = typeof option === 'object' ? option.value : option;
+                    const label = typeof option === 'object' ? option.label : '';
+                    select.appendChild(new Option(choiceDisplayLabel(value, label || labelFor?.(value)), String(value)));
                 });
-                const copy = document.createElement('span');
-                copy.className = 'choice-copy';
-                const title = document.createElement('strong');
-                title.textContent = label;
-                copy.appendChild(title);
-                if (label !== value) {
-                    const raw = document.createElement('small');
-                    raw.textContent = value;
-                    copy.appendChild(raw);
-                }
-                item.append(input, copy);
-                control.appendChild(item);
-            });
-            return control;
+                select.value = selectedValues === undefined || selectedValues === null ? '' : String(selectedValues);
+                select.addEventListener('change', () => onChange(select.value));
+                return select;
+            }
+            return renderSearchableMultiChoice(options, selectedValues, labelFor, onChange);
         }
 
         function renderBlueprintFlowbar(blueprint, evaluation) {
             const container = document.getElementById('blueprintFlowbar');
             if (!container || !blueprint) return;
             const groups = blueprintHierarchyGroups(blueprint.fields || [], evaluation);
+            if (!groups.some(group => group.id === blueprintState.activeHierarchy)) {
+                blueprintState.activeHierarchy = groups[0]?.id;
+            }
+            const current = groups.findIndex(group => group.id === blueprintState.activeHierarchy);
+            const previous = document.getElementById('blueprintStepPrevious');
+            const next = document.getElementById('blueprintStepNext');
+            if (previous) previous.disabled = current <= 0;
+            if (next) {
+                next.disabled = current >= groups.length - 1;
+                next.textContent = current < groups.length - 1 ? `下一步 · ${groups[current + 1].title}` : '已到最后一步';
+            }
             container.replaceChildren();
             const label = document.createElement('div');
             label.className = 'blueprint-flowbar-label';
@@ -549,12 +561,12 @@
                 const progress = blueprintHierarchyStats(group.fields, evaluation);
                 const button = document.createElement('button');
                 button.type = 'button';
-                button.className = `blueprint-flow-step${index === 0 ? ' active' : ''}${progress.missing ? ' has-missing' : ''}`;
+                button.className = `blueprint-flow-step${group.id === blueprintState.activeHierarchy ? ' active' : ''}${progress.missing ? ' has-missing' : ''}`;
+                button.setAttribute('aria-current', group.id === blueprintState.activeHierarchy ? 'step' : 'false');
                 button.dataset.step = group.id;
                 button.innerHTML = `<span class="blueprint-flow-index">${String(index + 1).padStart(2, '0')}</span><span class="blueprint-flow-copy"><strong>${escapeHtml(group.label)}</strong><small>${escapeHtml(group.title)} · ${progress.missing ? `待填 ${progress.missing}` : '已就绪'}</small></span>`;
                 button.addEventListener('click', () => {
-                    blueprintScrollTo(document.querySelector(`#blueprintFields [data-step="${CSS.escape(group.id)}"]`));
-                    container.querySelectorAll('.blueprint-flow-step').forEach(node => node.classList.toggle('active', node === button));
+                    selectBlueprintStage(group.id);
                 });
                 container.appendChild(button);
             });
@@ -610,42 +622,50 @@
             if (item) selectBlueprint(item.id, value);
         }
 
-        async function loadCreationBlueprints(selectId = null) {
+        let blueprintCatalogSequence = 0;
+
+        async function loadCreationBlueprints(selectId = null, preserveDraft = false) {
+            const sequence = ++blueprintCatalogSequence;
             const list = document.getElementById('blueprintList');
-            if (list) list.innerHTML = `<div class="blueprint-empty">正在加载${blueprintState.mode === 'templates' ? '模板' : '广告创建蓝图'}…</div>`;
+            if (list && !blueprintState.items.length) list.textContent = '正在加载模板与字段规则…';
             try {
-                const [blueprints, tools, templates, formats] = await Promise.all([
-                    apiFetch('/creation-blueprints'),
-                    apiFetch('/tools'),
-                    apiFetch('/creation-templates').catch(() => ({ templates: [] })),
-                    apiFetch('/ad-formats').catch(() => ({ formats: [] })),
+                const results = await Promise.allSettled([
+                    apiFetch('/creation-blueprints'), apiFetch('/tools'),
+                    apiFetch('/creation-templates'),
                 ]);
-                blueprintState.items = Array.isArray(blueprints.blueprints) ? blueprints.blueprints : [];
-                blueprintState.formats = Array.isArray(formats.formats) ? formats.formats : [];
-                blueprintState.tools = Array.isArray(tools.tools) ? tools.tools : [];
-                blueprintState.templates = Array.isArray(templates.templates) ? templates.templates : [];
+                if (sequence !== blueprintCatalogSequence) return;
+                for (const result of results.slice(0, 2)) {
+                    if (result.status === 'rejected') throw result.reason;
+                }
+                blueprintState.items = results[0].value.blueprints || [];
+                blueprintState.tools = results[1].value.tools || [];
+                if (results[2].status === 'fulfilled') {
+                    blueprintState.templates = results[2].value.templates || [];
+                    templateBrowser.loaded = true;
+                }
+                blueprintState.formats = results[0].value.formats || blueprintState.formats || [];
+                blueprintState.catalogLoaded = results.every(result => result.status === 'fulfilled');
                 renderBlueprintList();
-                if (blueprintState.mode === 'templates') {
-                    const selectedTemplate = blueprintState.templates.find(item => item.template_id === blueprintState.selectedTemplateId)
-                        || blueprintState.templates[0];
-                    if (selectedTemplate) {
-                        selectCreationTemplate(selectedTemplate.template_id);
-                    } else {
-                        blueprintState.selected = null;
-                        renderBlueprintEditor();
-                    }
-                    return;
+                const existing = blueprintState.items.find(item => item.id === blueprintState.selected?.id);
+                if (blueprintState.mode === 'templates' && templateBrowser.view !== 'edit') {
+                    if (templateBrowser.view === 'detail') openTemplateDetail(templateBrowser.selectedId);
+                } else if (preserveDraft && existing) {
+                    blueprintState.selected = existing;
+                    renderBlueprintEditor();
+                } else if (selectId) {
+                    selectBlueprint(selectId);
+                } else if (blueprintState.mode === 'templates') {
+                    renderTemplateLibrary();
+                    if (templateBrowser.view === 'detail') openTemplateDetail(templateBrowser.selectedId);
+                } else if (blueprintState.items.length) {
+                    selectBlueprint(blueprintState.selected?.id || blueprintState.items[0].id);
                 }
-                const target = selectId || blueprintState.selected?.id || blueprintState.items[0]?.id;
-                if (target) selectBlueprint(target);
+                if (results[2].status === 'rejected') {
+                    showBlueprintNotice(`模板加载失败：${results[2].reason?.message || '服务暂不可用'}。已保留之前的模板，请点击刷新重试。`);
+                }
             } catch (error) {
-                if (list) {
-                    list.replaceChildren();
-                    const empty = document.createElement('div');
-                    empty.className = 'blueprint-empty';
-                    empty.textContent = error.message || '蓝图加载失败，请稍后重试。';
-                    list.appendChild(empty);
-                }
+                showBlueprintNotice(error.message || '模板与字段规则加载失败，请刷新重试。');
+                if (list && !blueprintState.items.length) list.textContent = error.message || '加载失败，请刷新重试。';
             }
         }
 
@@ -667,6 +687,10 @@
         }
 
         function renderBlueprintList() {
+            if (blueprintState.mode === 'templates') {
+                renderTemplateLibrary();
+                return;
+            }
             const list = document.getElementById('blueprintList');
             if (!list) return;
             list.replaceChildren();
@@ -681,8 +705,8 @@
                 const wizardButton = document.createElement('button');
                 wizardButton.type = 'button';
                 wizardButton.className = 'blueprint-list-open-wizard';
-                wizardButton.textContent = '去创建向导';
-                wizardButton.onclick = () => openBlueprintManager();
+                wizardButton.textContent = '+ 新建模板';
+                wizardButton.onclick = () => openTemplateCreator();
                 toolbarTitle.appendChild(wizardButton);
             }
             const search = document.createElement('input');
@@ -793,7 +817,7 @@
                 button.appendChild(status);
                 return button;
             };
-            renderSection('内置模板', '绑定受控测试账号，应用后仍需补充账户资产与素材', builtinTemplates, renderTemplate);
+            renderSection('内置模板', '包含测试账号模板与通用起步预设', builtinTemplates, renderTemplate);
             renderSection('我的模板', '可按账户与地区复用并继续编辑', userTemplates, renderTemplate);
             renderSection('系统蓝图', '平台维护的字段与联动规则', visibleItems, item => {
                 const button = document.createElement('button');
@@ -841,7 +865,7 @@
             }
         }
 
-        function selectBlueprint(blueprintId, selectorValue = null, template = null) {
+        function selectBlueprint(blueprintId, selectorValue = null, template = null, useDefaultTemplate = true) {
             const item = blueprintState.items.find(value => value.id === blueprintId);
             if (!item) return;
             if (
@@ -854,7 +878,7 @@
             ) {
                 clearCreationImport();
             }
-            if (!template) {
+            if (!template && useDefaultTemplate) {
                 template = blueprintState.templates.find(candidate => candidate.status === 'active'
                     && candidate.is_default
                     && candidate.blueprint_id === item.id
@@ -863,7 +887,10 @@
                         || (candidate.scope_type === 'account' && candidate.account_id === blueprintState.accountId))
                 ) || null;
             }
+            setBlueprintStudioView('fields');
             blueprintState.selected = item;
+            blueprintState.activeHierarchy = null;
+            document.querySelector('.creation-studio')?.classList.remove('studio-catalog-open');
             blueprintState.values = blueprintDefaultValues(item);
             blueprintState.previousValues = {};
             blueprintState.evaluation = null;
@@ -886,11 +913,13 @@
             renderBlueprintList();
             renderBlueprintEditor();
             if (template) showBlueprintNotice(`已应用“${template.name || '我的模板'}”，你仍可修改本次投放参数。`);
+            else showBlueprintNotice('');
             // Hydration establishes the baseline; only later edits reset dependent fields.
             if (selector?.field) evaluateBlueprintDraft(null);
         }
 
         function selectCreationTemplate(templateId) {
+            blueprintState.creatingTemplate = false;
             const template = blueprintState.templates.find(item => item.template_id === templateId);
             if (!template) return;
             const blueprint = blueprintState.items.find(item => item.id === template.blueprint_id && (
@@ -913,6 +942,7 @@
             if (!panel) return;
             const open = force === undefined ? panel.hidden : Boolean(force);
             panel.hidden = !open;
+            setBlueprintStudioView(open ? 'save' : 'fields');
             blueprintState.templatePanelOpen = open;
             blueprintState.templateSaveAsNew = open && saveAsNew;
             if (!open) return;
@@ -942,6 +972,8 @@
         function creationTemplatePayload() {
             const blueprint = blueprintState.selected;
             if (!blueprint) return null;
+            const existing = !blueprintState.templateSaveAsNew
+                ? blueprintState.templates.find(item => item.template_id === blueprintState.selectedTemplateId) : null;
             return {
                 name: document.getElementById('creationTemplateName')?.value.trim() || '',
                 description: document.getElementById('creationTemplateDescription')?.value.trim() || '',
@@ -954,7 +986,7 @@
                 region: document.getElementById('creationTemplateRegion')?.value.trim() || '',
                 tags: (document.getElementById('creationTemplateTags')?.value || '').split(',').map(item => item.trim()).filter(Boolean),
                 values: { ...(blueprintState.values || {}) },
-                status: 'active',
+                status: existing?.status || 'active',
                 is_default: Boolean(document.getElementById('creationTemplateDefault')?.checked),
             };
         }
@@ -980,10 +1012,15 @@
                 if (index >= 0) blueprintState.templates[index] = result;
                 else blueprintState.templates.unshift(result);
                 blueprintState.selectedTemplateId = result.template_id;
+                blueprintState.creatingTemplate = false;
                 toggleCreationTemplatePanel(false);
                 renderBlueprintList();
                 renderBlueprintEditor();
-                showBlueprintNotice(`模板“${result.name}”已保存，可在左侧“我的模板”中复用。`);
+                if (blueprintState.mode === 'templates') {
+                    templateBrowser.hasDraft = false;
+                    openTemplateDetail(result.template_id);
+                }
+                showBlueprintNotice(`模板“${result.name}”已保存，可在模板列表中复用。`);
             } catch (error) {
                 showBlueprintNotice(error.message || '模板保存失败。');
             }
@@ -999,8 +1036,7 @@
             toggleCreationTemplatePanel(true);
         }
 
-        async function duplicateSelectedCreationTemplate() {
-            const templateId = blueprintState.selectedTemplateId;
+        async function duplicateSelectedCreationTemplate(templateId = blueprintState.selectedTemplateId) {
             if (!templateId) return;
             const source = blueprintState.templates.find(item => item.template_id === templateId);
             const name = window.prompt('请输入副本名称', `${source?.name || '创建模板'} · 副本`);
@@ -1010,7 +1046,14 @@
                     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }),
                 });
                 blueprintState.templates.unshift(result);
+                if (blueprintState.mode === 'templates') {
+                    renderTemplateLibrary();
+                    openTemplateDetail(result.template_id);
+                    showBlueprintNotice(`模板副本“${result.name}”已创建。`);
+                    return;
+                }
                 blueprintState.selectedTemplateId = result.template_id;
+                blueprintState.creatingTemplate = false;
                 renderBlueprintList();
                 renderBlueprintEditor();
                 showBlueprintNotice(`模板副本“${result.name}”已创建。`);
@@ -1037,29 +1080,35 @@
             } catch (error) { showBlueprintNotice(error.message || '模板状态更新失败。'); }
         }
 
-        async function deleteSelectedCreationTemplate() {
-            const template = blueprintState.templates.find(item => item.template_id === blueprintState.selectedTemplateId);
-            if (!template || !window.confirm(`确定删除模板“${template.name}”吗？`)) return;
-            if (template.source === 'builtin') {
-                showBlueprintNotice('内置模板不能删除，请复制后管理个人模板。');
+        async function deleteSelectedCreationTemplate(templateId = blueprintState.selectedTemplateId) {
+            const template = blueprintState.templates.find(item => item.template_id === templateId);
+            if (!template) return;
+            if (template.source === 'builtin' || template.editable === false) {
+                showBlueprintNotice('只读模板不能删除，请复制后管理个人模板。');
                 return;
             }
+            if (!window.confirm(`确定删除模板“${template.name}”吗？`)) return;
             try {
                 await apiFetch(`/creation-templates/${encodeURIComponent(template.template_id)}`, { method: 'DELETE' });
                 blueprintState.templates = blueprintState.templates.filter(item => item.template_id !== template.template_id);
-                blueprintState.selectedTemplateId = '';
-                selectBlueprint(blueprintState.selected?.id || blueprintState.items[0]?.id);
+                if (blueprintState.selectedTemplateId === templateId) {
+                    blueprintState.selectedTemplateId = '';
+                    if (typeof templateBrowser !== 'undefined') templateBrowser.hasDraft = false;
+                }
+                if (blueprintState.mode === 'templates') showTemplateLibrary();
+                else selectBlueprint(blueprintState.selected?.id || blueprintState.items[0]?.id);
                 showBlueprintNotice('模板已删除。');
             } catch (error) { showBlueprintNotice(error.message || '模板删除失败。'); }
         }
 
         function renderBlueprintEditor() {
             const blueprint = blueprintState.selected;
+            document.getElementById('blueprintOverlay')?.setAttribute('data-blueprint-empty', String(!blueprint));
             const title = document.getElementById('blueprintEditorTitle');
             const meta = document.getElementById('blueprintEditorMeta');
             if (!blueprint) {
                 if (title) title.textContent = '还没有可管理的模板';
-                if (meta) meta.textContent = '请先在广告创建向导中填写参数并保存模板';
+                if (meta) meta.textContent = '点击新建模板，选择渠道和广告类型后填写参数';
                 ['blueprintTemplateSaveButton', 'blueprintTemplateUpdateButton', 'blueprintTemplateDuplicateButton', 'blueprintTemplateStatusButton', 'blueprintTemplateDeleteButton'].forEach(id => {
                     const button = document.getElementById(id);
                     if (button) button.hidden = true;
@@ -1072,7 +1121,7 @@
                 if (importPanel) importPanel.hidden = true;
                 ['blueprintFields', 'blueprintFieldNav', 'blueprintSummary', 'blueprintContractOverview'].forEach(id => {
                     const container = document.getElementById(id);
-                    if (container) container.innerHTML = '<div class="blueprint-empty">暂无模板内容。模板从广告创建向导中保存。</div>';
+                    if (container) container.innerHTML = '<div class="blueprint-empty">点击左侧新建模板，选择渠道与广告类型开始。</div>';
                 });
                 const readiness = document.getElementById('blueprintReadiness');
                 if (readiness) readiness.textContent = '暂无模板';
@@ -1080,8 +1129,15 @@
             }
             const template = blueprintState.templates.find(item => item.template_id === blueprintState.selectedTemplateId);
             const managementMode = blueprintState.mode === 'templates';
+            const footerSave = document.getElementById('studioSaveTemplateButton');
+            if (footerSave) {
+                footerSave.hidden = !managementMode;
+                const editing = template && template.source !== 'builtin';
+                footerSave.textContent = editing ? '保存修改' : '保存模板';
+                footerSave.onclick = () => toggleCreationTemplatePanel(true, !editing);
+            }
             const importButton = document.getElementById('blueprintImportButton');
-            if (importButton) importButton.hidden = managementMode;
+            if (importButton) importButton.hidden = managementMode && !blueprintState.creatingTemplate;
             if (title) title.textContent = managementMode && template ? template.name : blueprint.title || blueprint.id;
             if (meta) meta.textContent = template && managementMode
                 ? `${creationProviderLabel(blueprint.provider)} · ${blueprint.ad_format} · ${template.account_id ? `账号 ${template.account_id} · ` : ''}${template.source === 'builtin' ? '内置只读' : (template.scope_label || '个人通用')} · ${template.source === 'builtin' ? creationTemplateVerificationLabel(template.verification_status) : (template.status === 'active' ? '已启用' : '已停用')} · ${template.source === 'builtin' ? '应用后仍需补充资源' : `使用 ${template.usage_count || 0} 次`} · 蓝图 v${blueprint.version}`
@@ -1208,11 +1264,12 @@
                 const section = document.createElement('section');
                 const progress = blueprintHierarchyStats(group.fields, evaluation);
                 const branchKey = `blueprint:${blueprint.id || blueprint.provider}:hierarchy:${group.id}`;
-                const defaultCollapsed = groupIndex > 0 && !progress.missing;
+                const defaultCollapsed = false;
                 const collapsed = creationDirectoryCollapseState.has(branchKey)
                     ? creationDirectoryCollapseState.get(branchKey) === true
                     : defaultCollapsed;
-                section.className = `blueprint-field-group${groupIndex === 0 ? ' active' : ''}${collapsed ? ' is-collapsed' : ''}`;
+                const active = group.id === (blueprintState.activeHierarchy || groups[0]?.id);
+                section.className = `blueprint-field-group${active ? ' studio-active-step active' : ''}${collapsed ? ' is-collapsed' : ''}`;
                 section.dataset.hierarchy = group.id;
                 section.dataset.step = group.id;
                 const sectionHeader = document.createElement('div');
@@ -1232,6 +1289,16 @@
                 const sectionFields = document.createElement('div');
                 sectionFields.className = 'blueprint-field-group-fields';
                 section.appendChild(sectionFields);
+                const advanced = document.createElement('details');
+                advanced.className = 'blueprint-advanced-fields';
+                advanced.open = blueprintAdvancedState.get(branchKey) === true;
+                advanced.addEventListener('toggle', () => blueprintAdvancedState.set(branchKey, advanced.open));
+                const advancedTitle = document.createElement('summary');
+                const advancedFields = document.createElement('div');
+                advancedFields.className = 'blueprint-field-group-fields';
+                advanced.append(advancedTitle, advancedFields);
+                section.appendChild(advanced);
+                let advancedCount = 0;
                 container.appendChild(section);
                 for (const field of group.fields) {
                 const fieldRef = blueprintToolFieldSchema(field.tool_ref);
@@ -1280,9 +1347,13 @@
                 const fieldDescription = [field.description || schema.description, fieldHint ? `参数限制：${fieldHint}` : '']
                     .filter(Boolean).join('；');
                 if (fieldDescription) {
-                    const help = document.createElement('div');
+                    const help = document.createElement('details');
                     help.className = 'blueprint-field-help';
-                    help.textContent = fieldDescription;
+                    const summary = document.createElement('summary');
+                    summary.textContent = '填写说明';
+                    const description = document.createElement('p');
+                    description.textContent = fieldDescription;
+                    help.append(summary, description);
                     wrapper.appendChild(help);
                 }
                 const options = blueprintOptions(fieldView, state);
@@ -1418,7 +1489,7 @@
                     const arraySchema = schema.type === 'array' || (Array.isArray(schema.type) && schema.type.includes('array'));
                     const useChoiceTiles = arraySchema || options.length <= 6;
                     if (useChoiceTiles) {
-                        control = renderChoiceTiles(options, displayValue, arraySchema, option => blueprintOptionLabel(field, option), value => updateBlueprintField(field, value));
+                        control = renderChoiceControl(options, displayValue, arraySchema, option => blueprintOptionLabel(field, option), value => updateBlueprintField(field, value));
                         control.dataset.customChoice = 'true';
                     } else {
                         control = document.createElement('select');
@@ -1465,8 +1536,11 @@
                             : schema.type === 'object' ? '按字段填写，系统会按 Tool Schema 组装'
                             : field.presentation === 'text_list' ? '每行填写一条' : '可直接填写';
                 wrapper.appendChild(source);
-                sectionFields.appendChild(wrapper);
+                if (blueprintFieldIsPrimary(fieldView, state)) sectionFields.appendChild(wrapper);
+                else { advancedFields.appendChild(wrapper); advancedCount++; }
                 }
+                advancedTitle.textContent = `更多设置与预填参数（${advancedCount}）`;
+                advanced.hidden = advancedCount === 0;
             });
             const readiness = document.getElementById('blueprintReadiness');
             if (readiness) {
@@ -1496,6 +1570,8 @@
         async function evaluateBlueprintDraft(changedPath, allowReset = true) {
             const blueprint = blueprintState.selected;
             if (!blueprint) return;
+            const sequence = ++blueprintEvaluationSequence;
+            const values = blueprintState.values;
             try {
                 const evaluation = await apiFetch(`/creation-blueprints/${encodeURIComponent(blueprint.id)}/evaluate`, {
                     method: 'POST',
@@ -1507,6 +1583,7 @@
                         version: blueprint.version,
                     }),
                 });
+                if (sequence !== blueprintEvaluationSequence || blueprintState.selected !== blueprint || blueprintState.values !== values) return;
                 blueprintState.evaluation = evaluation;
                 if (allowReset && evaluation.reset_fields?.length) {
                     for (const path of evaluation.reset_fields) {
@@ -1525,11 +1602,17 @@
                 renderBlueprintFieldNav(blueprint, evaluation);
                 renderBlueprintSummary(blueprint, evaluation);
             } catch (error) {
+                if (sequence !== blueprintEvaluationSequence || blueprintState.selected !== blueprint || blueprintState.values !== values) return;
                 showBlueprintNotice(error.message || '参数校验失败。');
             }
         }
 
         function showBlueprintNotice(message) {
+            const managerNotice = document.getElementById('templateManagerNotice');
+            if (managerNotice) {
+                managerNotice.textContent = message || '';
+                managerNotice.hidden = !message || blueprintState.mode !== 'templates';
+            }
             const notice = document.getElementById('blueprintNotice');
             if (!notice) return;
             notice.textContent = message || '';
@@ -1577,3 +1660,85 @@
             setInput(`请按“${blueprint.title || blueprint.id}”继续创建广告。参数草稿已带入，请先检查并确认后提交。`);
             closeBlueprintManager();
         }
+
+function setBlueprintStudioView(view = 'fields') {
+    document.getElementById('blueprintOverlay')?.setAttribute('data-studio-view', view);
+    for (const name of ['fields', 'review']) {
+        const button = document.getElementById(`studioTab-${name}`);
+        button?.setAttribute('aria-selected', String(view === name));
+        button?.classList.toggle('active', view === name);
+    }
+}
+
+async function openTemplateCreator() {
+    blueprintState.mode = 'templates';
+    const sequence = ++templateBrowser.navigationSequence;
+    if (!blueprintState.catalogLoaded && !await ensureTemplateEditorCatalog()) return;
+    if (sequence !== templateBrowser.navigationSequence) return;
+    showBlueprintNotice('');
+    setTemplateManagerView('edit');
+    setBlueprintStudioView('choose');
+    const providers = document.getElementById('templateCreateProvider');
+    if (!providers) return;
+    providers.replaceChildren(new Option('请选择渠道', ''));
+    [...new Set(blueprintState.items.map(item => item.provider))].forEach(provider => {
+        providers.add(new Option(creationProviderLabel(provider), provider));
+    });
+    updateTemplateCreationTypes();
+    providers.focus();
+}
+
+function updateTemplateCreationTypes() {
+    const provider = document.getElementById('templateCreateProvider')?.value;
+    const types = document.getElementById('templateCreateType');
+    if (!types) return;
+    types.replaceChildren(new Option('请选择广告类型', ''));
+    blueprintState.items.filter(item => item.provider === provider).forEach(item => {
+        types.add(new Option(item.title || item.id, item.id));
+    });
+    types.disabled = !provider;
+    updateTemplateCreationPresets();
+}
+
+function updateTemplateCreationPresets() {
+    const id = document.getElementById('templateCreateType')?.value;
+    const blueprint = blueprintState.items.find(item => item.id === id);
+    const control = document.getElementById('templateCreatePreset');
+    if (!control) return;
+    const presets = templateCreationPresets(blueprintState.templates, blueprint);
+    control.replaceChildren(new Option('仅使用蓝图字段默认值', ''));
+    for (const scope of ['general', 'account']) {
+        const group = document.createElement('optgroup');
+        group.label = scope === 'general' ? '起步预设' : '账户参考预设';
+        for (const preset of presets.filter(item => (item.account_id ? 'account' : 'general') === scope)) {
+            group.append(new Option(`${preset.name}${preset.account_id ? ` · ${preset.account_id}` : ''}`, preset.template_id));
+        }
+        if (group.children.length) control.append(group);
+    }
+    const starter = presets.find(item => !item.account_id && item.is_default)
+        || presets.find(item => !item.account_id);
+    control.value = starter?.template_id || '';
+    control.disabled = !blueprint;
+    document.getElementById('templateCreateStart').disabled = !blueprint;
+}
+
+function beginTemplateDraft() {
+    const id = document.getElementById('templateCreateType')?.value;
+    const blueprint = blueprintState.items.find(item => item.id === id);
+    if (!blueprint) return;
+    const presetId = document.getElementById('templateCreatePreset')?.value || '';
+    const preset = templateCreationPresets(blueprintState.templates, blueprint)
+        .find(item => item.template_id === presetId);
+    if (presetId && !preset) {
+        showBlueprintNotice('所选预设已不可用，请重新选择广告类型和预设。');
+        return;
+    }
+    blueprintState.creatingTemplate = true;
+    templateBrowser.hasDraft = true;
+    blueprintState.accountId = '';
+    const draftPreset = preset ? {...preset, template_id:'', values:JSON.parse(JSON.stringify(preset.values || {}))} : null;
+    selectBlueprint(id, null, draftPreset, false);
+    showBlueprintNotice(preset
+        ? `已载入“${preset.name}”的参数。修改后保存为自己的模板，原预设保持不变。`
+        : '正在按蓝图创建新模板。填写可复用参数后保存，账户和素材可以使用时再补充。');
+}

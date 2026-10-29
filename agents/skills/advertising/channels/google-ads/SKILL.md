@@ -1,7 +1,7 @@
 ---
 name: google-ads-api-expert
 description: "Google Ads 专家 Skill：负责账户层级、广告类型、出价、素材、GAQL 报表、变更验证和故障诊断的业务判断与 SOP"
-version: 2.0.3
+version: 2.1.0
 author: Ryan
 created: 2026-09-08
 tags: [google, google-ads, search, shopping, performance-max, gaql, bidding, reporting]
@@ -14,6 +14,15 @@ parser_platform: google
 > 本 Skill 提供 Google Ads 业务知识、参数依赖和操作 SOP。它不是 Tool 注册表，也不直接
 > import Google SDK、读取凭证或发起 API 请求。可执行能力只能来自当前 Registry 中已注册、
 > 通过 schema/权限/dry-run/live gate 的 Google Tool Source Tool。
+
+## 新建能力与现有资源操作的边界
+
+传统 Video Campaign 不能通过当前 Google Ads API 新建，视频投放优先评估 Demand Gen。
+Google 已于 2026-09-23 停止新建 Smart Campaign，新建需求应评估 Performance Max。
+这些限制不等于已有资源不能查询，也不能一概禁止当前 API 已开放的特定 VideoResponsiveAdInfo 操作。
+Local Services PMax 需要 v26 合同，当前 v24 连接器尚未接入。先读取蓝图支持说明，
+不得把可展示字段或可生成草稿等同于可 live 创建；受限链路不得先创建预算后再尝试 Campaign。
+
 
 ## 先做的判断：账户、资源和请求类型
 

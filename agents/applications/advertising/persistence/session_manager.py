@@ -10,6 +10,7 @@ from typing import Any, Optional
 from datetime import datetime, timezone
 
 from .interfaces import PersistenceBackend
+from .feedback_review_pages import FeedbackReviewQuery
 from .models import (
     ConversationMessagePage, ConversationMessageRecord, ToolCallRecord, CampaignRecord,
     ExecutionRunRecord,
@@ -114,6 +115,15 @@ class SessionManager:
         """Return the durable chat messages in chronological order."""
         return self.store.list_conversation_messages(session_id, limit=limit)
 
+    def list_conversation_preview_messages(
+        self, session_ids: list[str], *, user_id: str, tenant_id: str,
+        limit_per_session: int = 50,
+    ) -> dict[str, ConversationMessagePage]:
+        return self.store.list_conversation_preview_messages(
+            session_ids, user_id=user_id, tenant_id=tenant_id,
+            limit_per_session=limit_per_session,
+        )
+
     def list_conversation_message_page(
         self,
         session_id: str,
@@ -182,6 +192,12 @@ class SessionManager:
             user_id=str(user_id),
             tenant_id=str(tenant_id),
         )
+
+    def page_conversation_feedback_review_queue(self, filters: FeedbackReviewQuery) -> dict[str, Any]:
+        getter = getattr(self.store, 'page_conversation_feedback_review_queue', None)
+        if not callable(getter):
+            raise RuntimeError('persistence backend lacks feedback pagination support')
+        return getter(filters)
 
     def list_conversation_feedback_review_queue(
         self, *, tenant_id: str, status: str = "pending", limit: int = 50,

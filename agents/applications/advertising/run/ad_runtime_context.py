@@ -7,11 +7,11 @@ bounded prior Tool results for the model-facing turn pipeline.
 
 from __future__ import annotations
 
-import json
 from collections import OrderedDict
 from typing import Any
 
 from agents.agent_harness.core.interfaces import ToolResult
+from agents.agent_harness.tool_output import bound_tool_output, serialize_tool_value
 
 
 class AdvertisingRuntimeContext:
@@ -39,6 +39,9 @@ class AdvertisingRuntimeContext:
         )
         if not isinstance(context, dict):
             context = {}
+        if not context.get("needs_creation_context"):
+            context["publisher_context"] = ""
+            return context
         namespaces = context.get("namespaces")
         namespaces = namespaces if isinstance(namespaces, (list, tuple)) else ()
         provider_scope = [
@@ -66,28 +69,22 @@ class AdvertisingRuntimeContext:
         max_results: int = 8,
         max_chars: int = 4000,
     ) -> str:
+        if max_results <= 0 or max_chars <= 0:
+            return ""
         rows: list[str] = []
-        for tool_name, result in list(session.tool_results.items())[-max_results:]:
+        remaining = max_chars
+        for tool_name, result in reversed(list(session.tool_results.items())[-max_results:]):
             if not isinstance(result, ToolResult):
                 continue
             safe = self.runtime._redact_for_persistence(result.to_dict())
-            try:
-                encoded = json.dumps(
-                    safe,
-                    ensure_ascii=False,
-                    sort_keys=True,
-                    default=str,
-                )
-            except (TypeError, ValueError):
-                encoded = json.dumps(
-                    {
-                        "success": result.success,
-                        "error": str(result.error or ""),
-                    },
-                    ensure_ascii=False,
-                )
-            rows.append(f"[{tool_name}] {encoded[:1200]}")
-        return "\n".join(rows)[:max_chars]
+            header = f"[{tool_name}] "
+            budget = min(1200, remaining - len(header) - int(bool(rows)))
+            if budget < 128:
+                break
+            encoded = serialize_tool_value(bound_tool_output(safe, budget))
+            rows.append(header + encoded)
+            remaining -= len(header) + len(encoded) + int(len(rows) > 1)
+        return "\n".join(rows)
 
     def clear(self) -> None:
         self._blueprint_context_cache.clear()

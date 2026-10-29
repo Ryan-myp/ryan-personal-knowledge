@@ -14,6 +14,7 @@ function element() {
         className: '',
         dataset: {},
         children: [],
+        get childElementCount() { return this.children.length; },
         attributes: {},
         classList: {
             add() {},
@@ -104,6 +105,55 @@ const workbenchSize = context => vm.runInNewContext(
     'workbenchState.cards.size',
     context,
 );
+
+test('opening traces without artifacts does not expose an empty creation tab', () => {
+    const { context, elements } = environment();
+    context.openTraceWorkbench();
+    assert.equal(elements.get('workbenchTabbar').hidden, true);
+    assert.equal(elements.get('workbench-tab-creation').hidden, true);
+    context.setWorkbenchView('creation');
+    assert.equal(elements.get('creation-workbench-view').hidden, true);
+    assert.equal(elements.get('trace-workbench-view').hidden, false);
+});
+
+test('creation navigation follows the current draft and disappears when cleared', () => {
+    const { context, elements } = environment();
+    context.renderCreationCardInWorkbench(card('current'));
+    assert.equal(elements.get('workbenchTabbar').hidden, false);
+    assert.equal(elements.get('workbenchContextLabel').textContent, '广告创建');
+    context.openTraceWorkbench();
+    assert.equal(elements.get('workbench-tab-creation').hidden, false);
+    context.clearCreationWorkbenchDraft();
+    assert.equal(elements.get('workbenchTabbar').hidden, true);
+    assert.equal(elements.get('creation-workbench-view').hidden, true);
+});
+
+test('generic confirmations have a neutral context and clear without leaving a creation tab', () => {
+    const { context, elements } = environment();
+    context.document.getElementById('confirmation-workbench-host').appendChild(element());
+    context.openConfirmationWorkbench();
+    assert.equal(elements.get('workbenchContextLabel').textContent, '操作确认');
+    assert.equal(elements.get('workbenchCreationTitle').textContent, '确认与补充');
+    assert.equal(elements.get('workbenchCreationSubtitle').textContent.includes('预算'), false);
+    context.closeCreationWorkbench();
+    context.openTraceWorkbench();
+    context.setWorkbenchView('creation');
+    assert.equal(elements.get('confirmation-workbench-host').hidden, false);
+    context.clearWorkbenchConfirmation();
+    assert.equal(elements.get('workbenchTabbar').hidden, true);
+    assert.equal(elements.get('trace-workbench-view').hidden, false);
+});
+
+test('an empty confirmation cannot open an artifact tab and reset removes old context', () => {
+    const { context, elements } = environment();
+    context.openConfirmationWorkbench();
+    assert.equal(elements.get('workbench-tab-creation').hidden, true);
+    context.renderCreationCardInWorkbench(card('old'));
+    context.resetCreationWorkbench();
+    context.openTraceWorkbench();
+    assert.equal(elements.get('workbench-tab-creation').hidden, true);
+    assert.equal(elements.get('workbenchTabbar').hidden, true);
+});
 
 test('history cards stay in the transcript and only enter the workbench when reopened', () => {
     const { context, elements } = environment();

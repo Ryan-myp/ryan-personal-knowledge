@@ -272,6 +272,7 @@ def knowledge_search_tool_source(
         resource_type="knowledge",
         intent_types=["knowledge_search"],
         intent_aliases=[
+            "从知识库",
             "知识库检索",
             "知识库查询",
             "从知识库检索",
@@ -292,6 +293,7 @@ def knowledge_search_tool_source(
             "查找知识库中的",
             "检索知识",
             "search the knowledge base",
+            "from the knowledge base",
             "search knowledge",
         ],
         skill_refs=["knowledge-explainer"],
@@ -309,7 +311,7 @@ def knowledge_search_tool_source(
         required_permissions=[permission],
         scope_required=False,
         result_items_key="results",
-        contract_version="1.0.0",
+        contract_version="1.0.1",
     )
     return StaticToolSource(
         "agent-platform:knowledge-search",

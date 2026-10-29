@@ -1,0 +1,50 @@
+{
+  "schema_version": "agent-regression-report/v1",
+  "mode": "model_backed_offline_providers",
+  "complete": true,
+  "completed_cases": 1,
+  "provider_e2e": false,
+  "total": 1,
+  "passed": 1,
+  "failed": 0,
+  "ungraded": 0,
+  "error": 0,
+  "cases": [
+    {
+      "id": "meta-report-explicit-account-contract-20261028",
+      "status": "passed",
+      "failures": [],
+      "checks": 7,
+      "tool_call_count": 1,
+      "tool_names": [
+        "meta_get_campaign_report"
+      ],
+      "phase_ms": {
+        "run_wall": 35671.057,
+        "tool_duration_sum": 3.544,
+        "model": 35378.52,
+        "model_prepare": 274.7,
+        "context_build": 53.628,
+        "run_event_persistence": 2.281
+      },
+      "duration_ms": 36300.373
+    }
+  ],
+  "gate_passed": true,
+  "latency_samples": 1,
+  "latency_p50_ms": 36300.373,
+  "latency_p95_ms": 36300.373,
+  "release_ready": false,
+  "release_blockers": [
+    "release_gate_not_configured"
+  ],
+  "phase_p95_ms": {
+    "run_wall": 35671.057,
+    "tool_duration_sum": 3.544,
+    "model": 35378.52,
+    "model_prepare": 274.7,
+    "context_build": 53.628,
+    "run_event_persistence": 2.281
+  },
+  "scope_note": "Verifies the repaired optional account field through the model and offline Runtime; excludes state filtering and live Provider access."
+}

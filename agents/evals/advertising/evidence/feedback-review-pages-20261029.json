@@ -1,0 +1,143 @@
+{
+  "date": "2026-10-29",
+  "scope": "feedback review server-side pagination, status/search/date filters and in-page review drafts",
+  "validation": {
+    "targeted_python": {
+      "passed": 145,
+      "warnings": 1
+    },
+    "static_js": {
+      "passed": 171,
+      "failed": 0
+    },
+    "full_python": {
+      "passed": 3299,
+      "failed": 1,
+      "warnings": 1,
+      "failed_test": "test_model_rate_limit_has_a_readable_failure_instead_of_empty_content[/chat]",
+      "actual": "generic ValueError failure instead of rate limit explanation"
+    },
+    "failed_test_file_recheck": {
+      "passed": 41,
+      "failed": 0,
+      "root_cause_resolved": false
+    },
+    "compile": "passed",
+    "provider_audit": "passed",
+    "tool_contracts": "passed",
+    "knowledge_check_separate_run": "passed",
+    "diff_check": "passed",
+    "new_feedback_query_module_coverage": {
+      "covered_lines": 53,
+      "num_statements": 53,
+      "percent_covered": 100.0,
+      "percent_covered_display": "100",
+      "missing_lines": 0,
+      "excluded_lines": 0,
+      "percent_statements_covered": 100.0,
+      "percent_statements_covered_display": "100",
+      "num_branches": 20,
+      "num_partial_branches": 0,
+      "covered_branches": 20,
+      "missing_branches": 0,
+      "percent_branches_covered": 100.0,
+      "percent_branches_covered_display": "100"
+    },
+    "browser": {
+      "fixture_feedback": 25,
+      "page_errors": [],
+      "network": "all HTTP fulfilled offline or aborted",
+      "layouts": {
+        "feedback-review": {
+          ".feedback-review-panel": {
+            "x": 252,
+            "y": 140.171875,
+            "width": 1164,
+            "height": 3955.703125,
+            "scrollHeight": 3954
+          },
+          ".feedback-review-filters": {
+            "x": 271,
+            "y": 263.5625,
+            "width": 1126,
+            "height": 89.1875,
+            "scrollHeight": 88
+          },
+          ".feedback-review-pagination": {
+            "x": 271,
+            "y": 825,
+            "width": 1126,
+            "height": 75,
+            "scrollHeight": 74
+          }
+        },
+        "feedback-review-mobile": {
+          ".feedback-review-panel": {
+            "x": 16,
+            "y": 131.359375,
+            "width": 358,
+            "height": 7747.609375,
+            "scrollHeight": 7746
+          },
+          ".feedback-review-filters": {
+            "x": 35,
+            "y": 329.546875,
+            "width": 320,
+            "height": 170.375,
+            "scrollHeight": 169
+          },
+          ".feedback-review-pagination": {
+            "x": 35,
+            "y": 736.203125,
+            "width": 320,
+            "height": 107.796875,
+            "scrollHeight": 107
+          }
+        }
+      }
+    },
+    "service_read_only": {
+      "readiness": "ready",
+      "pagination": {
+        "page": 1,
+        "limit": 2,
+        "total": 5,
+        "pages": 3,
+        "has_next": true,
+        "has_previous": false
+      },
+      "all": 5,
+      "states": {
+        "pending": 5,
+        "candidate": 0,
+        "dismissed": 0
+      },
+      "empty_search": 0,
+      "static_version": "20261029-feedback-pages-v1",
+      "read_only": true
+    },
+    "qguard": {
+      "status": "FAIL",
+      "files": 765,
+      "findings": 5001,
+      "score": 0,
+      "new_module_findings": [
+        "Two dynamic SQL structure warnings; identifiers/operators are fixed and user values are bound parameters."
+      ]
+    }
+  },
+  "deployment": {
+    "host": "0.0.0.0",
+    "port": 8766,
+    "existing_config_and_database_retained": true,
+    "static_version": "20261029-feedback-pages-v1"
+  },
+  "provider_api_calls": false,
+  "production_feedback_mutations": false,
+  "limitations": [
+    "Full regression run had one failure, not reproduced in the 41-test file recheck.",
+    "Offset and LIKE search have not been benchmarked at million-row scale.",
+    "Unsaved review drafts are memory-only and do not survive a browser reload.",
+    "Regression export remains capped at 100 curated cases and independent of current list filters."
+  ]
+}

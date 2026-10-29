@@ -1,0 +1,71 @@
+{
+  "schema_version": "agent-regression-report/v1",
+  "mode": "model_backed_offline_providers",
+  "complete": true,
+  "completed_cases": 2,
+  "provider_e2e": false,
+  "total": 2,
+  "passed": 1,
+  "failed": 1,
+  "ungraded": 0,
+  "error": 0,
+  "cases": [
+    {
+      "id": "holdout-topic-switch-does-not-reuse-provider-scope",
+      "status": "passed",
+      "failures": [],
+      "checks": 6,
+      "tool_call_count": 1,
+      "tool_names": [
+        "agent_knowledge_search"
+      ],
+      "phase_ms": {
+        "run_wall": 245392.773,
+        "tool_duration_sum": 61.29,
+        "model": 244039.27,
+        "model_prepare": 1230.16,
+        "context_build": 351.329,
+        "run_event_persistence": 8.285
+      },
+      "duration_ms": 246123.05
+    },
+    {
+      "id": "holdout-report-filter-followup-explicit-test-account",
+      "status": "failed",
+      "failures": [
+        "required_tool:meta_get_campaign_report"
+      ],
+      "checks": 6,
+      "tool_call_count": 1,
+      "tool_names": [
+        "meta_get_campaign_report"
+      ],
+      "phase_ms": {
+        "run_wall": 82755.263,
+        "tool_duration_sum": 4.988,
+        "model": 82091.95,
+        "model_prepare": 635.16,
+        "context_build": 243.026,
+        "run_event_persistence": 4.66
+      },
+      "duration_ms": 83220.777
+    }
+  ],
+  "gate_passed": false,
+  "latency_samples": 2,
+  "latency_p50_ms": 83220.777,
+  "latency_p95_ms": 246123.05,
+  "release_ready": false,
+  "release_blockers": [
+    "release_gate_not_configured"
+  ],
+  "phase_p95_ms": {
+    "run_wall": 245392.773,
+    "tool_duration_sum": 61.29,
+    "model": 244039.27,
+    "model_prepare": 1230.16,
+    "context_build": 351.329,
+    "run_event_persistence": 8.285
+  },
+  "fixture_note": "Knowledge case is unchanged. The additional report variant explicitly supplies the sole trusted Meta test-account ID in its initial user turn; original case and assertions remain unchanged. No provider API was called."
+}

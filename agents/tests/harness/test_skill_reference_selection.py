@@ -56,6 +56,17 @@ def test_reference_selection_is_bounded_and_skips_unmatched_documents():
     )) <= 80
 
 
+def test_explicit_reference_scope_precedes_generic_keyword_density():
+    selected = select_reference_excerpts(
+        "alpha invoice totals reconciliation bookkeeping", {
+            "references/generic.md": "alpha invoice totals reconciliation bookkeeping",
+            "references/scoped.md": "---\nreference_scope: [alpha]\n---\nInvoice scope rule.",
+        }, max_documents=1, max_chars=200,
+    )
+    assert "references/scoped.md" in selected
+    assert "references/generic.md" not in selected
+
+
 def test_catalog_does_not_fill_unused_budget_with_unrelated_skills():
     catalog = InMemorySkillCatalog()
     catalog.register_source(StaticSkillSource("domain", [

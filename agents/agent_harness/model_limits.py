@@ -6,6 +6,8 @@ import json
 from typing import Any, Mapping, Sequence
 
 from .messages import AgentMessage, ModelTurn
+from .evidence_compaction import compact_read_messages
+from .tool_schema_projection import model_tool_payload
 
 DEFAULT_MODEL_INPUT_CHARS = 256_000
 DEFAULT_MODEL_OUTPUT_CHARS = 128_000
@@ -52,10 +54,6 @@ def serialized_chars(value: Any) -> int:
     ).iterencode(value))
 
 
-def _field(value: Any, name: str, default: Any = None) -> Any:
-    return value.get(name, default) if isinstance(value, Mapping) else getattr(value, name, default)
-
-
 def _message_payload(message: AgentMessage) -> dict[str, Any]:
     value = {"role": message.role, "content": message.content}
     if message.role == "assistant" and message.metadata.get("tool_calls"):
@@ -66,21 +64,14 @@ def _message_payload(message: AgentMessage) -> dict[str, Any]:
 
 
 def _tool_payload(tool: Any) -> dict[str, Any]:
-    schema = _field(tool, "input_schema", {})
-    if callable(getattr(schema, "to_dict", None)):
-        schema = schema.to_dict()
-    return {
-        "name": _field(tool, "name", ""),
-        "description": _field(tool, "description", ""),
-        "input_schema": schema,
-    }
+    return model_tool_payload(tool)
 
 
 def _input_sizes(
     messages: Sequence[AgentMessage], tools: Sequence[Any],
 ) -> tuple[int, list[int]]:
     try:
-        sizes = [serialized_chars(_message_payload(message)) for message in messages]
+        sizes = [model_message_chars(message) for message in messages]
         fixed = serialized_chars({
             "messages": [], "tools": [_tool_payload(tool) for tool in tools],
         })
@@ -94,8 +85,13 @@ def model_input_chars(messages: Sequence[AgentMessage], tools: Sequence[Any]) ->
     return fixed + sum(sizes) + max(0, len(sizes) - 1)
 
 
+def model_message_chars(message: AgentMessage) -> int:
+    return serialized_chars(_message_payload(message))
+
+
 def bound_model_messages(
     messages: Sequence[AgentMessage], tools: Sequence[Any], *, max_chars: int,
+    evidence_definitions: Sequence[Any] = (),
 ) -> list[AgentMessage]:
     """Evict oldest user-led groups, never policy or the current user group."""
     positive_integer("max_model_input_chars", max_chars)
@@ -118,6 +114,14 @@ def bound_model_messages(
     result = [message for index, message in enumerate(messages) if retained[index]]
     if not result:
         total = fixed
+    if total > max_chars and evidence_definitions:
+        message_budget = max_chars - fixed - max(0, len(result) - 1)
+        if message_budget > 0:
+            result = compact_read_messages(
+                result, evidence_definitions, max_chars=message_budget,
+                message_size=model_message_chars,
+            )
+            total = model_input_chars(result, tools)
     if total > max_chars:
         raise ModelInputLimitError()
     return result

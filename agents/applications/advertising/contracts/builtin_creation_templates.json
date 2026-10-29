@@ -24,15 +24,34 @@
         "ad_set.end_time",
         "campaign.daily_budget"
       ],
-      "tags": ["内置", "测试账号", "Meta", "流量", "已验证"],
+      "tags": [
+        "内置",
+        "测试账号",
+        "Meta",
+        "流量",
+        "已验证"
+      ],
       "values": {
         "campaign.objective": "OUTCOME_TRAFFIC",
-        "campaign.special_ad_categories": ["NONE"],
+        "campaign.special_ad_categories": [
+          "NONE"
+        ],
         "campaign.buying_type": "AUCTION",
         "campaign.status": "PAUSED",
         "ad_set.name": "Template Traffic Ad Set",
         "ad_set.status": "PAUSED",
-        "ad_set.targeting": {"geo_locations": {"countries": ["US"]}, "age_min": 18, "age_max": 65, "targeting_automation": {"advantage_audience": 1}},
+        "ad_set.targeting": {
+          "geo_locations": {
+            "countries": [
+              "US"
+            ]
+          },
+          "age_min": 18,
+          "age_max": 65,
+          "targeting_automation": {
+            "advantage_audience": 1
+          }
+        },
         "ad_set.optimization_goal": "LANDING_PAGE_VIEWS",
         "ad_set.billing_event": "IMPRESSIONS",
         "ad_set.bid_strategy": "LOWEST_COST_WITHOUT_CAP",
@@ -70,20 +89,47 @@
         "ad_set.end_time",
         "campaign.daily_budget"
       ],
-      "tags": ["内置", "测试账号", "Meta", "目录销售", "已验证"],
+      "tags": [
+        "内置",
+        "测试账号",
+        "Meta",
+        "目录销售",
+        "已验证"
+      ],
       "values": {
         "campaign.objective": "OUTCOME_SALES",
-        "campaign.special_ad_categories": ["NONE"],
+        "campaign.special_ad_categories": [
+          "NONE"
+        ],
         "campaign.buying_type": "AUCTION",
         "campaign.status": "PAUSED",
         "campaign.catalog_id": "584715368753247",
         "ad_set.name": "Template Catalog Ad Set",
-        "ad_set.regional_regulated_categories": ["SINGAPORE_UNIVERSAL"],
-        "ad_set.regional_regulation_identities": {"singapore_universal_beneficiary": "1472239313020616", "singapore_universal_payer": "1472239313020616"},
+        "ad_set.regional_regulated_categories": [
+          "SINGAPORE_UNIVERSAL"
+        ],
+        "ad_set.regional_regulation_identities": {
+          "singapore_universal_beneficiary": "1472239313020616",
+          "singapore_universal_payer": "1472239313020616"
+        },
         "ad_set.status": "PAUSED",
-        "ad_set.targeting": {"geo_locations": {"countries": ["SG"]}, "age_min": 18, "age_max": 65, "targeting_automation": {"advantage_audience": 0}},
+        "ad_set.targeting": {
+          "geo_locations": {
+            "countries": [
+              "SG"
+            ]
+          },
+          "age_min": 18,
+          "age_max": 65,
+          "targeting_automation": {
+            "advantage_audience": 0
+          }
+        },
         "ad_set.product_set_id": "720759025118418",
-        "ad_set.promoted_object": {"product_set_id": "720759025118418", "custom_event_type": "PURCHASE"},
+        "ad_set.promoted_object": {
+          "product_set_id": "720759025118418",
+          "custom_event_type": "PURCHASE"
+        },
         "ad_set.optimization_goal": "OFFSITE_CONVERSIONS",
         "ad_set.billing_event": "IMPRESSIONS",
         "ad.ad_style": "CAROUSEL",
@@ -119,19 +165,46 @@
         "ad_set.end_time",
         "campaign.daily_budget"
       ],
-      "tags": ["内置", "测试账号", "Meta", "转化", "已验证"],
+      "tags": [
+        "内置",
+        "测试账号",
+        "Meta",
+        "转化",
+        "已验证"
+      ],
       "values": {
         "campaign.objective": "OUTCOME_SALES",
-        "campaign.special_ad_categories": ["NONE"],
+        "campaign.special_ad_categories": [
+          "NONE"
+        ],
         "campaign.buying_type": "AUCTION",
         "campaign.status": "PAUSED",
         "ad_set.name": "Template Conversion Ad Set",
-        "ad_set.regional_regulated_categories": ["SINGAPORE_UNIVERSAL"],
-        "ad_set.regional_regulation_identities": {"singapore_universal_beneficiary": "1472239313020616", "singapore_universal_payer": "1472239313020616"},
+        "ad_set.regional_regulated_categories": [
+          "SINGAPORE_UNIVERSAL"
+        ],
+        "ad_set.regional_regulation_identities": {
+          "singapore_universal_beneficiary": "1472239313020616",
+          "singapore_universal_payer": "1472239313020616"
+        },
         "ad_set.status": "PAUSED",
         "ad_set.bid_strategy": "LOWEST_COST_WITHOUT_CAP",
-        "ad_set.targeting": {"geo_locations": {"countries": ["SG"]}, "age_min": 25, "age_max": 60, "targeting_automation": {"advantage_audience": 0}},
-        "ad_set.promoted_object": {"pixel_id": "815121266900148", "custom_event_type": "PURCHASE"},
+        "ad_set.targeting": {
+          "geo_locations": {
+            "countries": [
+              "SG"
+            ]
+          },
+          "age_min": 25,
+          "age_max": 60,
+          "targeting_automation": {
+            "advantage_audience": 0
+          }
+        },
+        "ad_set.promoted_object": {
+          "pixel_id": "815121266900148",
+          "custom_event_type": "PURCHASE"
+        },
         "ad_set.optimization_goal": "OFFSITE_CONVERSIONS",
         "ad_set.billing_event": "IMPRESSIONS",
         "ad.media_type": "IMAGE",
@@ -168,19 +241,49 @@
         "ad_set.end_time",
         "campaign.daily_budget"
       ],
-      "tags": ["内置", "测试账号", "Meta", "App Promotion", "已验证"],
+      "tags": [
+        "内置",
+        "测试账号",
+        "Meta",
+        "App Promotion",
+        "已验证"
+      ],
       "values": {
         "campaign.objective": "OUTCOME_APP_PROMOTION",
-        "campaign.special_ad_categories": ["NONE"],
+        "campaign.special_ad_categories": [
+          "NONE"
+        ],
         "campaign.buying_type": "AUCTION",
         "campaign.status": "PAUSED",
         "ad_set.name": "Template App Ad Set",
-        "ad_set.regional_regulated_categories": ["SINGAPORE_UNIVERSAL"],
-        "ad_set.regional_regulation_identities": {"singapore_universal_beneficiary": "1472239313020616", "singapore_universal_payer": "1472239313020616"},
+        "ad_set.regional_regulated_categories": [
+          "SINGAPORE_UNIVERSAL"
+        ],
+        "ad_set.regional_regulation_identities": {
+          "singapore_universal_beneficiary": "1472239313020616",
+          "singapore_universal_payer": "1472239313020616"
+        },
         "ad_set.status": "PAUSED",
         "ad_set.bid_strategy": "LOWEST_COST_WITHOUT_CAP",
-        "ad_set.targeting": {"geo_locations": {"countries": ["SG"]}, "age_min": 21, "age_max": 65, "user_os": ["Android"], "targeting_automation": {"advantage_audience": 0}},
-        "ad_set.promoted_object": {"application_id": "1574354049466790", "object_store_url": "https://play.google.com/store/apps/details?id=com.shopee.sg"},
+        "ad_set.targeting": {
+          "geo_locations": {
+            "countries": [
+              "SG"
+            ]
+          },
+          "age_min": 21,
+          "age_max": 65,
+          "user_os": [
+            "Android"
+          ],
+          "targeting_automation": {
+            "advantage_audience": 0
+          }
+        },
+        "ad_set.promoted_object": {
+          "application_id": "1574354049466790",
+          "object_store_url": "https://play.google.com/store/apps/details?id=com.shopee.sg"
+        },
         "ad_set.promoted_object.application_id": "1574354049466790",
         "ad_set.promoted_object.object_store_url": "https://play.google.com/store/apps/details?id=com.shopee.sg",
         "ad_set.optimization_goal": "APP_INSTALLS",
@@ -213,8 +316,20 @@
         "投放结束日期",
         "日预算"
       ],
-      "required_input_fields": ["campaign.campaign_name", "campaign.start_date", "campaign.end_date", "campaign.daily_budget"],
-      "tags": ["内置", "测试账号", "Google Ads", "Performance Max", "已实测", "素材审核中"],
+      "required_input_fields": [
+        "campaign.campaign_name",
+        "campaign.start_date",
+        "campaign.end_date",
+        "campaign.daily_budget"
+      ],
+      "tags": [
+        "内置",
+        "测试账号",
+        "Google Ads",
+        "Performance Max",
+        "已实测",
+        "素材审核中"
+      ],
       "values": {
         "campaign.contains_eu_political_advertising": "DOES_NOT_CONTAIN_EU_POLITICAL_ADVERTISING",
         "campaign.advertising_channel_type": "PERFORMANCE_MAX",
@@ -227,18 +342,32 @@
         "campaign.status": "PAUSED",
         "asset_group.name": "PMax Asset Group",
         "asset_group.asset_group_type": "PERFORMANCE_MAX",
-        "asset_group.final_urls": ["https://shopee.tw/11"],
+        "asset_group.final_urls": [
+          "https://shopee.tw/11"
+        ],
         "asset_group.headlines": [
-          {"text": "Shopee Choice miễn phí vận c"},
-          {"text": "Shopee Choice miễn phí vận chu"},
-          {"text": "Mua sắm dễ dàng trên Shopee"}
+          {
+            "text": "Shopee Choice miễn phí vận c"
+          },
+          {
+            "text": "Shopee Choice miễn phí vận chu"
+          },
+          {
+            "text": "Mua sắm dễ dàng trên Shopee"
+          }
         ],
         "asset_group.long_headlines": [
-          {"text": "Shopee Choice mang đến sản phẩm đảm bảo với mức giá siêu hời"}
+          {
+            "text": "Shopee Choice mang đến sản phẩm đảm bảo với mức giá siêu hời"
+          }
         ],
         "asset_group.descriptions": [
-          {"text": "Shopee Choice mang đến sản phẩm đảm bảo với mức giá siêu hời, lại còn freeship"},
-          {"text": "Khám phá sản phẩm được tuyển chọn, giá tốt và miễn phí vận chuyển trên Shopee."}
+          {
+            "text": "Shopee Choice mang đến sản phẩm đảm bảo với mức giá siêu hời, lại còn freeship"
+          },
+          {
+            "text": "Khám phá sản phẩm được tuyển chọn, giá tốt và miễn phí vận chuyển trên Shopee."
+          }
         ],
         "asset_group.images": [
           "customers/9055507554/assets/194802085984"
@@ -250,7 +379,9 @@
           "customers/9055507554/assets/194784955410"
         ],
         "asset_group.business_names": [
-          {"text": "蝦皮購物"}
+          {
+            "text": "蝦皮購物"
+          }
         ],
         "asset_group.status": "PAUSED",
         "listing_group_filter.filter_type": "UNIT_INCLUDED",
@@ -274,12 +405,28 @@
         "投放结束日期",
         "日预算"
       ],
-      "required_input_fields": ["campaign.campaign_name", "campaign.start_date", "campaign.end_date", "campaign.daily_budget"],
-      "tags": ["内置", "测试账号", "Google Ads", "Shopping", "已实测", "Product Group 状态限制"],
+      "required_input_fields": [
+        "campaign.campaign_name",
+        "campaign.start_date",
+        "campaign.end_date",
+        "campaign.daily_budget"
+      ],
+      "tags": [
+        "内置",
+        "测试账号",
+        "Google Ads",
+        "Shopping",
+        "已实测",
+        "Product Group 状态限制"
+      ],
       "values": {
         "campaign.contains_eu_political_advertising": "DOES_NOT_CONTAIN_EU_POLITICAL_ADVERTISING",
         "campaign.advertising_channel_type": "SHOPPING",
-        "campaign.shopping_setting": {"merchant_id": 115791065, "campaign_priority": 0, "enable_local": true},
+        "campaign.shopping_setting": {
+          "merchant_id": 115791065,
+          "campaign_priority": 0,
+          "enable_local": true
+        },
         "campaign.shopping_setting.merchant_id": 115791065,
         "campaign.shopping_setting.campaign_priority": 0,
         "campaign.shopping_setting.enable_local": true,
@@ -314,8 +461,20 @@
         "投放结束日期",
         "日预算"
       ],
-      "required_input_fields": ["campaign.campaign_name", "campaign.start_date", "campaign.end_date", "campaign.daily_budget"],
-      "tags": ["内置", "测试账号", "Google Ads", "App", "父级暂停", "平台要求 Ad 启用"],
+      "required_input_fields": [
+        "campaign.campaign_name",
+        "campaign.start_date",
+        "campaign.end_date",
+        "campaign.daily_budget"
+      ],
+      "tags": [
+        "内置",
+        "测试账号",
+        "Google Ads",
+        "App",
+        "父级暂停",
+        "平台要求 Ad 启用"
+      ],
       "values": {
         "campaign.contains_eu_political_advertising": "DOES_NOT_CONTAIN_EU_POLITICAL_ADVERTISING",
         "campaign.campaign_type": "APP",
@@ -363,9 +522,25 @@
       "account_id": "7397068114548195329",
       "verification_status": "live_verified",
       "verified_scope": "2026-10-16 仅使用测试账号 7397068114548195329 完成真实 /chat 与 Provider E2E：Campaign、Ad Group 由模板工作流创建；初次 Ad 子步骤因旧 Recorder 拒绝而无 Provider 写入，修复并重启服务后在原父级下用同一模板字段恢复创建。之后完成 Campaign、Ad Group、Ad 更新和独立回读，并验证 Ad 列表回到更新后的 Smart+ Ad ID、名称和 DISABLE 状态。Campaign/Ad Group/Ad 均为 DISABLE；Creative 的 ENABLE 是独立素材状态，不是投放 Ad 状态。CTA Portfolio 与模板一致。实际 Campaign 目标为 WEB_CONVERSIONS，广告组目标 CLICK/CPC；不是旧版 TRAFFIC API。完整资源 ID 与失败恢复记录见 provider_live_e2e_memory.json。",
-      "required_inputs": ["Campaign 名称", "开始时间（UTC）", "结束时间（UTC）", "总预算（USD）"],
-      "required_input_fields": ["campaign.campaign_name", "ad_group.schedule_start_time", "ad_group.schedule_end_time", "ad_group.budget"],
-      "tags": ["内置", "测试账号", "TikTok", "流量", "已验证"],
+      "required_inputs": [
+        "Campaign 名称",
+        "开始时间（UTC）",
+        "结束时间（UTC）",
+        "总预算（USD）"
+      ],
+      "required_input_fields": [
+        "campaign.campaign_name",
+        "ad_group.schedule_start_time",
+        "ad_group.schedule_end_time",
+        "ad_group.budget"
+      ],
+      "tags": [
+        "内置",
+        "测试账号",
+        "TikTok",
+        "流量",
+        "已验证"
+      ],
       "values": {
         "campaign.objective_type": "TRAFFIC",
         "ad_group.objective_type": "TRAFFIC",
@@ -375,24 +550,37 @@
         "ad_group.promotion_type": "WEBSITE",
         "ad_group.adgroup_name": "Template Traffic Ad Group",
         "ad_group.placement_type": "PLACEMENT_TYPE_NORMAL",
-        "ad_group.placements": ["PLACEMENT_TIKTOK"],
+        "ad_group.placements": [
+          "PLACEMENT_TIKTOK"
+        ],
         "campaign.budget_optimize_on": false,
         "ad_group.operation_status": "DISABLE",
-        "ad_group.location_ids": ["1880251"],
+        "ad_group.location_ids": [
+          "1880251"
+        ],
         "ad_group.budget_mode": "BUDGET_MODE_TOTAL",
         "ad_group.schedule_type": "SCHEDULE_START_END",
         "ad_group.optimization_goal": "CLICK",
         "ad_group.billing_event": "CPC",
         "ad_group.bid_type": "BID_TYPE_NO_BID",
         "ad_group.gender": "GENDER_UNLIMITED",
-        "ad_group.age_groups": ["AGE_13_17", "AGE_18_24", "AGE_25_34", "AGE_35_44", "AGE_45_54", "AGE_55_100"],
+        "ad_group.age_groups": [
+          "AGE_13_17",
+          "AGE_18_24",
+          "AGE_25_34",
+          "AGE_35_44",
+          "AGE_45_54",
+          "AGE_55_100"
+        ],
         "ad.ad_format": "SINGLE_VIDEO",
         "ad.ad_name": "Template Traffic Ad",
         "ad.operation_status": "DISABLE",
         "ad.video_id": "v10033g50000d8nltv7og65nd6868v7g",
         "ad.identity_type": "BC_AUTH_TT",
         "ad.identity_id": "15efada4-8fb9-54aa-b5c6-3b82529b947d",
-        "ad.image_web_uris": ["ad-site-i18n-sg/20261012c7c7b8a761050c0c41978a64"],
+        "ad.image_web_uris": [
+          "ad-site-i18n-sg/20261012c7c7b8a761050c0c41978a64"
+        ],
         "ad.ad_text": "Discover more from Shopee Singapore.",
         "ad.call_to_action_id": "7696698198538112006",
         "ad.landing_page_url": "https://shopee.sg/"
@@ -419,7 +607,13 @@
         "ad.call_to_action_id",
         "ad.ad_text"
       ],
-      "tags": ["内置", "测试账号", "TikTok", "线索", "已验证"],
+      "tags": [
+        "内置",
+        "测试账号",
+        "TikTok",
+        "线索",
+        "已验证"
+      ],
       "values": {
         "campaign.objective_type": "LEAD_GENERATION",
         "campaign.campaign_type": "REGULAR_CAMPAIGN",
@@ -432,7 +626,14 @@
         "ad_group.schedule_type": "SCHEDULE_FROM_NOW",
         "ad_group.bid_type": "BID_TYPE_NO_BID",
         "ad_group.gender": "GENDER_UNLIMITED",
-        "ad_group.age_groups": ["AGE_13_17", "AGE_18_24", "AGE_25_34", "AGE_35_44", "AGE_45_54", "AGE_55_100"],
+        "ad_group.age_groups": [
+          "AGE_13_17",
+          "AGE_18_24",
+          "AGE_25_34",
+          "AGE_35_44",
+          "AGE_45_54",
+          "AGE_55_100"
+        ],
         "ad.ad_format": "SINGLE_VIDEO",
         "ad.identity_type": "AUTH_CODE"
       }
@@ -448,9 +649,25 @@
       "account_id": "7397068114548195329",
       "verification_status": "provider_limited",
       "verified_scope": "2026-10-26 测试账号已新建、改名并回读 DISABLE Campaign 与 Ad Group。原 BC_AUTH_TT 身份和视频组合报帖子不匹配；测试账号可用 CUSTOMIZED_USER 加已验证 tracking_app_id 与暂停测试追踪 URL 后，Ad 仍被 Provider 拒绝 Invalid product selection。同一 Catalog 的 Product Set 只读列表为 0；不得视为 Ad 或完整模板已通过，且本轮不允许创建 Catalog/Product Set。占位追踪 URL 仅供暂停测试，正式投放前须替换。",
-      "required_inputs": ["Campaign 名称", "开始时间（UTC）", "结束时间（UTC）", "总预算（USD）"],
-      "required_input_fields": ["campaign.campaign_name", "ad_group.schedule_start_time", "ad_group.schedule_end_time", "ad_group.budget"],
-      "tags": ["内置", "测试账号", "TikTok", "销售", "渠道限制"],
+      "required_inputs": [
+        "Campaign 名称",
+        "开始时间（UTC）",
+        "结束时间（UTC）",
+        "总预算（USD）"
+      ],
+      "required_input_fields": [
+        "campaign.campaign_name",
+        "ad_group.schedule_start_time",
+        "ad_group.schedule_end_time",
+        "ad_group.budget"
+      ],
+      "tags": [
+        "内置",
+        "测试账号",
+        "TikTok",
+        "销售",
+        "渠道限制"
+      ],
       "values": {
         "campaign.objective_type": "PRODUCT_SALES",
         "ad_group.objective_type": "PRODUCT_SALES",
@@ -462,27 +679,41 @@
         "campaign.operation_status": "DISABLE",
         "ad_group.promotion_type": "APP_IOS",
         "ad_group.app_id": "6734587026999345157",
-        "ad_group.operating_systems": ["IOS"],
+        "ad_group.operating_systems": [
+          "IOS"
+        ],
         "ad_group.product_source": "CATALOG",
         "ad_group.adgroup_name": "Template Product Sales Ad Group",
         "ad_group.placement_type": "PLACEMENT_TYPE_NORMAL",
-        "ad_group.placements": ["PLACEMENT_PANGLE"],
+        "ad_group.placements": [
+          "PLACEMENT_PANGLE"
+        ],
         "campaign.budget_optimize_on": false,
         "ad_group.optimization_goal": "VALUE",
         "ad_group.optimization_event": "ACTIVE_PAY",
         "ad_group.deep_bid_type": "VO_HIGHEST_VALUE",
         "ad_group.catalog_id": "7598491157655570192",
-        "ad_group.location_ids": ["1643084"],
+        "ad_group.location_ids": [
+          "1643084"
+        ],
         "ad_group.operation_status": "DISABLE",
         "ad_group.billing_event": "OCPM",
         "ad_group.bid_type": "BID_TYPE_NO_BID",
         "ad_group.budget_mode": "BUDGET_MODE_TOTAL",
         "ad_group.schedule_type": "SCHEDULE_START_END",
-        "ad_group.age_groups": ["AGE_18_24", "AGE_25_34", "AGE_35_44", "AGE_45_54", "AGE_55_100"],
+        "ad_group.age_groups": [
+          "AGE_18_24",
+          "AGE_25_34",
+          "AGE_35_44",
+          "AGE_45_54",
+          "AGE_55_100"
+        ],
         "ad.ad_format": "SINGLE_VIDEO",
         "ad.operation_status": "DISABLE",
         "ad.video_id": "v10033g50000d8nltv7og65nd6868v7g",
-        "ad.image_web_uris": ["ad-site-i18n-sg/20261012c7c7b8a761050c0c41978a64"],
+        "ad.image_web_uris": [
+          "ad-site-i18n-sg/20261012c7c7b8a761050c0c41978a64"
+        ],
         "ad.identity_type": "BC_AUTH_TT",
         "ad.identity_id": "15efada4-8fb9-54aa-b5c6-3b82529b947d",
         "ad.ad_text": "Explore our featured products.",
@@ -501,9 +732,25 @@
       "account_id": "7397068114548195329",
       "verification_status": "live_verified_with_provider_limits",
       "verified_scope": "2026-10-16 仅使用测试账号复用已暂停父级，并按当前模板真实创建 Ad 1879196654038418。精确 get 与 Ad Group list 均回读 Shopee Indonesia、identity_id 36a059a7-2b1d-51c3-bb40-236ae6f84515、tracking_app_id 6734587026957402118 和 DISABLE；Campaign 1879169312562338、Ad Group 1879169302541826 也经独立查询确认 DISABLE。此前使用 Shopee Singapore identity 的 Ad 仍保留并暂停，不作为当前模板通过证据。两条 AppsFlyer URL 是合成演示占位值；仅验证暂停演示的 API 创建与回读，真实 MMP 归因未验证。启用投放前必须替换为 MMP 控制台生成的 URL。",
-      "required_inputs": ["Campaign 名称", "开始时间（UTC）", "结束时间（UTC）", "日预算（USD）"],
-      "required_input_fields": ["campaign.campaign_name", "ad_group.schedule_start_time", "ad_group.schedule_end_time", "ad_group.budget"],
-      "tags": ["内置", "测试账号", "TikTok", "App", "暂停演示"],
+      "required_inputs": [
+        "Campaign 名称",
+        "开始时间（UTC）",
+        "结束时间（UTC）",
+        "日预算（USD）"
+      ],
+      "required_input_fields": [
+        "campaign.campaign_name",
+        "ad_group.schedule_start_time",
+        "ad_group.schedule_end_time",
+        "ad_group.budget"
+      ],
+      "tags": [
+        "内置",
+        "测试账号",
+        "TikTok",
+        "App",
+        "暂停演示"
+      ],
       "values": {
         "campaign.objective_type": "APP_PROMOTION",
         "campaign.app_promotion_type": "APP_INSTALL",
@@ -514,30 +761,48 @@
         "ad_group.promotion_type": "APP_ANDROID",
         "ad_group.adgroup_name": "Template App Ad Group",
         "ad_group.placement_type": "PLACEMENT_TYPE_NORMAL",
-        "ad_group.placements": ["PLACEMENT_TIKTOK"],
+        "ad_group.placements": [
+          "PLACEMENT_TIKTOK"
+        ],
         "ad_group.app_id": "6734587026957402118",
         "ad_group.optimization_goal": "IN_APP_EVENT",
         "ad_group.optimization_event": "ACTIVE_PAY",
-        "ad_group.location_ids": ["1643084"],
+        "ad_group.location_ids": [
+          "1643084"
+        ],
         "ad_group.status": 0,
         "ad_group.billing_event": "OCPM",
         "ad_group.bid_type": "BID_TYPE_NO_BID",
         "ad_group.deep_bid_type": "AEO",
-        "ad_group.operating_systems": ["ANDROID"],
+        "ad_group.operating_systems": [
+          "ANDROID"
+        ],
         "ad_group.budget_mode": "BUDGET_MODE_DAY",
         "ad_group.schedule_type": "SCHEDULE_START_END",
-        "ad_group.age_groups": ["AGE_18_24", "AGE_25_34", "AGE_35_44", "AGE_45_54", "AGE_55_100"],
+        "ad_group.age_groups": [
+          "AGE_18_24",
+          "AGE_25_34",
+          "AGE_35_44",
+          "AGE_45_54",
+          "AGE_55_100"
+        ],
         "ad.ad_format": "SINGLE_VIDEO",
         "ad.status": 0,
         "ad.app_id": "6734587026957402118",
         "ad.app_name": "Shopee Indonesia",
         "ad.promotion_type": "APP_ANDROID",
-        "ad.operating_systems": ["ANDROID"],
+        "ad.operating_systems": [
+          "ANDROID"
+        ],
         "ad.video_id": "v10033g50000d8nltv7og65nd6868v7g",
-        "ad.image_ids": ["ad-site-i18n-sg/20261012c7c7b8a761050c0c41978a64"],
+        "ad.image_ids": [
+          "ad-site-i18n-sg/20261012c7c7b8a761050c0c41978a64"
+        ],
         "ad.identity_type": "BC_AUTH_TT",
         "ad.identity_id": "36a059a7-2b1d-51c3-bb40-236ae6f84515",
-        "ad.text": {"ad_text": "Return to Shopee Indonesia to explore more."},
+        "ad.text": {
+          "ad_text": "Return to Shopee Indonesia to explore more."
+        },
         "ad.ad_name": "Template App Ad",
         "ad.call_to_action": "INSTALL_NOW",
         "ad.click_tracking_url": "https://app.appsflyer.com/com.shopee.id?advertising_id=__GAID__&af_ad=__CID_NAME__&af_ad_id=__CID__&af_ad_type=__CTYPE__&af_adset=__AID_NAME__&af_adset_id=__AID__&af_c_id=__CAMPAIGN_ID__&af_channel=__PLACEMENT__&af_ip=__IP__&af_lang=__SL__&af_siteid=__CSITE__&af_ua=__UA__&c=__CAMPAIGN_NAME__&clickid=__CALLBACK_PARAM__&idfa=__IDFA__&os=__OS__&pid=bytedanceglobal_int&redirect=false",
@@ -562,7 +827,13 @@
         "insertion_order.end_date",
         "insertion_order.campaign_id"
       ],
-      "tags": ["内置", "测试账号", "DV360", "Insertion Order", "仅草稿"],
+      "tags": [
+        "内置",
+        "测试账号",
+        "DV360",
+        "Insertion Order",
+        "仅草稿"
+      ],
       "values": {
         "insertion_order.status": "DRAFT",
         "insertion_order.pacing_type": "EVEN"
@@ -588,11 +859,1031 @@
         "line_item.goal",
         "line_item.targeting"
       ],
-      "tags": ["内置", "测试账号", "DV360", "Display", "仅草稿"],
+      "tags": [
+        "内置",
+        "测试账号",
+        "DV360",
+        "Display",
+        "仅草稿"
+      ],
       "values": {
         "line_item.type": "DISPLAY_DEFAULT",
         "line_item.status": "DRAFT",
         "line_item.bid_strategy": "MAXIMIZE_CONVERSIONS"
+      }
+    },
+    {
+      "key": "google.test.7574609568.performance-max",
+      "name": "Google 测试账号 7574609568 · Performance Max",
+      "description": "7574609568 的零售型 Performance Max 模板，使用本账号 Merchant Center、已关联的图片素材与泰国站落地页；Campaign 和 Asset Group 固定暂停。仅需补 Campaign 名称、排期与日预算。",
+      "provider": "google-ads",
+      "blueprint_id": "google-ads.performance_max",
+      "blueprint_version": "1.1.0",
+      "ad_format": "PERFORMANCE_MAX",
+      "account_id": "7574609568",
+      "verification_status": "pending_live_verification",
+      "verified_scope": "2026-10-28 只读预检确认 Merchant Center 119120369 与本账号已关联素材；尚未执行创建写入。",
+      "required_inputs": [
+        "广告系列名称",
+        "投放开始日期",
+        "投放结束日期",
+        "日预算"
+      ],
+      "required_input_fields": [
+        "campaign.campaign_name",
+        "campaign.start_date",
+        "campaign.end_date",
+        "campaign.daily_budget"
+      ],
+      "tags": [
+        "内置",
+        "测试账号",
+        "Google Ads",
+        "Performance Max",
+        "7574609568",
+        "待实测"
+      ],
+      "values": {
+        "campaign.contains_eu_political_advertising": "DOES_NOT_CONTAIN_EU_POLITICAL_ADVERTISING",
+        "campaign.advertising_channel_type": "PERFORMANCE_MAX",
+        "campaign.brand_guidelines_enabled": false,
+        "campaign.bidding_strategy": "MAXIMIZE_CONVERSION_VALUE",
+        "campaign.shopping_setting": {
+          "merchant_id": 119120369,
+          "feed_label": "TH",
+          "enable_local": true
+        },
+        "campaign.status": "PAUSED",
+        "asset_group.name": "E2E 7574609568 PMax Asset Group",
+        "asset_group.asset_group_type": "PERFORMANCE_MAX",
+        "asset_group.final_urls": [
+          "https://shopee.co.th/"
+        ],
+        "asset_group.headlines": [
+          {
+            "text": "Shop on Shopee TH"
+          },
+          {
+            "text": "Discover Shopee TH"
+          },
+          {
+            "text": "Great deals every day"
+          }
+        ],
+        "asset_group.long_headlines": [
+          {
+            "text": "Discover great deals and everyday shopping on Shopee Thailand"
+          }
+        ],
+        "asset_group.descriptions": [
+          {
+            "text": "Discover great deals and convenient shopping on Shopee Thailand."
+          },
+          {
+            "text": "Explore products and offers for your everyday shopping needs."
+          }
+        ],
+        "asset_group.images": [
+          "customers/7574609568/assets/266867703494",
+          "customers/7574609568/assets/266952275017",
+          "customers/7574609568/assets/266967443616",
+          "customers/7574609568/assets/266967523869"
+        ],
+        "asset_group.square_marketing_images": [
+          "customers/7574609568/assets/266867311337",
+          "customers/7574609568/assets/266867337620",
+          "customers/7574609568/assets/266967057444",
+          "customers/7574609568/assets/266967341577",
+          "customers/7574609568/assets/266967406989"
+        ],
+        "asset_group.logos": [
+          "customers/7574609568/assets/191491582680"
+        ],
+        "asset_group.business_names": [
+          {
+            "text": "Shopee"
+          }
+        ],
+        "asset_group.status": "PAUSED",
+        "listing_group_filter.filter_type": "UNIT_INCLUDED",
+        "listing_group_filter.listing_source": "SHOPPING"
+      }
+    },
+    {
+      "key": "google.test.7574609568.shopping",
+      "name": "Google 测试账号 7574609568 · Shopping",
+      "description": "7574609568 的 Shopping 模板，使用本账号 Merchant Center 119120369 与 TH Feed；Campaign、Ad Group 和商品广告固定暂停。仅需补 Campaign 名称、排期与日预算。",
+      "provider": "google-ads",
+      "blueprint_id": "google-ads.shopping",
+      "blueprint_version": "1.1.0",
+      "ad_format": "SHOPPING",
+      "account_id": "7574609568",
+      "verification_status": "pending_live_verification",
+      "verified_scope": "2026-10-28 只读预检确认 Merchant Center 119120369；尚未执行创建写入。",
+      "required_inputs": [
+        "广告系列名称",
+        "投放开始日期",
+        "投放结束日期",
+        "日预算"
+      ],
+      "required_input_fields": [
+        "campaign.campaign_name",
+        "campaign.start_date",
+        "campaign.end_date",
+        "campaign.daily_budget"
+      ],
+      "tags": [
+        "内置",
+        "测试账号",
+        "Google Ads",
+        "Shopping",
+        "7574609568",
+        "待实测"
+      ],
+      "values": {
+        "campaign.contains_eu_political_advertising": "DOES_NOT_CONTAIN_EU_POLITICAL_ADVERTISING",
+        "campaign.advertising_channel_type": "SHOPPING",
+        "campaign.shopping_setting": {
+          "merchant_id": 119120369,
+          "feed_label": "TH",
+          "campaign_priority": 1,
+          "enable_local": true
+        },
+        "campaign.shopping_setting.merchant_id": 119120369,
+        "campaign.shopping_setting.campaign_priority": 1,
+        "campaign.shopping_setting.enable_local": true,
+        "campaign.bidding_strategy": "MAXIMIZE_CLICKS",
+        "campaign.status": "PAUSED",
+        "ad_group.name": "E2E 7574609568 Shopping Ad Group",
+        "ad_group.type": "SHOPPING_PRODUCT_ADS",
+        "ad_group.cpc_bid_micros": 500000,
+        "ad_group.status": "PAUSED",
+        "product_group.product_group_type": "all_products",
+        "product_group.partition_type": "UNIT",
+        "product_group.cpc_bid_micros": 500000,
+        "product_group.status": "PAUSED",
+        "ad.name": "Shopping Product Ad",
+        "ad.status": "PAUSED"
+      }
+    },
+    {
+      "key": "google.test.7574609568.app",
+      "name": "Google 测试账号 7574609568 · App",
+      "description": "7574609568 的 Android App Campaign 模板，使用 Google Play 应用 com.shopee.th 和本账号启用的 First open 转化动作。Campaign 与 Ad Group 固定暂停；Google Ads v24 要求 App Ad 为 ENABLED，暂停父级会阻止投放。仅需补 Campaign 名称、排期与日预算。",
+      "provider": "google-ads",
+      "blueprint_id": "google-ads.app",
+      "blueprint_version": "1.4.0",
+      "ad_format": "APP",
+      "account_id": "7574609568",
+      "verification_status": "pending_live_verification",
+      "verified_scope": "2026-10-28 只读预检确认 Android 应用 com.shopee.th、启用的 First open 转化动作及本账号素材；尚未执行创建写入。",
+      "required_inputs": [
+        "广告系列名称",
+        "投放开始日期",
+        "投放结束日期",
+        "日预算"
+      ],
+      "required_input_fields": [
+        "campaign.campaign_name",
+        "campaign.start_date",
+        "campaign.end_date",
+        "campaign.daily_budget"
+      ],
+      "tags": [
+        "内置",
+        "测试账号",
+        "Google Ads",
+        "App",
+        "7574609568",
+        "父级暂停",
+        "待实测"
+      ],
+      "values": {
+        "campaign.contains_eu_political_advertising": "DOES_NOT_CONTAIN_EU_POLITICAL_ADVERTISING",
+        "campaign.campaign_type": "APP",
+        "campaign.advertising_channel_type": "MULTI_CHANNEL",
+        "campaign.advertising_channel_sub_type": "APP_CAMPAIGN",
+        "campaign.app_campaign_setting": {
+          "app_id": "com.shopee.th",
+          "app_store": "GOOGLE_APP_STORE",
+          "bidding_strategy_goal_type": "OPTIMIZE_INSTALLS_TARGET_INSTALL_COST"
+        },
+        "campaign.selective_optimization": {
+          "conversion_actions": [
+            "customers/7574609568/conversionActions/6714963989"
+          ]
+        },
+        "campaign.bidding_strategy": "TARGET_CPA",
+        "campaign.target_cpa_micros": 12000000,
+        "campaign.status": "PAUSED",
+        "ad_group.name": "E2E 7574609568 App Ad Group",
+        "ad_group.status": "PAUSED",
+        "ad.name": "App Ad",
+        "ad.headlines": [
+          "Shopee TH",
+          "Shop with Shopee"
+        ],
+        "ad.descriptions": [
+          "Discover great deals and convenient shopping on Shopee Thailand.",
+          "Explore products and offers for your everyday shopping needs."
+        ],
+        "ad.images": [
+          "customers/7574609568/assets/163514026901"
+        ],
+        "ad.status": "ENABLED",
+        "ad.videos": [
+          "customers/7574609568/assets/263309186802"
+        ]
+      }
+    },
+    {
+      "key": "google-ads.demand_gen_carousel.starter",
+      "name": "Google Demand Gen 轮播广告 · 起步模板",
+      "description": "通用草稿预设，未进行真实创建验证。选择测试账号后补充预算、定向、素材和渠道资源，提交时沿用权限、确认与暂停保护。",
+      "provider": "google-ads",
+      "blueprint_id": "google-ads.demand_gen_carousel",
+      "blueprint_version": "1.0.0",
+      "ad_format": "DEMAND_GEN_CAROUSEL",
+      "scope_type": "general",
+      "account_id": "",
+      "verification_status": "dry_run_only",
+      "verified_scope": "仅本地字段合同检查；未验证渠道账户资格或真实创建。",
+      "required_inputs": [
+        "测试账号",
+        "名称、预算、定向与渠道资源（按向导补齐）"
+      ],
+      "required_input_fields": [
+        "campaign.campaign_name",
+        "campaign.contains_eu_political_advertising",
+        "campaign.daily_budget",
+        "campaign.demand_gen_campaign_settings",
+        "ad_group.name",
+        "ad_group.demand_gen_ad_group_settings",
+        "ad.name",
+        "ad.final_url",
+        "ad.headline",
+        "ad.description",
+        "ad.carousel_cards"
+      ],
+      "tags": [
+        "内置",
+        "通用",
+        "起步模板",
+        "未实测"
+      ],
+      "values": {
+        "campaign.advertising_channel_type": "DEMAND_GEN",
+        "campaign.bidding_strategy": "MAXIMIZE_CONVERSIONS",
+        "ad_group.type": "SEARCH_STANDARD"
+      }
+    },
+    {
+      "key": "google-ads.demand_gen_multi_asset.starter",
+      "name": "Google Demand Gen 多素材广告 · 起步模板",
+      "description": "通用草稿预设，未进行真实创建验证。选择测试账号后补充预算、定向、素材和渠道资源，提交时沿用权限、确认与暂停保护。",
+      "provider": "google-ads",
+      "blueprint_id": "google-ads.demand_gen_multi_asset",
+      "blueprint_version": "1.0.0",
+      "ad_format": "DEMAND_GEN_MULTI_ASSET",
+      "scope_type": "general",
+      "account_id": "",
+      "verification_status": "dry_run_only",
+      "verified_scope": "仅本地字段合同检查；未验证渠道账户资格或真实创建。",
+      "required_inputs": [
+        "测试账号",
+        "名称、预算、定向与渠道资源（按向导补齐）"
+      ],
+      "required_input_fields": [
+        "campaign.campaign_name",
+        "campaign.contains_eu_political_advertising",
+        "campaign.daily_budget",
+        "campaign.demand_gen_campaign_settings",
+        "ad_group.name",
+        "ad_group.demand_gen_ad_group_settings",
+        "ad.name",
+        "ad.final_url",
+        "ad.headlines",
+        "ad.descriptions",
+        "ad.business_name"
+      ],
+      "tags": [
+        "内置",
+        "通用",
+        "起步模板",
+        "未实测"
+      ],
+      "values": {
+        "campaign.advertising_channel_type": "DEMAND_GEN",
+        "campaign.bidding_strategy": "MAXIMIZE_CONVERSIONS",
+        "ad_group.type": "SEARCH_STANDARD"
+      }
+    },
+    {
+      "key": "google-ads.demand_gen_product.starter",
+      "name": "Google Demand Gen 商品广告 · 起步模板",
+      "description": "通用草稿预设，未进行真实创建验证。选择测试账号后补充预算、定向、素材和渠道资源，提交时沿用权限、确认与暂停保护。",
+      "provider": "google-ads",
+      "blueprint_id": "google-ads.demand_gen_product",
+      "blueprint_version": "1.0.0",
+      "ad_format": "DEMAND_GEN_PRODUCT",
+      "scope_type": "general",
+      "account_id": "",
+      "verification_status": "dry_run_only",
+      "verified_scope": "仅本地字段合同检查；未验证渠道账户资格或真实创建。",
+      "required_inputs": [
+        "测试账号",
+        "名称、预算、定向与渠道资源（按向导补齐）"
+      ],
+      "required_input_fields": [
+        "campaign.campaign_name",
+        "campaign.contains_eu_political_advertising",
+        "campaign.daily_budget",
+        "campaign.demand_gen_campaign_settings",
+        "ad_group.name",
+        "ad_group.demand_gen_ad_group_settings",
+        "ad.name",
+        "ad.headline",
+        "ad.description",
+        "ad.business_name",
+        "ad.logo_image",
+        "ad.call_to_action"
+      ],
+      "tags": [
+        "内置",
+        "通用",
+        "起步模板",
+        "未实测"
+      ],
+      "values": {
+        "campaign.advertising_channel_type": "DEMAND_GEN",
+        "campaign.bidding_strategy": "MAXIMIZE_CONVERSIONS",
+        "ad_group.type": "SEARCH_STANDARD"
+      }
+    },
+    {
+      "key": "google-ads.demand_gen_video_responsive.starter",
+      "name": "Google Demand Gen 视频响应式广告 · 起步模板",
+      "description": "通用草稿预设，未进行真实创建验证。选择测试账号后补充预算、定向、素材和渠道资源，提交时沿用权限、确认与暂停保护。",
+      "provider": "google-ads",
+      "blueprint_id": "google-ads.demand_gen_video_responsive",
+      "blueprint_version": "1.0.0",
+      "ad_format": "DEMAND_GEN_VIDEO_RESPONSIVE",
+      "scope_type": "general",
+      "account_id": "",
+      "verification_status": "dry_run_only",
+      "verified_scope": "仅本地字段合同检查；未验证渠道账户资格或真实创建。",
+      "required_inputs": [
+        "测试账号",
+        "名称、预算、定向与渠道资源（按向导补齐）"
+      ],
+      "required_input_fields": [
+        "campaign.campaign_name",
+        "campaign.contains_eu_political_advertising",
+        "campaign.daily_budget",
+        "campaign.demand_gen_campaign_settings",
+        "ad_group.name",
+        "ad_group.demand_gen_ad_group_settings",
+        "ad.name",
+        "ad.business_name",
+        "ad.videos",
+        "ad.headlines",
+        "ad.descriptions"
+      ],
+      "tags": [
+        "内置",
+        "通用",
+        "起步模板",
+        "未实测"
+      ],
+      "values": {
+        "campaign.advertising_channel_type": "DEMAND_GEN",
+        "campaign.bidding_strategy": "MAXIMIZE_CONVERSIONS",
+        "ad_group.type": "SEARCH_STANDARD"
+      }
+    },
+    {
+      "key": "google-ads.display.starter",
+      "name": "Google Display 广告 · 起步模板",
+      "description": "通用草稿预设，未进行真实创建验证。选择测试账号后补充预算、定向、素材和渠道资源，提交时沿用权限、确认与暂停保护。",
+      "provider": "google-ads",
+      "blueprint_id": "google-ads.display",
+      "blueprint_version": "1.0.0",
+      "ad_format": "DISPLAY",
+      "scope_type": "general",
+      "account_id": "",
+      "verification_status": "dry_run_only",
+      "verified_scope": "仅本地字段合同检查；未验证渠道账户资格或真实创建。",
+      "required_inputs": [
+        "测试账号",
+        "名称、预算、定向与渠道资源（按向导补齐）"
+      ],
+      "required_input_fields": [
+        "campaign.campaign_name",
+        "campaign.contains_eu_political_advertising",
+        "campaign.daily_budget",
+        "ad_group.name",
+        "ad.name",
+        "ad.final_url",
+        "ad.headlines",
+        "ad.long_headline",
+        "ad.descriptions",
+        "ad.business_name"
+      ],
+      "tags": [
+        "内置",
+        "通用",
+        "起步模板",
+        "未实测"
+      ],
+      "values": {
+        "campaign.advertising_channel_type": "DISPLAY",
+        "campaign.bidding_strategy": "MAXIMIZE_CONVERSIONS",
+        "ad_group.type": "DISPLAY_STANDARD",
+        "ad.ad_type": "RESPONSIVE_DISPLAY_AD"
+      }
+    },
+    {
+      "key": "google-ads.hotel.starter",
+      "name": "Google Hotel 广告 · 起步模板",
+      "description": "通用草稿预设，未进行真实创建验证。选择测试账号后补充预算、定向、素材和渠道资源，提交时沿用权限、确认与暂停保护。",
+      "provider": "google-ads",
+      "blueprint_id": "google-ads.hotel",
+      "blueprint_version": "1.0.0",
+      "ad_format": "HOTEL",
+      "scope_type": "general",
+      "account_id": "",
+      "verification_status": "dry_run_only",
+      "verified_scope": "仅本地字段合同检查；未验证渠道账户资格或真实创建。",
+      "required_inputs": [
+        "测试账号",
+        "名称、预算、定向与渠道资源（按向导补齐）"
+      ],
+      "required_input_fields": [
+        "campaign.campaign_name",
+        "campaign.contains_eu_political_advertising",
+        "campaign.daily_budget",
+        "campaign.hotel_setting",
+        "ad_group.name",
+        "ad.name"
+      ],
+      "tags": [
+        "内置",
+        "通用",
+        "起步模板",
+        "未实测"
+      ],
+      "values": {
+        "campaign.advertising_channel_type": "HOTEL",
+        "campaign.bidding_strategy": "MAXIMIZE_CONVERSIONS",
+        "ad_group.type": "HOTEL_ADS"
+      }
+    },
+    {
+      "key": "google-ads.local.starter",
+      "name": "Google Local 广告 · 起步模板",
+      "description": "通用草稿预设，未进行真实创建验证。选择测试账号后补充预算、定向、素材和渠道资源，提交时沿用权限、确认与暂停保护。",
+      "provider": "google-ads",
+      "blueprint_id": "google-ads.local",
+      "blueprint_version": "1.0.0",
+      "ad_format": "LOCAL",
+      "scope_type": "general",
+      "account_id": "",
+      "verification_status": "dry_run_only",
+      "verified_scope": "仅本地字段合同检查；未验证渠道账户资格或真实创建。",
+      "required_inputs": [
+        "测试账号",
+        "名称、预算、定向与渠道资源（按向导补齐）"
+      ],
+      "required_input_fields": [
+        "campaign.campaign_name",
+        "campaign.contains_eu_political_advertising",
+        "campaign.daily_budget",
+        "campaign.local_campaign_setting",
+        "ad_group.name",
+        "ad.name",
+        "ad.final_url",
+        "ad.headlines",
+        "ad.descriptions"
+      ],
+      "tags": [
+        "内置",
+        "通用",
+        "起步模板",
+        "未实测"
+      ],
+      "values": {
+        "campaign.advertising_channel_type": "LOCAL",
+        "campaign.bidding_strategy": "MAXIMIZE_CONVERSIONS",
+        "ad_group.type": "SMART_CAMPAIGN_ADS"
+      }
+    },
+    {
+      "key": "google-ads.search.starter",
+      "name": "Google Search 广告 · 起步模板",
+      "description": "通用草稿预设，未进行真实创建验证。选择测试账号后补充预算、定向、素材和渠道资源，提交时沿用权限、确认与暂停保护。",
+      "provider": "google-ads",
+      "blueprint_id": "google-ads.search",
+      "blueprint_version": "1.0.0",
+      "ad_format": "SEARCH",
+      "scope_type": "general",
+      "account_id": "",
+      "verification_status": "dry_run_only",
+      "verified_scope": "仅本地字段合同检查；未验证渠道账户资格或真实创建。",
+      "required_inputs": [
+        "测试账号",
+        "名称、预算、定向与渠道资源（按向导补齐）"
+      ],
+      "required_input_fields": [
+        "campaign.campaign_name",
+        "campaign.contains_eu_political_advertising",
+        "campaign.daily_budget",
+        "ad_group.name",
+        "ad.headlines",
+        "ad.descriptions",
+        "ad.final_url"
+      ],
+      "tags": [
+        "内置",
+        "通用",
+        "起步模板",
+        "未实测"
+      ],
+      "values": {
+        "campaign.advertising_channel_type": "SEARCH",
+        "campaign.bidding_strategy": "MAXIMIZE_CONVERSIONS",
+        "ad_group.type": "SEARCH_STANDARD"
+      }
+    },
+    {
+      "key": "google-ads.smart.starter",
+      "name": "Google Smart Campaign 广告 · 起步模板",
+      "description": "通用草稿预设，未进行真实创建验证。选择测试账号后补充预算、定向、素材和渠道资源，提交时沿用权限、确认与暂停保护。",
+      "provider": "google-ads",
+      "blueprint_id": "google-ads.smart",
+      "blueprint_version": "1.0.0",
+      "ad_format": "SMART",
+      "scope_type": "general",
+      "account_id": "",
+      "verification_status": "dry_run_only",
+      "verified_scope": "仅本地字段合同检查；未验证渠道账户资格或真实创建。",
+      "required_inputs": [
+        "测试账号",
+        "名称、预算、定向与渠道资源（按向导补齐）"
+      ],
+      "required_input_fields": [
+        "campaign.campaign_name",
+        "campaign.contains_eu_political_advertising",
+        "campaign.daily_budget",
+        "ad_group.name",
+        "ad.name",
+        "ad.final_url",
+        "ad.headlines",
+        "ad.descriptions"
+      ],
+      "tags": [
+        "内置",
+        "通用",
+        "起步模板",
+        "未实测"
+      ],
+      "values": {
+        "campaign.advertising_channel_type": "SMART",
+        "campaign.bidding_strategy": "MAXIMIZE_CONVERSIONS",
+        "ad_group.type": "SMART_CAMPAIGN_ADS"
+      }
+    },
+    {
+      "key": "google-ads.travel.starter",
+      "name": "Google Travel 广告 · 起步模板",
+      "description": "通用草稿预设，未进行真实创建验证。选择测试账号后补充预算、定向、素材和渠道资源，提交时沿用权限、确认与暂停保护。",
+      "provider": "google-ads",
+      "blueprint_id": "google-ads.travel",
+      "blueprint_version": "1.0.0",
+      "ad_format": "TRAVEL",
+      "scope_type": "general",
+      "account_id": "",
+      "verification_status": "dry_run_only",
+      "verified_scope": "仅本地字段合同检查；未验证渠道账户资格或真实创建。",
+      "required_inputs": [
+        "测试账号",
+        "名称、预算、定向与渠道资源（按向导补齐）"
+      ],
+      "required_input_fields": [
+        "campaign.campaign_name",
+        "campaign.contains_eu_political_advertising",
+        "campaign.daily_budget",
+        "campaign.travel_campaign_settings",
+        "ad_group.name",
+        "ad.name"
+      ],
+      "tags": [
+        "内置",
+        "通用",
+        "起步模板",
+        "未实测"
+      ],
+      "values": {
+        "campaign.advertising_channel_type": "TRAVEL",
+        "campaign.bidding_strategy": "MAXIMIZE_CONVERSIONS",
+        "ad_group.type": "TRAVEL_ADS"
+      }
+    },
+    {
+      "key": "google-ads.video.starter",
+      "name": "Google Video 广告 · 起步模板",
+      "description": "通用草稿预设，未进行真实创建验证。选择测试账号后补充预算、定向、素材和渠道资源，提交时沿用权限、确认与暂停保护。",
+      "provider": "google-ads",
+      "blueprint_id": "google-ads.video",
+      "blueprint_version": "1.0.0",
+      "ad_format": "VIDEO",
+      "scope_type": "general",
+      "account_id": "",
+      "verification_status": "dry_run_only",
+      "verified_scope": "仅本地字段合同检查；未验证渠道账户资格或真实创建。",
+      "required_inputs": [
+        "测试账号",
+        "名称、预算、定向与渠道资源（按向导补齐）"
+      ],
+      "required_input_fields": [
+        "campaign.campaign_name",
+        "campaign.contains_eu_political_advertising",
+        "campaign.daily_budget",
+        "ad_group.name",
+        "ad.name",
+        "ad.video_ad_format",
+        "ad.video_id",
+        "ad.final_url"
+      ],
+      "tags": [
+        "内置",
+        "通用",
+        "起步模板",
+        "未实测"
+      ],
+      "values": {
+        "campaign.advertising_channel_type": "VIDEO",
+        "campaign.bidding_strategy": "MAXIMIZE_CONVERSIONS",
+        "ad_group.type": "VIDEO_RESPONSIVE",
+        "ad.ad_type": "VIDEO"
+      }
+    },
+    {
+      "key": "meta.engagement.starter",
+      "name": "Meta 互动广告 · 起步模板",
+      "description": "通用草稿预设，未进行真实创建验证。选择测试账号后补充预算、定向、素材和渠道资源，提交时沿用权限、确认与暂停保护。",
+      "provider": "meta",
+      "blueprint_id": "meta.engagement",
+      "blueprint_version": "1.0.0",
+      "ad_format": "ENGAGEMENT",
+      "scope_type": "general",
+      "account_id": "",
+      "verification_status": "dry_run_only",
+      "verified_scope": "仅本地字段合同检查；未验证渠道账户资格或真实创建。",
+      "required_inputs": [
+        "测试账号",
+        "名称、预算、定向与渠道资源（按向导补齐）"
+      ],
+      "required_input_fields": [
+        "campaign.name",
+        "campaign.special_ad_categories",
+        "campaign.buying_type",
+        "campaign.daily_budget",
+        "ad_set.name",
+        "ad_set.optimization_goal",
+        "ad_set.billing_event",
+        "ad_set.targeting",
+        "ad.name",
+        "ad.page_id",
+        "ad.engagement_type"
+      ],
+      "tags": [
+        "内置",
+        "通用",
+        "起步模板",
+        "未实测"
+      ],
+      "values": {
+        "ad.call_to_action_type": "WATCH_VIDEO",
+        "campaign.bid_strategy": "LOWEST_COST_WITHOUT_CAP",
+        "campaign.objective": "OUTCOME_ENGAGEMENT"
+      }
+    },
+    {
+      "key": "meta.messaging.starter",
+      "name": "Meta 消息广告 · 起步模板",
+      "description": "通用草稿预设，未进行真实创建验证。选择测试账号后补充预算、定向、素材和渠道资源，提交时沿用权限、确认与暂停保护。",
+      "provider": "meta",
+      "blueprint_id": "meta.messaging",
+      "blueprint_version": "1.1.0",
+      "ad_format": "MESSAGING",
+      "scope_type": "general",
+      "account_id": "",
+      "verification_status": "dry_run_only",
+      "verified_scope": "仅本地字段合同检查；未验证渠道账户资格或真实创建。",
+      "required_inputs": [
+        "测试账号",
+        "名称、预算、定向与渠道资源（按向导补齐）"
+      ],
+      "required_input_fields": [
+        "campaign.name",
+        "campaign.special_ad_categories",
+        "campaign.buying_type",
+        "ad_set.name",
+        "ad_set.billing_event",
+        "ad_set.messaging_apps",
+        "ad_set.targeting",
+        "ad.name",
+        "ad.page_id",
+        "ad.messaging_app",
+        "ad.call_to_action_type"
+      ],
+      "tags": [
+        "内置",
+        "通用",
+        "起步模板",
+        "未实测"
+      ],
+      "values": {
+        "campaign.bid_strategy": "LOWEST_COST_WITHOUT_CAP",
+        "campaign.objective": "OUTCOME_ENGAGEMENT"
+      }
+    },
+    {
+      "key": "meta.lead_generation.starter",
+      "name": "Meta 潜在客户广告 · 起步模板",
+      "description": "通用草稿预设，未进行真实创建验证。选择测试账号后补充预算、定向、素材和渠道资源，提交时沿用权限、确认与暂停保护。",
+      "provider": "meta",
+      "blueprint_id": "meta.lead_generation",
+      "blueprint_version": "1.0.0",
+      "ad_format": "lead_generation",
+      "scope_type": "general",
+      "account_id": "",
+      "verification_status": "dry_run_only",
+      "verified_scope": "仅本地字段合同检查；未验证渠道账户资格或真实创建。",
+      "required_inputs": [
+        "测试账号",
+        "名称、预算、定向与渠道资源（按向导补齐）"
+      ],
+      "required_input_fields": [
+        "campaign.name",
+        "campaign.special_ad_categories",
+        "campaign.buying_type",
+        "campaign.daily_budget",
+        "ad_set.name",
+        "ad_set.optimization_goal",
+        "ad_set.billing_event",
+        "ad_set.targeting",
+        "ad.name",
+        "ad.page_id",
+        "ad.form_id"
+      ],
+      "tags": [
+        "内置",
+        "通用",
+        "起步模板",
+        "未实测"
+      ],
+      "values": {
+        "campaign.bid_strategy": "LOWEST_COST_WITHOUT_CAP",
+        "ad.call_to_action_type": "SIGN_UP",
+        "campaign.objective": "OUTCOME_LEADS"
+      }
+    },
+    {
+      "key": "tiktok.carousel.starter",
+      "name": "TikTok Carousel 广告 · 起步模板",
+      "description": "通用草稿预设，未进行真实创建验证。选择测试账号后补充预算、定向、素材和渠道资源，提交时沿用权限、确认与暂停保护。",
+      "provider": "tiktok",
+      "blueprint_id": "tiktok.carousel",
+      "blueprint_version": "1.0.0",
+      "ad_format": "CAROUSEL",
+      "scope_type": "general",
+      "account_id": "",
+      "verification_status": "dry_run_only",
+      "verified_scope": "仅本地字段合同检查；未验证渠道账户资格或真实创建。",
+      "required_inputs": [
+        "测试账号",
+        "名称、预算、定向与渠道资源（按向导补齐）"
+      ],
+      "required_input_fields": [
+        "campaign.name",
+        "campaign.objective_type",
+        "campaign.campaign_type",
+        "campaign.budget_mode",
+        "ad_group.name",
+        "ad_group.campaign_id",
+        "ad_group.promotion_type",
+        "ad_group.optimization_goal",
+        "ad_group.billing_event",
+        "ad_group.budget_mode",
+        "ad_group.budget",
+        "ad_group.schedule_type",
+        "ad_group.schedule_start_time",
+        "ad_group.location_ids",
+        "ad_group.placement_type",
+        "ad_group.bid_type",
+        "ad.name",
+        "ad.image_ids",
+        "ad.text",
+        "ad.campaign_id"
+      ],
+      "tags": [
+        "内置",
+        "通用",
+        "起步模板",
+        "未实测"
+      ],
+      "values": {}
+    },
+    {
+      "key": "tiktok.spark.starter",
+      "name": "TikTok Spark Ads · 起步模板",
+      "description": "通用草稿预设，未进行真实创建验证。选择测试账号后补充预算、定向、素材和渠道资源，提交时沿用权限、确认与暂停保护。",
+      "provider": "tiktok",
+      "blueprint_id": "tiktok.spark",
+      "blueprint_version": "2.0.0",
+      "ad_format": "SPARK_AD",
+      "scope_type": "general",
+      "account_id": "",
+      "verification_status": "dry_run_only",
+      "verified_scope": "仅本地字段合同检查；未验证渠道账户资格或真实创建。",
+      "required_inputs": [
+        "测试账号",
+        "名称、预算、定向与渠道资源（按向导补齐）"
+      ],
+      "required_input_fields": [
+        "campaign.campaign_name",
+        "ad_group.adgroup_name",
+        "ad_group.budget_mode",
+        "ad_group.budget",
+        "ad_group.schedule_type",
+        "ad_group.schedule_start_time",
+        "ad_group.optimization_goal",
+        "ad_group.bid_type",
+        "ad.ad_name",
+        "ad.identity_type",
+        "ad.identity_id",
+        "ad.tiktok_item_id"
+      ],
+      "tags": [
+        "内置",
+        "通用",
+        "起步模板",
+        "未实测"
+      ],
+      "values": {}
+    },
+    {
+      "key": "tiktok.single_image.starter",
+      "name": "TikTok 单图广告（常规 Campaign） · 起步模板",
+      "description": "通过常规 Campaign、Ad Group 和独立素材 Tool 配置广告；账户资格、目标与版位兼容性以渠道校验为准。 未进行真实创建验证。",
+      "provider": "tiktok",
+      "blueprint_id": "tiktok.single_image",
+      "blueprint_version": "1.0.0",
+      "ad_format": "SINGLE_IMAGE_AD",
+      "scope_type": "general",
+      "account_id": "",
+      "verification_status": "dry_run_only",
+      "verified_scope": "仅本地字段合同校验；未验证真实创建。",
+      "required_inputs": [
+        "测试账号",
+        "预算、定向、排期和素材"
+      ],
+      "required_input_fields": [
+        "campaign.name",
+        "ad_group.name",
+        "ad.name",
+        "ad.image_ids",
+        "ad.text"
+      ],
+      "tags": [
+        "内置",
+        "通用",
+        "起步模板",
+        "未实测"
+      ],
+      "values": {
+        "ad.ad_format": "SINGLE_IMAGE"
+      }
+    },
+    {
+      "key": "tiktok.single_video.starter",
+      "name": "TikTok 单视频广告（常规 Campaign） · 起步模板",
+      "description": "通过常规 Campaign、Ad Group 和独立素材 Tool 配置广告；账户资格、目标与版位兼容性以渠道校验为准。 未进行真实创建验证。",
+      "provider": "tiktok",
+      "blueprint_id": "tiktok.single_video",
+      "blueprint_version": "1.0.0",
+      "ad_format": "SINGLE_VIDEO_AD",
+      "scope_type": "general",
+      "account_id": "",
+      "verification_status": "dry_run_only",
+      "verified_scope": "仅本地字段合同校验；未验证真实创建。",
+      "required_inputs": [
+        "测试账号",
+        "预算、定向、排期和素材"
+      ],
+      "required_input_fields": [
+        "campaign.name",
+        "ad_group.name",
+        "ad.name",
+        "ad.video_id",
+        "ad.text"
+      ],
+      "tags": [
+        "内置",
+        "通用",
+        "起步模板",
+        "未实测"
+      ],
+      "values": {
+        "ad.ad_format": "SINGLE_VIDEO"
+      }
+    },
+    {
+      "key": "meta.awareness.starter",
+      "name": "Meta 品牌认知广告 · 起步模板",
+      "description": "通用草稿预设，未进行真实创建验证。选择测试账号后补充预算、定向、素材和渠道资源，提交时沿用权限、确认与暂停保护。",
+      "provider": "meta",
+      "blueprint_id": "meta.awareness",
+      "blueprint_version": "1.0.0",
+      "ad_format": "awareness",
+      "scope_type": "general",
+      "account_id": "",
+      "verification_status": "dry_run_only",
+      "verified_scope": "仅本地字段合同检查；未验证渠道账户资格或真实创建。",
+      "required_inputs": [
+        "测试账号",
+        "名称、预算、定向与渠道资源（按向导补齐）"
+      ],
+      "required_input_fields": [
+        "campaign.name",
+        "campaign.special_ad_categories",
+        "campaign.daily_budget",
+        "ad_set.name",
+        "ad_set.targeting",
+        "ad_set.start_time",
+        "ad.name",
+        "ad.page_id",
+        "ad.link"
+      ],
+      "tags": [
+        "内置",
+        "通用",
+        "起步模板",
+        "未实测"
+      ],
+      "values": {
+        "campaign.objective": "OUTCOME_AWARENESS",
+        "campaign.buying_type": "AUCTION",
+        "ad_set.optimization_goal": "REACH",
+        "ad_set.billing_event": "IMPRESSIONS",
+        "ad_set.bid_strategy": "LOWEST_COST_WITHOUT_CAP",
+        "ad.media_type": "IMAGE"
+      }
+    },
+    {
+      "key": "tiktok.web_conversions.starter",
+      "name": "TikTok 网站转化广告 · 起步模板",
+      "description": "通用草稿预设，未进行真实创建验证。选择测试账号后补充预算、定向、素材和渠道资源，提交时沿用权限、确认与暂停保护。",
+      "provider": "tiktok",
+      "blueprint_id": "tiktok.web_conversions",
+      "blueprint_version": "1.0.0",
+      "ad_format": "SINGLE_VIDEO",
+      "scope_type": "general",
+      "account_id": "",
+      "verification_status": "dry_run_only",
+      "verified_scope": "仅本地字段合同检查；未验证渠道账户资格或真实创建。",
+      "required_inputs": [
+        "测试账号",
+        "名称、预算、定向与渠道资源（按向导补齐）"
+      ],
+      "required_input_fields": [
+        "campaign.campaign_name",
+        "campaign.campaign_type",
+        "ad_group.bid_type",
+        "ad_group.location_ids",
+        "ad_group.budget_mode",
+        "ad_group.budget",
+        "ad_group.schedule_type",
+        "ad_group.schedule_start_time",
+        "ad_group.schedule_end_time",
+        "ad.ad_text",
+        "ad.identity_type",
+        "ad.identity_id"
+      ],
+      "tags": [
+        "内置",
+        "通用",
+        "起步模板",
+        "未实测"
+      ],
+      "values": {
+        "campaign.objective_type": "WEB_CONVERSIONS",
+        "campaign.sales_destination": "WEBSITE",
+        "ad_group.promotion_type": "WEBSITE",
+        "ad_group.optimization_goal": "CONVERT",
+        "ad_group.billing_event": "OCPM",
+        "ad.ad_format": "SINGLE_VIDEO"
       }
     }
   ]

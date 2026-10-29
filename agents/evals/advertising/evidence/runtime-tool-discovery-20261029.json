@@ -1,0 +1,69 @@
+{
+  "schema_version": "runtime-tool-discovery-verification/v1",
+  "date": "2026-10-29",
+  "scope": "same-run registered tool discovery and schema loading",
+  "verification": {
+    "make_ad_agent_check": "passed",
+    "python_tests": 3356,
+    "javascript_tests": 213,
+    "new_discovery_module_coverage_percent": 97,
+    "git_diff_check": "passed"
+  },
+  "model_replays": [
+    {
+      "status": "succeeded",
+      "passed": true,
+      "tool_calls": [
+        "meta_get_campaign",
+        "agent_discover_tools",
+        "agent_discover_tools",
+        "meta_get_adset",
+        "meta_get_ad"
+      ],
+      "live_advertising_requests": 0,
+      "llm_network": true
+    },
+    {
+      "status": "succeeded",
+      "passed": true,
+      "tool_calls": [
+        "meta_get_campaign",
+        "agent_discover_tools",
+        "meta_get_adset",
+        "agent_discover_tools",
+        "meta_get_ad"
+      ],
+      "live_advertising_requests": 0,
+      "llm_network": true
+    }
+  ],
+  "performance": {
+    "registered_tools": 278,
+    "searches": 30,
+    "cold_ms": 2.632,
+    "warm_median_ms": 0.606,
+    "max_results": 4,
+    "visible_after_discovery": 5,
+    "provider_io": false
+  },
+  "service": {
+    "ready_http_status": 200,
+    "discovery_registered": true,
+    "discovery_scope": "read",
+    "user_templates_count": 14,
+    "template_ids_preserved": true,
+    "original_conversation_preserved": true
+  },
+  "quality_gate": {
+    "whole_repository": "failed",
+    "files_scanned": 771,
+    "findings": 4998,
+    "score": 0,
+    "new_discovery_modules_findings": 0,
+    "threshold_changed": false
+  },
+  "limitations": [
+    "Channel responses in the model-backed replays are local fixtures, not live provider acceptance.",
+    "Repository-wide pre-existing QGuard findings remain unresolved."
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "mode": "local_evidence_window_fixture",
+  "samples_per_path": 15,
+  "stored_results": 8,
+  "chars_per_result": 24000,
+  "previous": {
+    "p50_ms": 68.373,
+    "max_ms": 69.718
+  },
+  "current": {
+    "p50_ms": 43.352,
+    "max_ms": 44.388
+  },
+  "previous_first_tool": "[read_0]",
+  "current_first_tool": "[read_7]",
+  "provider_calls": 0,
+  "model_latency_included": false
+}

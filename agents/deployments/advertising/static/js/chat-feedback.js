@@ -1,6 +1,8 @@
 let feedbackTrendDays = 30;
 let feedbackTrendRequestToken = 0;
 let feedbackReviewRequestToken = 0;
+const feedbackReviewPage = {page: 1, limit: 10, status: 'pending', q: '', since: ''};
+const feedbackReviewDrafts = new Map();
 
 function feedbackTrendSetStatus(state, message) {
     const banner = document.getElementById('feedbackTrendStatus');
@@ -134,13 +136,19 @@ function renderFeedbackReviewQueue(items) {
     records.forEach(item => {
         const card = document.createElement('article');
         card.className = 'feedback-review-item';
+        card.dataset.feedbackId = item.feedback_id;
         const header = document.createElement('div');
         header.className = 'feedback-review-item-header';
         const title = document.createElement('strong');
         title.textContent = item.reason || '用户提交了负向反馈';
         const timestamp = document.createElement('time');
-        timestamp.textContent = item.submitted_at || '';
-        header.append(title, timestamp);
+        const submitted = new Date(item.submitted_at);
+        timestamp.textContent = Number.isNaN(submitted.getTime()) ? '' : submitted.toLocaleString('zh-CN', {hour12: false});
+        timestamp.dateTime = item.submitted_at || '';
+        const reviewStatus = document.createElement('span');
+        reviewStatus.className = 'feedback-review-state';
+        reviewStatus.textContent = {pending:'待审核', candidate:'已收录', dismissed:'已忽略'}[item.review_status] || '';
+        header.append(title, reviewStatus, timestamp);
         card.appendChild(header);
 
         for (const [label, value] of [
@@ -163,7 +171,8 @@ function renderFeedbackReviewQueue(items) {
         const expected = document.createElement('textarea');
         expected.maxLength = 2000;
         expected.rows = 3;
-        expected.value = item.expected_behavior || '';
+        const draft = feedbackReviewDrafts.get(item.feedback_id);
+        expected.value = draft?.expected ?? item.expected_behavior ?? '';
         expected.placeholder = '人工写明正确回答应该满足的条件';
         expectedLabel.appendChild(expected);
         card.appendChild(expectedLabel);
@@ -178,7 +187,12 @@ function renderFeedbackReviewQueue(items) {
         assertionsInput.rows = 4;
         assertionsInput.maxLength = 8000;
         assertionsInput.setAttribute('aria-describedby', 'feedbackReviewStatusText');
-        assertionsInput.value = JSON.stringify(item.assertions || {}, null, 2);
+        assertionsInput.value = draft?.assertions ?? JSON.stringify(item.assertions || {}, null, 2);
+        const rememberDraft = () => feedbackReviewDrafts.set(item.feedback_id, {
+            expected: expected.value, assertions: assertionsInput.value,
+        });
+        expected.addEventListener('input', rememberDraft);
+        assertionsInput.addEventListener('input', rememberDraft);
         assertionsLabel.appendChild(assertionsInput);
         advanced.append(summary, assertionsLabel);
         card.appendChild(advanced);
@@ -217,25 +231,57 @@ function renderFeedbackReviewQueue(items) {
 }
 
 async function loadFeedbackReviewQueue() {
-    const status = document.getElementById('feedbackReviewStatus')?.value || 'pending';
+    const params = new URLSearchParams({status:feedbackReviewPage.status,
+        page:feedbackReviewPage.page, limit:feedbackReviewPage.limit});
+    for (const field of ['q', 'since']) {
+        if (feedbackReviewPage[field]) params.set(field, feedbackReviewPage[field]);
+    }
     const requestToken = ++feedbackReviewRequestToken;
+    document.getElementById('feedbackReviewPrevious').disabled = true;
+    document.getElementById('feedbackReviewNext').disabled = true;
+    document.getElementById('feedbackReviewList').setAttribute('aria-busy', 'true');
     feedbackReviewSetStatus('正在读取审核队列…');
     try {
-        const result = await apiFetch(
-            `/feedback/review?status=${encodeURIComponent(status)}&limit=100`,
-        );
+        const result = await apiFetch(`/feedback/review?${params}`);
         if (requestToken !== feedbackReviewRequestToken) return;
         const items = Array.isArray(result.items) ? result.items : [];
+        const pagination = result.pagination || {page:1, pages:1, total:items.length};
+        feedbackReviewPage.page = pagination.page;
         renderFeedbackReviewQueue(items);
-        feedbackReviewSetStatus(`当前状态：${items.length} 条`);
+        document.getElementById('feedbackReviewPageInfo').textContent =
+            `共 ${pagination.total} 条 · 第 ${pagination.page} / ${pagination.pages} 页`;
+        document.getElementById('feedbackReviewPrevious').disabled = pagination.page <= 1;
+        document.getElementById('feedbackReviewNext').disabled = pagination.page >= pagination.pages;
+        feedbackReviewSetStatus(items.length ? `当前页 ${items.length} 条` : '没有匹配的反馈，请调整筛选条件。');
     } catch (error) {
         if (requestToken !== feedbackReviewRequestToken) return;
         document.getElementById('feedbackReviewList')?.replaceChildren();
+        document.getElementById('feedbackReviewPageInfo').textContent = '读取失败';
         const message = error?.status === 401 || error?.status === 403
             ? '当前身份没有反馈审核权限；需要显式授予 feedback.review。'
             : error?.message || '反馈审核队列读取失败。';
         feedbackReviewSetStatus(message, true);
+    } finally {
+        if (requestToken === feedbackReviewRequestToken) {
+            document.getElementById('feedbackReviewList').setAttribute('aria-busy', 'false');
+        }
     }
+}
+
+async function applyFeedbackReviewFilters() {
+    feedbackReviewPage.page = 1;
+    feedbackReviewPage.status = document.getElementById('feedbackReviewStatus').value || 'pending';
+    feedbackReviewPage.limit = Number(document.getElementById('feedbackReviewSize').value) || 10;
+    feedbackReviewPage.q = (document.getElementById('feedbackReviewQuery').value || '').trim();
+    const days = Number(document.getElementById('feedbackReviewRange').value);
+    feedbackReviewPage.since = days ? new Date(Date.now() - days * 86400000).toISOString() : '';
+    await loadFeedbackReviewQueue();
+}
+
+async function changeFeedbackReviewPage(direction) {
+    feedbackReviewPage.page = Math.max(1, feedbackReviewPage.page + direction);
+    await loadFeedbackReviewQueue();
+    document.querySelector('.feedback-review-panel')?.scrollIntoView({block: 'start'});
 }
 
 function parseFeedbackAssertions(text) {
@@ -253,6 +299,8 @@ function parseFeedbackAssertions(text) {
 }
 
 async function reviewFeedbackItem(feedbackId, reviewStatus, expectedBehavior, assertions = {}) {
+    const requestToken = feedbackReviewRequestToken;
+    const submittedDraft = feedbackReviewDrafts.get(feedbackId);
     const safeExpected = String(expectedBehavior || '').trim();
     if (reviewStatus === 'candidate' && !safeExpected) {
         feedbackReviewSetStatus('请填写期望行为后再收录。', true);
@@ -269,6 +317,8 @@ async function reviewFeedbackItem(feedbackId, reviewStatus, expectedBehavior, as
                 assertions,
             }),
         });
+        if (feedbackReviewDrafts.get(feedbackId) === submittedDraft) feedbackReviewDrafts.delete(feedbackId);
+        if (requestToken !== feedbackReviewRequestToken) return;
         feedbackReviewSetStatus(
             reviewStatus === 'candidate'
                 ? '已人工确认并保存为回归候选。'
@@ -276,6 +326,7 @@ async function reviewFeedbackItem(feedbackId, reviewStatus, expectedBehavior, as
         );
         await loadFeedbackReviewQueue();
     } catch (error) {
+        if (requestToken !== feedbackReviewRequestToken) return;
         feedbackReviewSetStatus(error?.message || '反馈审核保存失败。', true);
     }
 }
@@ -316,6 +367,7 @@ function openFeedbackTrend() {
 
 function closeFeedbackTrend() {
     feedbackTrendRequestToken += 1;
+    feedbackReviewRequestToken += 1;
     document.getElementById('feedbackTrendOverlay')?.classList.remove('active');
     document.getElementById('feedbackTrendOverlay')?.setAttribute('aria-hidden', 'true');
 }

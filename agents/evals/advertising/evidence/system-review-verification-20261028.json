@@ -1,0 +1,38 @@
+{
+  "schema_version": "system-review-verification/v1",
+  "date": "2026-10-28",
+  "project_check": {
+    "command": "make ad-agent-check",
+    "exit_code": 0,
+    "tests_passed": 3161,
+    "warnings": 1,
+    "compiled": true,
+    "provider_contract_audit": true,
+    "snapshot_tools": 321,
+    "knowledge_quality_and_performance": true
+  },
+  "quality_delta": {
+    "files_scanned": 24,
+    "baseline_findings": 445,
+    "current_findings": 445,
+    "new_findings": 0,
+    "gate_passed": true
+  },
+  "whole_repository_quality": {
+    "files_scanned": 757,
+    "findings": 4993,
+    "gate_passed": false
+  },
+  "focused_line_coverage": {
+    "tool_circuit_breaker_percent": 100,
+    "conversation_previews_percent": 95,
+    "combined_percent": 99
+  },
+  "provider_e2e": false,
+  "new_live_provider_success_attested": false,
+  "delivery": {
+    "committed": false,
+    "pushed": false,
+    "service_restarted": false
+  }
+}

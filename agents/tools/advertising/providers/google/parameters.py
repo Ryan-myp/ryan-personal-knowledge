@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from agents.tools.advertising.clients.google_creation_support import GOOGLE_CAMPAIGN_CREATION_LIMITS
+
 
 GOOGLE_CHANNEL_TYPES = [
     # AdvertisingChannelType values published by the Google Ads v24 API.
@@ -885,7 +887,7 @@ def google_campaign_schema() -> dict[str, Any]:
             "customer_id": _field("string", "Google Ads customer ID; MCC is not accepted here"),
             "campaign_name": _field("string", "Campaign name", maxLength=255),
             "advertising_channel_type": _field(
-                "string", "Channel type", enum=GOOGLE_CHANNEL_TYPES,
+                "string", "Channel type", enum=GOOGLE_CHANNEL_TYPES, creation_selector=True,
                 option_aliases={
                     "SEARCH": ["search campaign", "搜索广告", "搜索广告系列"],
                     "DISPLAY": ["display campaign", "展示广告", "展示广告系列"],
@@ -2002,9 +2004,10 @@ def google_ad_format_catalog() -> list[dict[str, Any]]:
     treating a broad campaign enum or an open object as full support.
     """
     source_document = "docs/ad-platform-hierarchy-guide-v5.md"
-    return [
+    entries = [
         {
             "format_id": "search",
+            "blueprint_ids": ["google-ads.search"],
             "category": "search",
             "resource_type": "campaign",
             "coverage": "partial_dry_run",
@@ -2016,6 +2019,7 @@ def google_ad_format_catalog() -> list[dict[str, Any]]:
         },
         {
             "format_id": "search.responsive_search_ad",
+            "blueprint_ids": ["google-ads.search"],
             "category": "search",
             "resource_type": "ad",
             "coverage": "supported_dry_run",
@@ -2028,6 +2032,7 @@ def google_ad_format_catalog() -> list[dict[str, Any]]:
         },
         {
             "format_id": "search.expanded_text_ad",
+            "blueprint_ids": [],
             "category": "search",
             "resource_type": "ad",
             "coverage": "declared_only",
@@ -2038,6 +2043,7 @@ def google_ad_format_catalog() -> list[dict[str, Any]]:
         },
         {
             "format_id": "performance_max",
+            "blueprint_ids": ["google-ads.performance_max"],
             "category": "performance_max",
             "resource_type": "asset_group",
             "coverage": "partial_dry_run",
@@ -2049,6 +2055,7 @@ def google_ad_format_catalog() -> list[dict[str, Any]]:
         },
         {
             "format_id": "performance_max.asset_group",
+            "blueprint_ids": ["google-ads.performance_max"],
             "category": "performance_max",
             "resource_type": "asset_group",
             "coverage": "partial_dry_run",
@@ -2060,6 +2067,7 @@ def google_ad_format_catalog() -> list[dict[str, Any]]:
         },
         {
             "format_id": "shopping",
+            "blueprint_ids": ["google-ads.shopping"],
             "category": "shopping",
             "resource_type": "campaign",
             "coverage": "partial_dry_run",
@@ -2071,6 +2079,7 @@ def google_ad_format_catalog() -> list[dict[str, Any]]:
         },
         {
             "format_id": "shopping.product_group",
+            "blueprint_ids": ["google-ads.shopping"],
             "category": "shopping",
             "resource_type": "product_group",
             "coverage": "supported_dry_run",
@@ -2083,6 +2092,7 @@ def google_ad_format_catalog() -> list[dict[str, Any]]:
         },
         {
             "format_id": "video",
+            "blueprint_ids": ["google-ads.video"],
             "category": "video",
             "resource_type": "campaign",
             "coverage": "partial_dry_run",
@@ -2094,6 +2104,7 @@ def google_ad_format_catalog() -> list[dict[str, Any]]:
         },
         {
             "format_id": "video.skippable_in_stream",
+            "blueprint_ids": ["google-ads.video"],
             "category": "video",
             "resource_type": "ad",
             "coverage": "supported_dry_run",
@@ -2106,6 +2117,7 @@ def google_ad_format_catalog() -> list[dict[str, Any]]:
         },
         {
             "format_id": "video.non_skippable_in_stream",
+            "blueprint_ids": ["google-ads.video"],
             "category": "video",
             "resource_type": "ad",
             "coverage": "supported_dry_run",
@@ -2118,6 +2130,7 @@ def google_ad_format_catalog() -> list[dict[str, Any]]:
         },
         {
             "format_id": "video.bumper",
+            "blueprint_ids": ["google-ads.video"],
             "category": "video",
             "resource_type": "ad",
             "coverage": "supported_dry_run",
@@ -2130,6 +2143,7 @@ def google_ad_format_catalog() -> list[dict[str, Any]]:
         },
         {
             "format_id": "video.outstream",
+            "blueprint_ids": ["google-ads.video"],
             "category": "video",
             "resource_type": "ad",
             "coverage": "supported_dry_run",
@@ -2142,6 +2156,7 @@ def google_ad_format_catalog() -> list[dict[str, Any]]:
         },
         {
             "format_id": "display",
+            "blueprint_ids": ["google-ads.display"],
             "category": "display",
             "resource_type": "campaign",
             "coverage": "partial_dry_run",
@@ -2153,6 +2168,7 @@ def google_ad_format_catalog() -> list[dict[str, Any]]:
         },
         {
             "format_id": "display.responsive_display_ad",
+            "blueprint_ids": ["google-ads.display"],
             "category": "display",
             "resource_type": "ad",
             "coverage": "supported_dry_run",
@@ -2165,6 +2181,8 @@ def google_ad_format_catalog() -> list[dict[str, Any]]:
         },
         {
             "format_id": "app",
+            "objective_values": ["MULTI_CHANNEL"],
+            "blueprint_ids": ["google-ads.app"],
             "category": "app",
             "resource_type": "campaign",
             "coverage": "partial_dry_run",
@@ -2176,6 +2194,7 @@ def google_ad_format_catalog() -> list[dict[str, Any]]:
         },
         {
             "format_id": "app.install",
+            "blueprint_ids": ["google-ads.app"],
             "category": "app",
             "resource_type": "campaign",
             "coverage": "partial_dry_run",
@@ -2187,6 +2206,7 @@ def google_ad_format_catalog() -> list[dict[str, Any]]:
         },
         {
             "format_id": "app.engagement",
+            "blueprint_ids": ["google-ads.app"],
             "category": "app",
             "resource_type": "campaign",
             "coverage": "partial_dry_run",
@@ -2198,6 +2218,7 @@ def google_ad_format_catalog() -> list[dict[str, Any]]:
         },
         {
             "format_id": "app.ad",
+            "blueprint_ids": ["google-ads.app"],
             "category": "app",
             "resource_type": "ad",
             "coverage": "supported_dry_run",
@@ -2214,6 +2235,7 @@ def google_ad_format_catalog() -> list[dict[str, Any]]:
         # complete campaign workflow.
         {
             "format_id": "demand_gen",
+            "blueprint_ids": ["google-ads.demand_gen_multi_asset", "google-ads.demand_gen_carousel", "google-ads.demand_gen_video_responsive", "google-ads.demand_gen_product"],
             "category": "demand_gen",
             "resource_type": "campaign",
             "coverage": "partial_dry_run",
@@ -2225,6 +2247,7 @@ def google_ad_format_catalog() -> list[dict[str, Any]]:
         },
         {
             "format_id": "hotel",
+            "blueprint_ids": ["google-ads.hotel"],
             "category": "hotel",
             "resource_type": "campaign",
             "coverage": "partial_dry_run",
@@ -2236,6 +2259,7 @@ def google_ad_format_catalog() -> list[dict[str, Any]]:
         },
         {
             "format_id": "local",
+            "blueprint_ids": ["google-ads.local"],
             "category": "local",
             "resource_type": "campaign",
             "coverage": "partial_dry_run",
@@ -2247,6 +2271,7 @@ def google_ad_format_catalog() -> list[dict[str, Any]]:
         },
         {
             "format_id": "smart",
+            "blueprint_ids": ["google-ads.smart"],
             "category": "smart",
             "resource_type": "campaign",
             "coverage": "partial_dry_run",
@@ -2258,6 +2283,7 @@ def google_ad_format_catalog() -> list[dict[str, Any]]:
         },
         {
             "format_id": "travel",
+            "blueprint_ids": ["google-ads.travel"],
             "category": "travel",
             "resource_type": "campaign",
             "coverage": "partial_dry_run",
@@ -2269,6 +2295,7 @@ def google_ad_format_catalog() -> list[dict[str, Any]]:
         },
         {
             "format_id": "demand_gen.multi_asset_ad",
+            "blueprint_ids": ["google-ads.demand_gen_multi_asset"],
             "category": "demand_gen",
             "resource_type": "ad",
             "coverage": "supported_dry_run",
@@ -2281,6 +2308,7 @@ def google_ad_format_catalog() -> list[dict[str, Any]]:
         },
         {
             "format_id": "demand_gen.carousel_ad",
+            "blueprint_ids": ["google-ads.demand_gen_carousel"],
             "category": "demand_gen",
             "resource_type": "ad",
             "coverage": "supported_dry_run",
@@ -2293,6 +2321,7 @@ def google_ad_format_catalog() -> list[dict[str, Any]]:
         },
         {
             "format_id": "demand_gen.video_responsive_ad",
+            "blueprint_ids": ["google-ads.demand_gen_video_responsive"],
             "category": "demand_gen",
             "resource_type": "ad",
             "coverage": "supported_dry_run",
@@ -2305,6 +2334,7 @@ def google_ad_format_catalog() -> list[dict[str, Any]]:
         },
         {
             "format_id": "demand_gen.product_ad",
+            "blueprint_ids": ["google-ads.demand_gen_product"],
             "category": "demand_gen",
             "resource_type": "ad",
             "coverage": "supported_dry_run",
@@ -2317,6 +2347,7 @@ def google_ad_format_catalog() -> list[dict[str, Any]]:
         },
         {
             "format_id": "hotel.ad",
+            "blueprint_ids": ["google-ads.hotel"],
             "category": "hotel",
             "resource_type": "ad",
             "coverage": "supported_dry_run",
@@ -2329,6 +2360,7 @@ def google_ad_format_catalog() -> list[dict[str, Any]]:
         },
         {
             "format_id": "local.ad",
+            "blueprint_ids": ["google-ads.local"],
             "category": "local",
             "resource_type": "ad",
             "coverage": "supported_dry_run",
@@ -2341,6 +2373,7 @@ def google_ad_format_catalog() -> list[dict[str, Any]]:
         },
         {
             "format_id": "smart.ad",
+            "blueprint_ids": ["google-ads.smart"],
             "category": "smart",
             "resource_type": "ad",
             "coverage": "supported_dry_run",
@@ -2353,6 +2386,7 @@ def google_ad_format_catalog() -> list[dict[str, Any]]:
         },
         {
             "format_id": "travel.ad",
+            "blueprint_ids": ["google-ads.travel"],
             "category": "travel",
             "resource_type": "ad",
             "coverage": "supported_dry_run",
@@ -2365,6 +2399,7 @@ def google_ad_format_catalog() -> list[dict[str, Any]]:
         },
         {
             "format_id": "local_services",
+            "blueprint_ids": [],
             "category": "local_services",
             "resource_type": "campaign",
             "coverage": "declared_only",
@@ -2374,6 +2409,27 @@ def google_ad_format_catalog() -> list[dict[str, Any]]:
             "source_document": "Google Ads API v24 AdvertisingChannelType",
         },
     ]
+
+    for entry in entries:
+        channel = entry["category"].upper()
+        if channel in GOOGLE_CAMPAIGN_CREATION_LIMITS:
+            entry["creation_available"] = False
+            entry["creation_limitation"] = dict(GOOGLE_CAMPAIGN_CREATION_LIMITS[channel])
+            entry["gaps"] = [entry["creation_limitation"]["reason"], *entry.get("gaps", [])]
+        if entry["format_id"] == "local_services":
+            entry["objective_values"] = ["LOCAL_SERVICES"]
+            entry["creation_available"] = False
+            entry["creation_limitation"] = {
+                "reason": "当前连接器为 v24；Local Services PMax 创建需 v26 参数合同，尚未接入。",
+                "source_url": (
+                    "https://developers.google.com/google-ads/api/docs/campaigns/"
+                    "local-service-campaigns"
+                ),
+            }
+            entry["gaps"] = [entry["creation_limitation"]["reason"]]
+        if entry["format_id"] == "search.expanded_text_ad":
+            entry["gaps"] = ["Google 已停止新建及编辑 Expanded Text Ad；请使用 Responsive Search Ad。"]
+    return entries
 
 
 def google_asset_schema() -> dict[str, Any]:

@@ -10,9 +10,9 @@ reference_scope: [Meta, Facebook, Instagram]
 
 在当前仓库契约中：
 
-- 营销活动报告接受营销活动 ID、日期预设和行数限制。
+- Campaign 报告接受已授权 account、Campaign ID、日期预设/范围、`time_increment` 和行数限制；`effective_status` 可以限定 Campaign 当前有效状态。此状态不是历史报表日期当天的状态快照。依据当前 `meta_get_campaign_report` Tool 契约 `2.2.0`，日期预设使用 schema 中的规范枚举，最终可用字段仍应以运行时 schema 为准。
 - 广告组和广告报告接受其资源 ID、日期范围、请求的字段和行数限制。
-- 报告 Tools 不暴露 `breakdowns`、`action_breakdowns`、`time_increment` 或可配置的归因窗口。请勿声称 Agent 通过这些 Tools 查询了年龄、投放位置、设备、操作类型细分或自定义归因窗口。仅在用户提供的/导出的细分数据其来源和查询设置已标识时，才对其进行解析。
+- 报告 Tools 不暴露 `breakdowns`、`action_breakdowns` 或可配置的归因窗口。请勿声称 Agent 通过这些 Tools 查询了年龄、投放位置、设备、操作类型细分或自定义归因窗口。仅在用户提供的/导出的细分数据其来源和查询设置已标识时，才对其进行解析。
 - 报告响应限制是最大值。如果返回的行数达到该限制，除非响应证明结果完整，否则将完整性视为未知（Unknown）；请缩小范围或请求合适的导出。
 - 离线后备数据被标记为 `data_status: offline_no_client` 和 `simulated: true`；它不是来自用户 Meta 账号的证据。
 

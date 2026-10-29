@@ -13,12 +13,19 @@ from starlette.concurrency import run_in_threadpool
 from agents.deployments.advertising.api.context import ApiContext
 from agents.deployments.advertising.api.progress import public_run_view
 from agents.agent_platform.evals.regression import RegressionAssertions
+from agents.applications.advertising.persistence.feedback_review_pages import FeedbackReviewQuery
 from agents.deployments.advertising.api.models import (
     ConversationFeedbackRequest,
     ConversationFeedbackReviewRequest,
     SessionDeleteRequest,
     SessionRenameRequest,
 )
+
+
+def _feedback_review_time(value: Optional[datetime]) -> Optional[str]:
+    if value is None:
+        return None
+    return value.replace(tzinfo=value.tzinfo or timezone.utc).astimezone(timezone.utc).isoformat()
 
 
 def create_sessions_router(context: ApiContext) -> APIRouter:
@@ -213,16 +220,31 @@ def create_sessions_router(context: ApiContext) -> APIRouter:
         x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
         status: str = Query("pending", max_length=16),
         limit: int = Query(50, ge=1, le=100),
+        page: Optional[int] = Query(None, ge=1, le=10000),
+        q: str = Query('', max_length=200),
+        since: Optional[datetime] = Query(None),
+        until: Optional[datetime] = Query(None),
     ):
         principal = context.authorize_request(x_api_key, http_request)
         context.require_permission(principal, "feedback.review")
-        if status not in {"pending", "candidate", "dismissed"}:
+        if status not in {"pending", "candidate", "dismissed", "all"}:
             raise HTTPException(status_code=422, detail="反馈审核状态不合法")
         runtime = context.runtime()
-        getter = getattr(runtime, "list_conversation_feedback_review_queue", None)
+        paged = page is not None or bool(q or since or until) or status == 'all'
+        method = ('page_conversation_feedback_review_queue' if paged
+                  else 'list_conversation_feedback_review_queue')
+        getter = getattr(runtime, method, None)
         if not callable(getter):
             raise HTTPException(status_code=503, detail="反馈审核服务未初始化")
         try:
+            if paged:
+                filters = FeedbackReviewQuery(
+                    tenant_id=principal.tenant_id, status=status, page=page or 1,
+                    limit=limit, search=q, since=_feedback_review_time(since),
+                    until=_feedback_review_time(until),
+                )
+                result = await run_in_threadpool(getter, filters)
+                return {'status': status, **context.redact(result)}
             items = await run_in_threadpool(
                 getter,
                 tenant_id=principal.tenant_id,

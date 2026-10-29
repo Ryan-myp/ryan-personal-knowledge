@@ -878,12 +878,17 @@ class GoogleToolSource(BaseProviderToolSource):
             ),
             method_tool(
                 namespace="google-ads", skill="google-ads-api-expert",
-                name="google_list_campaign_budgets", description="查询 Google Ads CampaignBudget 列表。",
+                name="google_list_campaign_budgets",
+                description=(
+                    "查询 Google Ads CampaignBudget 列表，可按 name 精确过滤。"
+                ),
                 method_name="list_campaign_budgets", result_key="budgets",
                 properties=budget_schema["properties"], required=["customer_id"],
                 action="list", resource_type="campaign_budget", intent_types=["list_campaign_budgets"],
                 traits=["read", "campaign_budget"],
-                argument_builder=lambda _ctx, data: ((), {"page_size": data.get("limit", 100)}),
+                argument_builder=lambda _ctx, data: ((), {
+                    "page_size": data.get("limit", 100), "name": data.get("name"),
+                }),
             ),
             method_tool(
                 namespace="google-ads", skill="google-ads-api-expert",
@@ -2370,7 +2375,7 @@ class GoogleToolSource(BaseProviderToolSource):
             namespace="google-ads",
             description="创建 Google Ads Campaign。",
             input_schema=ToolSchema(**google_campaign_schema()),
-            contract_version="1.5.1",
+            contract_version="1.6.0",
             action="create", resource_type="campaign",
             intent_types=["create_campaign", "create_campaign_only"],
             intent_aliases=[

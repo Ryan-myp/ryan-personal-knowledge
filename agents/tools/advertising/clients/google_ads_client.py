@@ -10,6 +10,8 @@ Customer → Campaign → AdGroup → Ad
 
 from __future__ import annotations
 
+from .google_creation_support import GOOGLE_CAMPAIGN_CREATION_LIMITS
+
 import logging
 import time
 import json
@@ -3877,8 +3879,20 @@ class GoogleAdsAPIClient(BasePlatformClient):
             "reference_count": budget.get("referenceCount", budget.get("reference_count")),
         }
 
-    def list_campaign_budgets(self, page_size: int = 100) -> list[dict]:
-        """List customer CampaignBudget resources through GAQL."""
+    @staticmethod
+    def _gaql_string_literal(value: str) -> str:
+        """Return one safely escaped GAQL string literal."""
+        if not isinstance(value, str) or not value.strip() or len(value) > 255:
+            raise ValueError("budget name filter must contain 1 to 255 characters")
+        if any(ord(character) < 32 or ord(character) == 127 for character in value):
+            raise ValueError("budget name filter must not contain control characters")
+        escaped = value.replace("\\", "\\\\").replace("'", "\\'")
+        return f"'{escaped}'"
+
+    def list_campaign_budgets(
+        self, page_size: int = 100, name: str | None = None,
+    ) -> list[dict]:
+        """List CampaignBudget resources, optionally matching one exact name."""
         query = (
             "SELECT campaign_budget.id, campaign_budget.resource_name, "
             "campaign_budget.name, campaign_budget.amount_micros, "
@@ -3886,6 +3900,8 @@ class GoogleAdsAPIClient(BasePlatformClient):
             "campaign_budget.status, campaign_budget.reference_count "
             "FROM campaign_budget"
         )
+        if name is not None:
+            query += f" WHERE campaign_budget.name = {self._gaql_string_literal(name)}"
         return [self._normalize_campaign_budget(row) for row in self._search_all(query, page_size=page_size)]
 
     def get_campaign_budget(self, budget_id: str) -> dict:
@@ -4050,6 +4066,8 @@ class GoogleAdsAPIClient(BasePlatformClient):
                 "Unsupported Google advertising_channel_type: "
                 f"{advertising_channel_type}"
             )
+        if live and advertising_channel_type in GOOGLE_CAMPAIGN_CREATION_LIMITS:
+            raise ValueError(GOOGLE_CAMPAIGN_CREATION_LIMITS[advertising_channel_type]["reason"])
         if brand_guidelines_enabled is not None and not isinstance(
             brand_guidelines_enabled, bool
         ):
@@ -4440,7 +4458,10 @@ class GoogleAdsAPIClient(BasePlatformClient):
             return {
                 "mode": "dry_run",
                 "execution_status": "planned",
-                "live_support": True,
+                "live_support": advertising_channel_type not in GOOGLE_CAMPAIGN_CREATION_LIMITS,
+                "creation_limitation": GOOGLE_CAMPAIGN_CREATION_LIMITS.get(
+                    advertising_channel_type
+                ),
                 "campaign_id": f"customers/{customer}/campaigns/-1",
                 "budget_id": budget_resource_name,
                 "operation": {

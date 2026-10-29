@@ -1296,7 +1296,7 @@ class TestRuntimeQuery:
         result = rt.run("列出 TikTok campaign", account_id="t1")
         assert result["results"] == []
         assert result["tool_results"] == []
-        assert model.tool_names[0] == ()
+        assert model.tool_names[0] == ("agent_discover_tools",)
 
     def test_secret_text_is_redacted_before_llm_and_session(self):
         model = ScriptedHarnessModel(ModelTurn(content="收到。"))
@@ -2631,6 +2631,7 @@ class TestIterationContracts:
             'agent_readonly_recipe',
             'custom_meta_insight',
             'agent_request_input',
+            'agent_discover_tools',
         }
         assert rt.tool_executor.execute(ToolContext("s1", "u1"), "custom_meta_insight", {}).data == {
             "source": "custom"
@@ -2649,6 +2650,7 @@ class TestIterationContracts:
             'agent_knowledge_search',
             'agent_readonly_recipe',
             'agent_request_input',
+            'agent_discover_tools',
         }
         assert not hasattr(rt, "intent_router")
 
@@ -2694,6 +2696,7 @@ class TestIterationContracts:
             'agent_readonly_recipe',
             'custom_insight',
             'agent_request_input',
+            'agent_discover_tools',
         }
         result = rt.tool_executor.execute(
             ToolContext("s1", "u1"), "custom_insight", {}

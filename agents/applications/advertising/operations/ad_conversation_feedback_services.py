@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from typing import Any, Optional
+from agents.applications.advertising.persistence.feedback_review_pages import FeedbackReviewQuery
 
 
 class AdConversationFeedbackServices:
@@ -66,6 +67,13 @@ class AdConversationFeedbackServices:
             user_id=str(user_id),
             tenant_id=str(tenant_id),
         )
+
+    def page_conversation_feedback_review_queue(self, filters: FeedbackReviewQuery) -> dict[str, Any]:
+        manager = self.runtime._session_manager
+        getter = getattr(manager, 'page_conversation_feedback_review_queue', None)
+        if not callable(getter):
+            raise RuntimeError('conversation feedback review is unavailable')
+        return self.runtime._redact_for_persistence(getter(filters))
 
     def list_conversation_feedback_review_queue(
         self, *, tenant_id: str, status: str, limit: int,

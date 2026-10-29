@@ -1033,7 +1033,7 @@ class TikTokToolSource(BaseProviderToolSource):
                 requires_any_of=tiktok_lead_ad_schema()["requires_any_of"],
                 action="create", resource_type="ad", parent_resource_type="ad_group",
                 resource_id_field="ad_id", parent_resource_id_field="adgroup_id",
-                intent_types=["create_lead_ad", "create_campaign"],
+                intent_types=["create_lead_ad"],
                 activation_rules=[
                     {"field": "objective", "aliases": ["objective_type"], "in": [
                         "leads", "LEAD_GENERATION",
@@ -1289,7 +1289,12 @@ class TikTokToolSource(BaseProviderToolSource):
         # legacy ad-format Tools cannot become parallel nodes when a complete
         # Smart+ request also contains a video/image format.
         smart_plus_objectives = [
-            "APP_PROMOTION", "WEB_CONVERSIONS", "TRAFFIC", "SALES", "PRODUCT_SALES",
+            "APP_PROMOTION", "WEB_CONVERSIONS", "TRAFFIC", "SALES",
+            "PRODUCT_SALES", "LEAD_GENERATION",
+        ]
+        smart_plus_selections = [
+            *smart_plus_objectives, "app", "traffic", "sales", "product sales",
+            "web conversions", "leads",
         ]
         all_in_one_objectives = ["REACH", "VIDEO_VIEWS", "ENGAGEMENT"]
 
@@ -1372,7 +1377,7 @@ class TikTokToolSource(BaseProviderToolSource):
             activation_rules=[{
                 "if": {
                     "objective_type": {"aliases": ["objective"], "not_in": [
-                        "APP_PROMOTION", "TRAFFIC", "traffic", "SALES", "sales", "PRODUCT_SALES", "product sales", "WEB_CONVERSIONS", "web conversions",
+                        *smart_plus_selections,
                         *all_in_one_objectives,
                     ]},
                 },
@@ -1451,7 +1456,7 @@ class TikTokToolSource(BaseProviderToolSource):
             activation_rules=[{
                 "if": {
                     "objective_type": {"aliases": ["objective"], "not_in": [
-                        "APP_PROMOTION", "app", "TRAFFIC", "traffic", "SALES", "sales", "PRODUCT_SALES", "product sales", "WEB_CONVERSIONS", "web conversions",
+                        *smart_plus_selections,
                         *all_in_one_objectives,
                     ]},
                     "product_source": {"not_in": ["CATALOG", "STORE", "SHOWCASE"]},
@@ -1795,17 +1800,20 @@ class TikTokToolSource(BaseProviderToolSource):
             name="tiktok_smart_plus_create_campaign",
             description=(
                 "使用 TikTok Upgraded Smart+ Campaign API 创建广告系列；支持 App、Web/Traffic、"
-                "Sales 和 Product Sales，live 仅允许创建暂停状态。"
+                "Sales、Product Sales 和 Lead Generation，live 仅允许创建暂停状态。"
             ),
             method_name="create_smart_plus_campaign", result_key="campaign",
-            contract_version="1.6.0",
+            contract_version="1.7.0",
             properties={"account_id": {"type": "string"}, **smart_plus_campaign["properties"]},
             required=["account_id"] + smart_plus_campaign["required"],
             requires=smart_plus_campaign["requires"],
             conditional_rules=smart_plus_campaign["conditional_rules"],
             action="create", resource_type="campaign", resource_id_field="campaign_id",
             intent_types=["create_smart_plus_campaign", "create_campaign", "create_campaign_only"],
-            activation_rules=[{"field": "objective_type", "aliases": ["objective"], "in": [*smart_plus_objectives, "app", "traffic", "sales", "product sales", "web conversions"]}],
+            activation_rules=[{
+                "field": "objective_type", "aliases": ["objective"],
+                "in": smart_plus_selections,
+            }],
             traits=["write", "campaign", "campaign_only", "smart_plus", "smart_plus/campaign/create"],
             write=True, live_support=True, integration_api_version="v1.3",
             readback_tool="tiktok_get_campaign",
@@ -1823,7 +1831,7 @@ class TikTokToolSource(BaseProviderToolSource):
                 "出价和排期由渠道级联规则校验，live 仅允许创建暂停状态。"
             ),
             method_name="create_smart_plus_adgroup", result_key="adgroup",
-            contract_version="1.6.0",
+            contract_version="1.7.0",
             properties={"account_id": {"type": "string"}, **smart_plus_adgroup["properties"]},
             required=["account_id"] + smart_plus_adgroup["required"],
             requires=smart_plus_adgroup["requires"],
@@ -1832,7 +1840,10 @@ class TikTokToolSource(BaseProviderToolSource):
             action="create", resource_type="ad_group", parent_resource_type="campaign",
             resource_id_field="adgroup_id", parent_resource_id_field="campaign_id",
             intent_types=["create_smart_plus_adgroup", "create_campaign", "create_adgroup"],
-            activation_rules=[{"field": "objective_type", "aliases": ["objective"], "in": [*smart_plus_objectives, "app", "traffic", "sales", "product sales", "web conversions"]}],
+            activation_rules=[{
+                "field": "objective_type", "aliases": ["objective"],
+                "in": smart_plus_selections,
+            }],
             traits=["write", "ad_group", "smart_plus", "smart_plus/adgroup/create"],
             write=True, live_support=True, integration_api_version="v1.3",
             readback_tool="tiktok_get_adgroup",
@@ -1850,7 +1861,7 @@ class TikTokToolSource(BaseProviderToolSource):
                 "图片等渠道素材引用，live 仅允许创建暂停状态。"
             ),
             method_name="create_smart_plus_ad", result_key="ad",
-            contract_version="1.7.0",
+            contract_version="1.8.0",
             properties={"account_id": {"type": "string"}, **smart_plus_ad["properties"]},
             required=["account_id"] + smart_plus_ad["required"],
             requires=smart_plus_ad["requires"],
@@ -1861,7 +1872,10 @@ class TikTokToolSource(BaseProviderToolSource):
             related_resource_type="campaign",
             related_resource_id_fields=["campaign_id"],
             intent_types=["create_smart_plus_ad", "create_campaign", "create_ad"],
-            activation_rules=[{"field": "objective_type", "aliases": ["objective"], "in": [*smart_plus_objectives, "app", "traffic", "sales", "product sales", "web conversions"]}],
+            activation_rules=[{
+                "field": "objective_type", "aliases": ["objective"],
+                "in": smart_plus_selections,
+            }],
             traits=["write", "ad", "smart_plus", "smart_plus/ad/create"],
             write=True, live_support=True, integration_api_version="v1.3",
             readback_tool="tiktok_get_ad",

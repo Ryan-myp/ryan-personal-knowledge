@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from typing import Optional
+from typing import Literal, Optional
 
 from fastapi import APIRouter, Header, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
@@ -85,6 +85,7 @@ def create_catalog_router(context: ApiContext) -> APIRouter:
         blueprint_id: Optional[str] = Query(None, max_length=200),
         status: Optional[str] = Query(None, max_length=16),
         query: Optional[str] = Query(None, max_length=120),
+        source: Optional[Literal["user", "builtin"]] = Query(None),
         limit: int = Query(100, ge=1, le=200),
     ):
         principal = context.authorize_request(x_api_key, http_request)
@@ -100,6 +101,7 @@ def create_catalog_router(context: ApiContext) -> APIRouter:
             blueprint_id=blueprint_id,
             status=status,
             query=query,
+            source=source,
             limit=limit,
         )
         return {

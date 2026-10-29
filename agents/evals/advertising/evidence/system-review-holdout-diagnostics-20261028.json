@@ -1,0 +1,87 @@
+{
+  "schema_version": "agent-regression-report/v1",
+  "mode": "model_backed_offline_providers",
+  "complete": true,
+  "completed_cases": 3,
+  "provider_e2e": false,
+  "total": 3,
+  "passed": 1,
+  "failed": 2,
+  "ungraded": 0,
+  "error": 0,
+  "cases": [
+    {
+      "id": "holdout-budget-retraction",
+      "status": "passed",
+      "failures": [],
+      "checks": 6,
+      "tool_call_count": 0,
+      "tool_names": [],
+      "phase_ms": {
+        "run_wall": 55869.109,
+        "tool_duration_sum": 0.0,
+        "model": 55349.2,
+        "model_prepare": 482.22,
+        "context_build": 121.978,
+        "run_event_persistence": 6.03
+      },
+      "duration_ms": 56674.089
+    },
+    {
+      "id": "holdout-report-filter-followup",
+      "status": "failed",
+      "failures": [
+        "required_tool:meta_get_campaign_report"
+      ],
+      "checks": 6,
+      "tool_call_count": 1,
+      "tool_names": [
+        "meta_get_campaign_report"
+      ],
+      "phase_ms": {
+        "run_wall": 140614.687,
+        "tool_duration_sum": 4.027,
+        "model": 139935.7,
+        "model_prepare": 652.48,
+        "context_build": 262.814,
+        "run_event_persistence": 4.057
+      },
+      "duration_ms": 141170.903
+    },
+    {
+      "id": "holdout-topic-switch-does-not-reuse-provider-scope",
+      "status": "failed",
+      "failures": [
+        "required_tool:agent_knowledge_search"
+      ],
+      "checks": 6,
+      "tool_call_count": 0,
+      "tool_names": [],
+      "phase_ms": {
+        "run_wall": 139575.782,
+        "tool_duration_sum": 5.32,
+        "model": 138598.99,
+        "model_prepare": 946.62,
+        "context_build": 289.476,
+        "run_event_persistence": 4.26
+      },
+      "duration_ms": 140037.271
+    }
+  ],
+  "gate_passed": false,
+  "latency_samples": 3,
+  "latency_p50_ms": 140037.271,
+  "latency_p95_ms": 141170.903,
+  "release_ready": false,
+  "release_blockers": [
+    "release_gate_not_configured"
+  ],
+  "phase_p95_ms": {
+    "run_wall": 140614.687,
+    "tool_duration_sum": 5.32,
+    "model": 139935.7,
+    "model_prepare": 946.62,
+    "context_build": 289.476,
+    "run_event_persistence": 6.03
+  }
+}

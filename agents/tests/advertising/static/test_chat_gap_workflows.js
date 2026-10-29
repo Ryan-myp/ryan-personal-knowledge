@@ -58,10 +58,11 @@ function workflowEnvironment(apiFetch) {
         querySelectorAll() {
             return [];
         },
+        querySelector() { return null; },
         addEventListener() {},
     };
-    const context = { document, apiFetch, console, Date };
-    for (const filename of ['chat-knowledge.js', 'chat-feedback.js']) {
+    const context = { document, apiFetch, console, Date, URLSearchParams };
+    for (const filename of ['chat-resource-catalogs.js', 'chat-knowledge.js', 'chat-management-catalogs.js', 'chat-feedback.js']) {
         const source = path.resolve(
             __dirname,
             '../../../deployments/advertising/static/js',
@@ -73,6 +74,7 @@ function workflowEnvironment(apiFetch) {
             { filename },
         );
     }
+    context.renderResourceCatalog = (_kind, rows) => { context.catalogRows = rows; };
     return { context, elements };
 }
 
@@ -145,13 +147,13 @@ test('knowledge catalog uses readable type labels and preserves native resource 
         knowledge_type: 'test_account_e2e',
         excerpt: '使用 adset_id 查询 Ad Set。',
     }]);
-    const list = elements.get('knowledgeList');
-    const row = list.children[1];
+    const row = context.catalogRows[0];
+    assert.equal(elements.has('knowledgeReader'), false);
+    context.selectKnowledgeResult('meta-ad-set');
     const reader = elements.get('knowledgeReader');
-    assert.match(list.children[0].children[0].textContent, /投放配置/);
-    assert.equal(row.children[0].textContent, 'Meta Campaign 与 Ad Set 查询');
-    assert.match(row.children[1].textContent, /测试账号 E2E/);
-    assert.doesNotMatch(row.children[1].textContent, /campaign-and-ad-set-operations/);
+    assert.match(row.cells[1], /投放配置/);
+    assert.equal(row.title, 'Meta Campaign 与 Ad Set 查询');
+    assert.doesNotMatch(row.cells[1], /campaign-and-ad-set-operations/);
     assert.match(reader.children[0].children[0].textContent, /Meta \/ 投放配置 \/ 测试账号 E2E/);
 
     const template = fs.readFileSync(path.resolve(
@@ -178,6 +180,7 @@ test('knowledge source and managed platform use readable labels while preserving
         source: 'Meta Marketing API 官方文档',
         source_ref: 'https://developers.facebook.com/docs/marketing-api/',
     }]);
+    context.selectKnowledgeResult('meta-campaign');
     const reader = elements.get('knowledgeReader');
     assert.match(reader.children[0].children[3].textContent, /Meta Marketing API 官方文档/);
     assert.doesNotMatch(reader.children[0].children[3].textContent, /https:\/\//);
@@ -190,15 +193,17 @@ test('knowledge source and managed platform use readable labels while preserving
         status: 'published',
         version: '1.0.0',
     }]);
-    const managed = elements.get('knowledgeManagedList').children[0];
-    assert.match(managed.children[0].children[1].textContent, /已发布 · Meta · v1\.0\.0/);
+    const managed = context.catalogRows.find(item=>item.filters.source==='managed');
+    assert.equal(managed.cells[0], 'Meta');
+    assert.equal(managed.cells[2], '1.0.0');
+    assert.equal(managed.cells[3], '已发布');
 });
 
 test('feedback regression candidates require human-written expected behavior', async () => {
     const calls = [];
     const { context, elements } = workflowEnvironment(async (endpoint, options = {}) => {
         calls.push([endpoint, options]);
-        if (endpoint === '/feedback/review?status=pending&limit=100') {
+        if (endpoint === '/feedback/review?status=pending&page=1&limit=10') {
             return { items: [] };
         }
         return {};
@@ -226,7 +231,7 @@ test('feedback regression candidates require human-written expected behavior', a
     });
     assert.equal(
         calls[1][0],
-        '/feedback/review?status=pending&limit=100',
+        '/feedback/review?status=pending&page=1&limit=10',
     );
 });
 
@@ -243,4 +248,67 @@ test('dismissed feedback does not advertise an unsupported pending transition', 
     const actions = elements.get('feedbackReviewList').children[0].children.at(-1);
     assert.equal(actions.children[1].textContent, '已忽略');
     assert.equal(actions.children[1].disabled, true);
+});
+
+test('feedback filters reset the page and preserve input drafts across page loads', async () => {
+    const calls = [];
+    const {context, elements} = workflowEnvironment(async endpoint => {
+        calls.push(endpoint);
+        const page = new URLSearchParams(endpoint.split('?')[1]).get('page');
+        return {items:[{feedback_id:'one',review_status:'pending'}],
+            pagination:{page:Number(page),limit:10,total:25,pages:3}};
+    });
+    await context.loadFeedbackReviewQueue();
+    const expected = elements.get('feedbackReviewList').children[0].children[3].children[0];
+    expected.value = '未保存的期望行为';
+    expected.listeners.input();
+    await context.changeFeedbackReviewPage(1);
+    assert.match(calls.at(-1), /page=2/);
+    const edited = elements.get('feedbackReviewList').children[0].children[3].children[0];
+    assert.equal(edited.value, '未保存的期望行为');
+    context.document.getElementById('feedbackReviewQuery').value = '预算';
+    context.document.getElementById('feedbackReviewStatus').value = 'all';
+    context.document.getElementById('feedbackReviewRange').value = '7';
+    await context.applyFeedbackReviewFilters();
+    const params = new URLSearchParams(calls.at(-1).split('?')[1]);
+    assert.equal(params.get('page'), '1');
+    assert.equal(params.get('q'), '预算');
+    assert.equal(params.get('status'), 'all');
+    assert(params.get('since'));
+    assert.equal(elements.get('feedbackReviewPrevious').disabled, true);
+});
+
+test('late feedback response cannot overwrite new filters or reopen a closed page', async () => {
+    let release;
+    const first = new Promise(resolve => {release = resolve;});
+    const {context,elements} = workflowEnvironment(() => first);
+    const reading = context.loadFeedbackReviewQueue();
+    context.apiFetch = async () => ({items:[{feedback_id:'new',reason:'NEW'}]});
+    await context.applyFeedbackReviewFilters();
+    release({items:[{feedback_id:'old',reason:'OLD'}]});
+    await reading;
+    assert.equal(elements.get('feedbackReviewList').children[0].children[0].children[0].textContent,'NEW');
+    let finish;
+    context.apiFetch = () => new Promise(resolve => {finish = resolve;});
+    const closed = context.loadFeedbackReviewQueue();
+    context.closeFeedbackTrend();
+    finish({items:[{feedback_id:'closed',reason:'CLOSED'}]});
+    await closed;
+    assert.equal(elements.get('feedbackReviewList').children[0].children[0].children[0].textContent,'NEW');
+});
+
+test('feedback read failure allows retry and keeps unsaved review input', async () => {
+    const {context,elements} = workflowEnvironment(async () => ({items:[{feedback_id:'one'}]}));
+    await context.loadFeedbackReviewQueue();
+    const expected=elements.get('feedbackReviewList').children[0].children[3].children[0];
+    expected.value='保留草稿';
+    expected.listeners.input();
+    context.apiFetch=async()=>{throw new Error('暂时不可用');};
+    await context.loadFeedbackReviewQueue();
+    assert.match(elements.get('feedbackReviewStatusText').textContent,/暂时不可用/);
+    assert.equal(elements.get('feedbackReviewList').attributes['aria-busy'],'false');
+    assert.equal(elements.get('feedbackReviewNext').disabled,true);
+    context.apiFetch=async()=>({items:[{feedback_id:'one'}]});
+    await context.loadFeedbackReviewQueue();
+    assert.equal(elements.get('feedbackReviewList').children[0].children[3].children[0].value,'保留草稿');
 });

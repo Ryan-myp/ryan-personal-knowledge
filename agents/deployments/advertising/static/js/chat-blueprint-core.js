@@ -43,6 +43,15 @@ function reconcileLookupSelection(selectedValue, options, multiple) {
             }
             overlay.classList.add('active');
             overlay.setAttribute('aria-hidden', 'false');
+            setTemplateManagerView('list');
+            if (blueprintState.mode === 'templates') {
+                templateBrowser.navigationSequence++;
+                if (templateBrowser.loaded) renderTemplateLibrary();
+                else loadTemplateLibrary();
+                return;
+            }
+            const canReuse = blueprintState.catalogLoaded && (blueprintState.mode === 'templates' || blueprintState.selected) && !provider && !blueprintId;
+            if (canReuse) { renderBlueprintList(); renderBlueprintEditor(); return; }
             loadCreationBlueprints(blueprintId || null).then(() => {
                 if (!provider) return;
                 const item = blueprintState.items.find(candidate =>
@@ -60,6 +69,7 @@ function reconcileLookupSelection(selectedValue, options, multiple) {
         }
 
         function closeBlueprintManager() {
+            templateBrowser.navigationSequence++;
             document.getElementById('blueprintOverlay')?.classList.remove('active');
             document.getElementById('blueprintOverlay')?.setAttribute('aria-hidden', 'true');
             if (typeof clearCreationImport === 'function') clearCreationImport();
@@ -92,9 +102,14 @@ function reconcileLookupSelection(selectedValue, options, multiple) {
         }
 
         function blueprintFieldDefault(field) {
-            if (field && Object.prototype.hasOwnProperty.call(field, 'default')) return field.default;
+            if (field?.presentation === 'derived_readonly' && field.options?.length === 1) return field.options[0];
             const schema = blueprintToolFieldSchema(field?.tool_ref).schema || {};
-            if (Object.prototype.hasOwnProperty.call(schema, 'default')) return schema.default;
+            const value = field && Object.prototype.hasOwnProperty.call(field, 'default') ? field.default : schema.default;
+            if (value !== undefined) {
+                const values = Array.isArray(value) ? value : [value];
+                if (field?.options?.length && values.some(item => !field.options.includes(item))) return undefined;
+                return value;
+            }
             return schema.type === 'boolean' ? false : undefined;
         }
 
@@ -779,7 +794,7 @@ function reconcileLookupSelection(selectedValue, options, multiple) {
                     const useChoiceTiles = spec.type === 'array' || options.length <= 6;
                     if (useChoiceTiles) {
                         const multiple = spec.type === 'array';
-                        control = renderChoiceTiles(options, current[name], multiple, option => spec.option_labels?.[String(option)] || '', selected => {
+                        control = renderChoiceControl(options, current[name], multiple, option => spec.option_labels?.[String(option)] || '', selected => {
                             if (selected === '' || (Array.isArray(selected) && !selected.length)) delete current[name];
                             else current[name] = selected;
                             onChange({ ...current });

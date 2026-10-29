@@ -1,0 +1,69 @@
+{
+  "id": "tiktok.single_image",
+  "version": "1.0.0",
+  "provider": "tiktok",
+  "ad_format": "SINGLE_IMAGE_AD",
+  "title": "TikTok 单图广告（常规 Campaign）",
+  "description": "通过常规 Campaign、Ad Group 和独立素材 Tool 配置广告；账户资格、目标与版位兼容性以渠道校验为准。",
+  "match_terms": [
+    "常规单图广告"
+  ],
+  "tools": [
+    "tiktok_create_campaign",
+    "tiktok_create_adgroup",
+    "tiktok_create_single_image_ad"
+  ],
+  "resources": [
+    "campaign",
+    "ad_group",
+    "ad"
+  ],
+  "fields": [
+    {
+      "path": "campaign.name",
+      "tool_ref": "tiktok_create_campaign.name",
+      "label": "Campaign 名称",
+      "required": true
+    },
+    {
+      "path": "ad_group.name",
+      "tool_ref": "tiktok_create_adgroup.name",
+      "label": "Ad Group 名称",
+      "required": true
+    },
+    {
+      "path": "ad.name",
+      "tool_ref": "tiktok_create_single_image_ad.name",
+      "label": "Ad 名称",
+      "required": true
+    },
+    {
+      "path": "ad.ad_format",
+      "tool_ref": "tiktok_create_single_image_ad.ad_format",
+      "label": "素材形式",
+      "required": true,
+      "source": "enum",
+      "options": [
+        "SINGLE_IMAGE"
+      ],
+      "presentation": "derived_readonly"
+    },
+    {
+      "path": "ad.image_ids",
+      "tool_ref": "tiktok_create_single_image_ad.image_ids",
+      "label": "图片素材",
+      "required": true,
+      "source": "lookup",
+      "lookup_tool": "tiktok_list_images",
+      "presentation": "asset_picker"
+    },
+    {
+      "path": "ad.text",
+      "tool_ref": "tiktok_create_single_image_ad.text",
+      "label": "广告文案",
+      "required": true,
+      "presentation": "object_editor"
+    }
+  ],
+  "rules": []
+}

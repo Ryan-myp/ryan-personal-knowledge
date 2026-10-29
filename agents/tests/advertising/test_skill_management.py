@@ -44,7 +44,7 @@ def test_builtin_skill_catalog_lists_standard_packages_as_read_only():
         "offer-economics",
     }
     assert all(item["source"] == "builtin" and item["editable"] is False for item in items)
-    detail = catalog.get_version("google-ads-api-expert", "2.0.3")
+    detail = catalog.get_version("google-ads-api-expert", "2.1.0")
     assert detail["files"]["SKILL.md"]["encoding"] == "base64"
     assert detail["location"] == "channels/google-ads"
     creative = catalog.get_version("creative-strategy", "1.0.1")
@@ -55,7 +55,7 @@ def test_builtin_skill_catalog_lists_standard_packages_as_read_only():
     assert "references/production-workflow.md" in production["files"]
     assert "references/visual-quality-review.md" in production["files"]
     assert "references/brand-asset-check.md" in production["files"]
-    diagnostics = catalog.get_version("account-diagnostics", "1.4.0")
+    diagnostics = catalog.get_version("account-diagnostics", "1.5.0")
     assert diagnostics["location"] == "practices/account-diagnostics"
     assert "references/google-report-interpretation.md" in diagnostics["files"]
     assert "references/meta-insights-interpretation.md" in diagnostics["files"]
