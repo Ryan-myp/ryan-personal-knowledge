@@ -163,7 +163,7 @@
             document.getElementById('skillUnpublishButton')?.toggleAttribute('disabled', skillState.readOnly || !skillState.selected);
             document.getElementById('skillCloneButton')?.toggleAttribute('disabled', !skillState.selected);
             const clone = document.getElementById('skillCloneButton');
-            if (clone) clone.textContent = skillState.readOnly ? '复制为新版本' : '编辑新版本';
+            if (clone) clone.textContent = '编辑';
         }
 
         function cloneSelectedBuiltin() {
@@ -183,7 +183,7 @@
             renderSkillList();
             renderSkillFiles();
             updateSkillEditorState();
-            showSkillNotice('已复制当前内容。修改后点击“保存为新版本”，不会改动原版本。');
+            showSkillNotice('正在编辑。保存为新版本后，发布即可生效，原版本保留。');
         }
 
         function renderSkillFiles() {
@@ -401,7 +401,7 @@
         async function saveSkillDraft() {
             if (skillSavePending) return;
             if (skillState.readOnly || skillState.browsingOnly) {
-                showSkillNotice('请先复制为新版本，再修改和保存。', true);
+                showSkillNotice('请先点击“编辑”，再修改和保存。', true);
                 return;
             }
             const sequence = skillDetailSequence;
@@ -448,7 +448,7 @@
         function renderSkillEvaluation(detail) {
             const summary = document.getElementById('skillEvalSummary');
             if (detail.source === 'builtin') {
-                summary.textContent = `部署内置版本 · ${detail.location || '标准 Skill 目录'} · 只读；复制后可作为租户新版本编辑。`;
+                summary.textContent = '内置原版。点击“编辑”修改内容；保存新版本并发布后，在当前工作区生效。';
                 return;
             }
             const evalStatus = detail.evaluation_status || 'not_run';
@@ -492,8 +492,8 @@
             try {
                 const { skillName, version } = skillState.selected;
                 await apiFetch(`/skills/${encodeURIComponent(skillName)}/versions/${encodeURIComponent(version)}/publish`, { method: 'POST' });
-                showSkillNotice(`已发布 ${skillName}@${version}；若它是旧版本，这也是一次显式回滚。`);
                 await loadManagedSkills({ skillName, version });
+                showSkillNotice(`已发布 ${skillName}@${version}；若它是旧版本，这也是一次显式回滚。`);
             } catch (error) { showSkillNotice(error.message, true); }
         }
 
@@ -503,8 +503,8 @@
             try {
                 const { skillName, version } = skillState.selected;
                 await apiFetch(`/skills/${encodeURIComponent(skillName)}/versions/${encodeURIComponent(version)}/unpublish`, { method: 'POST' });
-                showSkillNotice(`已下线 ${skillName}@${version}，版本仍保留，可随后显式回滚。`);
                 await loadManagedSkills({ skillName, version });
+                showSkillNotice(`已下线 ${skillName}@${version}，版本仍保留，可随后显式回滚。`);
             } catch (error) { showSkillNotice(error.message, true); }
         }
 

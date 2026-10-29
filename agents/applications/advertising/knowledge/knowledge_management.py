@@ -50,6 +50,7 @@ _KNOWLEDGE_TYPES = {
     "hierarchy", "constraint", "parameter", "workflow", "best_practice",
     "error_pattern", "case_study", "tip", "general", "bidding_strategy",
     "targeting_strategy", "creative_guide", "business_strategy",
+    "decision_framework", "test_account_e2e",
 }
 
 
@@ -227,18 +228,31 @@ class ManagedKnowledgeManager:
             ) from exc
         return self._public(saved, include_content=True)
 
+    @staticmethod
+    def _next_revision(existing, title, siblings):
+        major, minor, patch = existing.version.split("-", 1)[0].split("+", 1)[0].split(".")
+        versions = {item.version for item in siblings if item.title == title
+                    or (existing.derived_from and item.derived_from == existing.derived_from)}
+        patch = int(patch) + 1
+        while f"{major}.{minor}.{patch}" in versions:
+            patch += 1
+        return f"{major}.{minor}.{patch}"
+
     def update_document(
         self, tenant_id: str, document_id: str, payload: Mapping[str, Any], created_by: str,
     ) -> Optional[dict[str, Any]]:
         existing = self.store.get_knowledge_document(
             document_id, tenant_id=str(tenant_id or "default")
         )
-        if not existing:
+        if not existing or existing.status == "deprecated":
             return None
-        data = self.validate_payload(payload)
+        data = self.validate_payload({**existing.to_dict(), **payload})
         siblings = self.store.list_knowledge_documents(
             str(tenant_id or "default"), limit=500
         )
+        immutable = existing.status == "published" or bool(existing.published_at)
+        if immutable and data["version"] == existing.version:
+            data["version"] = self._next_revision(existing, data["title"], siblings)
         if any(
             item.document_id != existing.document_id
             and item.title == data["title"]
@@ -249,34 +263,29 @@ class ManagedKnowledgeManager:
             raise KnowledgeDocumentError(
                 "同一知识标题的版本已存在，请递增 version 后再保存"
             )
-        if existing.status == "published":
-            now = datetime.now().isoformat()
-            new_id = uuid.uuid4().hex
-            if not data["source_ref"] or data["source_ref"].startswith("managed://"):
-                data["source_ref"] = f"managed://{new_id}"
-            record = KnowledgeDocumentRecord(
-                document_id=new_id,
-                tenant_id=str(tenant_id or "default"),
-                created_by=str(created_by),
-                status="draft",
-                created_at=now,
-                updated_at=now,
-                **data,
-            )
-            try:
-                saved = self.store.create_knowledge_document(record)
-            except PersistenceConflictError as exc:
-                raise KnowledgeDocumentError(
-                    "同一知识标题的版本已存在，请递增 version 后再保存"
-                ) from exc
-            result = self._public(saved, include_content=True)
-            result["versioned_from"] = existing.document_id
-            result["version_mode"] = "new_draft"
-            return result
+        if immutable:
+            return self._create_revision(existing, data, created_by)
         updated = self.store.update_knowledge_document(
             document_id, tenant_id=str(tenant_id or "default"), data=data
         )
         return self._public(updated, include_content=True) if updated else None
+
+    def _create_revision(self, existing, data, created_by):
+        now, new_id = datetime.now().isoformat(), uuid.uuid4().hex
+        if not data["source_ref"] or data["source_ref"].startswith("managed://"):
+            data["source_ref"] = f"managed://{new_id}"
+        record = KnowledgeDocumentRecord(
+            document_id=new_id, tenant_id=existing.tenant_id, created_by=str(created_by),
+            status="draft", created_at=now, updated_at=now, **data,
+        )
+        try:
+            saved = self.store.create_knowledge_document(record)
+        except PersistenceConflictError as exc:
+            raise KnowledgeDocumentError(
+                "同一知识标题的版本已存在，请递增 version 后再保存"
+            ) from exc
+        return {**self._public(saved, include_content=True),
+                "versioned_from": existing.document_id, "version_mode": "new_draft"}
 
     def delete_document(
         self, tenant_id: str, document_id: str,
@@ -531,13 +540,15 @@ class ManagedKnowledgeProvider:
             platforms=platforms,
             knowledge_types=knowledge_types,
             wiki_types=wiki_types,
-            limit=limit,
+            limit=max(1, len(self.base.documents)),
         )
         if tenant_id:
             records = self.store.list_knowledge_documents(
-                str(tenant_id), status="published", limit=limit
+                str(tenant_id), status="published", limit=500
             )
             managed = [self._managed_document(record) for record in records]
+            replaced = self._overridden_builtin_ids(managed)
+            documents = [item for item in documents if item.document_id not in replaced]
             allowed_platforms = {
                 MarkdownWikiKnowledgeProvider._normalize_platform(item)
                 for item in (platforms or [])
@@ -561,6 +572,11 @@ class ManagedKnowledgeProvider:
             ]
             documents.extend(managed)
         return documents[:limit]
+
+    @staticmethod
+    def _overridden_builtin_ids(managed):
+        return {item.derived_from.removeprefix("builtin:") for item in managed
+                if item.derived_from.startswith("builtin:")}
 
     def _published_tenant_context(
         self, tenant_id: str,
@@ -674,10 +690,15 @@ class ManagedKnowledgeProvider:
                     self._query_cache_hits += 1
                     return list(documents)
             self._query_cache_misses += 1
-        all_documents = [*self.base.documents, *managed]
+        replaced = self._overridden_builtin_ids(managed)
+        builtin_documents = [
+            item for item in self.base.documents if item.document_id not in replaced
+        ]
+        builtin_chunks = [item for item in self.base.chunks if item.document_id not in replaced]
+        all_documents = [*builtin_documents, *managed]
         managed_scope = f"tenant:{tenant_key}"
         all_chunks = [
-            *self.base.chunks,
+            *builtin_chunks,
             *managed_chunks,
         ]
         terms = MarkdownWikiKnowledgeProvider._terms(query, intent_type)

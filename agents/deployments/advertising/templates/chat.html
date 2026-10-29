@@ -781,7 +781,7 @@
                     <div class="skill-editor-header">
                         <label>名称 <input id="skillNameInput" maxlength="64" placeholder="例如 growth-planner"></label>
                         <label>版本 <input class="version-input" id="skillVersionInput" maxlength="80" value="1.0.0" placeholder="1.0.0"></label>
-                        <span class="skill-immutable-note">已保存版本不可直接修改，请递增版本号另存</span>
+                        <span class="skill-immutable-note">编辑后保存为新版本，发布后生效，原版本保留</span>
                     </div>
                     <div class="skill-files" id="skillFiles"></div>
                     <div class="skill-editor-footer">
@@ -792,7 +792,7 @@
                         <button class="btn btn-secondary" id="skillUnpublishButton" type="button" onclick="unpublishSelectedSkill()">下线</button>
                         <button class="btn btn-primary" id="skillSaveButton" type="button" onclick="saveSkillDraft()">保存为新版本</button>
                         <button class="btn btn-primary" id="skillPublishButton" type="button" onclick="publishSelectedSkill()">发布 / 回滚</button>
-                        <button class="btn btn-secondary" id="skillCloneButton" type="button" onclick="cloneSelectedBuiltin()">复制为新版本</button>
+                        <button class="btn btn-secondary" id="skillCloneButton" type="button" onclick="cloneSelectedBuiltin()">编辑</button>
                     </div>
                 </div>
             </div>

@@ -11,14 +11,15 @@ const resourceDraftFieldIds = {
 function captureResourceDraft(kind) {
     const fields = Object.fromEntries(resourceDraftFieldIds[kind].map(id =>
         [id, document.getElementById(id)?.value || '']));
-    if (kind === 'knowledge') return {fields, documentId:knowledgeState.editingDocumentId};
+    if (kind === 'knowledge') return {fields, documentId:knowledgeState.editingDocumentId,
+        metadata:{...(knowledgeState.editorMetadata || {})}};
     if (kind === 'mcp') return {fields, serverId:mcpState.selectedId};
     return {fields, files:skillState.files.map(file => ({...file})),
         activeFilePath:skillState.activeFilePath, previewMode:skillState.previewMode};
 }
 
 function restoreResourceDraft(kind, draft) {
-    if (kind === 'knowledge') setKnowledgeEditorMode(draft.documentId);
+    if (kind === 'knowledge') setKnowledgeEditorMode(draft.documentId, draft.metadata);
     if (kind === 'mcp') {
         if (draft.serverId) selectMCPServer(draft.serverId, true);
         else newMCPServer();
@@ -60,10 +61,11 @@ function renderKnowledgeCatalogTable() {
         const actions=[{label:'详情',run:open}];
         if(isManaged && status!=='deprecated') actions.push({label:'编辑',run:()=>editKnowledgeDocument(id)});
         if(isManaged) actions.push({label:status==='published'?'归档':'删除',danger:true,run:()=>deleteKnowledgeDocument(id,status)});
-        else actions.push({label:'复制',run:()=>cloneKnowledgeDocument(item)});
+        else actions.push({label:'编辑',run:()=>editBuiltinKnowledgeDocument(item)},
+            {label:'复制',run:()=>cloneKnowledgeDocument(item)});
         return {title:item.title || item.topic || '未命名知识',subtitle:item.description || (item.tags || []).join(' · '),
             filters:{source,status,category},filterLabels:{source:isManaged?'自建':'内置',status:statusLabel,category:categoryLabel},
-            cells:[knowledgePlatformLabel(item.platform),categoryLabel,item.version || '—',statusLabel,isManaged?'自建':'内置 · 只读'],open,actions};
+            cells:[knowledgePlatformLabel(item.platform),categoryLabel,item.version || '—',statusLabel,isManaged?'自建':'内置'],open,actions};
     });
     renderResourceCatalog('knowledge',rows,{title:'知识库列表',search:false,
         columns:['知识标题','平台','分类','版本','状态','来源'],filters:[{key:'category',label:'分类'},{key:'source',label:'来源'},{key:'status',label:'状态'}]});
@@ -103,7 +105,7 @@ function renderSkillsCatalogTable() {
             search:[item.skill_name,item.description,platform].join(' '),filters:{source,status,platform},
             filterLabels:{source:sourceLabel,status:statusLabel,platform:knowledgePlatformLabel(platform)},
             cells:[knowledgePlatformLabel(platform),item.version,statusLabel,sourceLabel],open,
-            actions:[{label:'详情',run:open},{label:source==='builtin'?'复制':'编辑新版本',run:()=>openSkillCatalogEntry(item,true)}]};
+            actions:[{label:'详情',run:open},{label:'编辑',run:()=>openSkillCatalogEntry(item,true)}]};
     });
     renderResourceCatalog('skills',rows,{title:'Skills 列表',columns:['Skill','平台','版本','状态','来源'],
         filters:[{key:'platform',label:'平台'},{key:'source',label:'来源'},{key:'status',label:'状态'}]});

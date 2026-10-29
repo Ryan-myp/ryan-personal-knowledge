@@ -1,0 +1,97 @@
+{
+  "date": "2026-10-29",
+  "scope": "知识库与 Skills 编辑、版本保存和发布",
+  "external_provider_calls": 0,
+  "external_model_calls": 0,
+  "validation": {
+    "make_ad_agent_check": "passed",
+    "python_tests": 3431,
+    "frontend_tests": 237,
+    "focused_python_tests": 113,
+    "builtin_documents_edit_validated": 86,
+    "provider_contracts": 328,
+    "knowledge_audit": {
+      "pages": 86,
+      "errors": 0,
+      "warnings": 0
+    },
+    "git_diff_check": "passed",
+    "changed_lines_coverage": {
+      "files": {
+        "agents/applications/advertising/knowledge/knowledge_management.py": {
+          "changed_executable_lines": 34,
+          "covered_lines": 32,
+          "missing_lines": [
+            283,
+            284
+          ],
+          "module_line_percent": 83.29
+        },
+        "agents/applications/advertising/persistence/knowledge_store.py": {
+          "changed_executable_lines": 4,
+          "covered_lines": 4,
+          "missing_lines": [],
+          "module_line_percent": 61.95
+        },
+        "agents/deployments/advertising/api/routes/knowledge.py": {
+          "changed_executable_lines": 9,
+          "covered_lines": 9,
+          "missing_lines": [],
+          "module_line_percent": 30.18
+        }
+      },
+      "changed_executable_lines": 47,
+      "covered_lines": 45,
+      "changed_line_percent": 95.74
+    },
+    "quality_delta": {
+      "scope": "changed_python_sources_vs_HEAD",
+      "files_scanned": 9,
+      "baseline_findings": 12,
+      "current_findings": 12,
+      "new_findings": [],
+      "gate_passed": true,
+      "whole_repository_gate": "not_assessed_by_delta_gate"
+    },
+    "whole_repository_qguard": {
+      "passed": false,
+      "files": 784,
+      "findings": 4997,
+      "score": 0,
+      "note": "存量问题，与上一轮全仓扫描计数一致；增量门禁无新增发现"
+    },
+    "browser": {
+      "knowledgeEditedAndPublished": true,
+      "knowledgeUnpublishRestoresBuiltin": true,
+      "skillEditedSavedPublished": true,
+      "skillReferencesPreserved": true,
+      "errors": [],
+      "providerCalls": 0,
+      "liveUserDataChanged": false
+    }
+  },
+  "deployment": {
+    "workspace_revision": "071e4746c81abb571a583571",
+    "modules_match_disk": true,
+    "builtin_full_content_endpoint": true,
+    "user_content_written": false,
+    "host": "0.0.0.0",
+    "port": 8766,
+    "ready": "ready",
+    "config_path": "agents/ad_agent/config.test-live.yaml",
+    "database_path": "agents/ad_agent/ad_agent.db",
+    "session_count_before": 514,
+    "session_count_after": 514,
+    "template_count_before": 14,
+    "template_count_after": 14,
+    "recent_session_ids_preserved": true,
+    "template_ids_preserved": true,
+    "configured_tool_count": 354,
+    "database_backup_created": true,
+    "temporary_test_service_stopped": true
+  },
+  "limitations": [
+    "未验证外部模型生成质量，本轮未进行真实渠道 API 验证",
+    "Skill 发布使用既有 advisory 激活机制，未新增 Provider 执行能力"
+  ]
+}

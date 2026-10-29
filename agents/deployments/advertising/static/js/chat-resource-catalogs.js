@@ -23,10 +23,14 @@ function mergeKnowledgeCatalog(published, managed) {
 }
 
 function nextSkillRevision(name, version, versions) {
+    return nextResourceRevision(version, versions.filter(item => item.skill_name === name).map(item => item.version));
+}
+
+function nextResourceRevision(version, versions = []) {
     const match = /^(\d+)\.(\d+)\.(\d+)/.exec(String(version));
     const major = match ? Number(match[1]) : 1, minor = match ? Number(match[2]) : 0;
     let patch = match ? Number(match[3])+1 : 0;
-    const existing = new Set(versions.filter(item=>item.skill_name===name).map(item=>item.version));
+    const existing = new Set(versions);
     while (existing.has(`${major}.${minor}.${patch}`)) patch++;
     return `${major}.${minor}.${patch}`;
 }

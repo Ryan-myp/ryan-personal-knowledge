@@ -68,6 +68,14 @@ def test_unauthorized_or_ambiguous_account_does_not_invent_channel_authority():
         assert len(context["_agent_tool_namespaces"]) > 1
 
 
+def test_broad_knowledge_candidates_cannot_bypass_initial_schema_budget():
+    selected, _ = _selection(
+        None, "讲解程序化广告中 SSP 和 DSP 的区别，不需要账户数据。",
+        {"google-ads": {"g"}, "meta": {"m"}, "tiktok": {"t"}},
+    )
+    assert len(selected) <= 8
+
+
 def test_successful_read_scope_keeps_channel_when_http_account_was_never_selected():
     selected, context = _selection(
         None, "列出广告组 123 下的 ad 列表",

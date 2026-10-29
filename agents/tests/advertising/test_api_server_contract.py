@@ -1448,7 +1448,7 @@ def test_skill_management_ui_covers_standard_package_lifecycle(fake_server):
         "requestConversationRename", "confirmHistoryRename", "重命名对话", "method: 'PATCH'",
         "deleted_session_ids", "仅影响本地历史记录",
         "保存并发布", "/knowledge/documents", "formatKnowledgeMarkdown",
-        "knowledgeOverlay", "knowledge-console", "内置 · 只读", "复制为新版本",
+        "knowledgeOverlay", "knowledge-console", "内置原版", "编辑后保存为新版本",
         "/skills/builtin/", "managed_skills", "builtin_skills",
         "knowledgeFileInput", "handleKnowledgeFileUpload", "/knowledge/raw",
         "waitForKnowledgeIngest", "view-hidden", "返回知识列表",

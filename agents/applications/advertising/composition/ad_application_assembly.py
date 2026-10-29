@@ -915,9 +915,8 @@ class AdApplicationAssembly:
             )
             from ..run.initial_tool_budget import bound_initial_tools, blueprint_entry_names
             explicit_namespaces = selector.detect_namespaces(request.user_input, tools)
-            scoped_namespaces = {tool.namespace for tool in selected if tool.scope_fields}
             known_namespaces = (
-                set(explicit_namespaces) | scoped_namespaces | set(contextual_namespaces)
+                set(explicit_namespaces) | set(contextual_namespaces)
             )
             if allow_clarification and len(known_namespaces) <= 1:
                 selected = bound_initial_tools(

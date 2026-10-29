@@ -5,6 +5,7 @@ from agents.applications.advertising.operations.semantic_constraints import (
     apply_note_patch,
     note_id,
     valid_semantic_notes,
+    render_semantic_notes,
 )
 from agents.applications.advertising.operations.conversation_state import (
     update_conversation_state,
@@ -241,3 +242,35 @@ def test_memory_ownership_and_failed_save_do_not_mutate_session():
     assert session.ctx.metadata == {}
     context.principal = None
     assert not service.read(context, {}).success
+
+
+def test_long_constraints_keep_latest_complete_records_and_explain_omissions():
+    state = {}
+    for i in range(8):
+        quote = f"要求{i}：" + "详细要求" * 55
+        state = apply_note_patch(state, quote, f"turn-{i}", i, [
+            {"operation": "add", "subject": f"主题{i}", "quote": quote},
+        ])
+    rendered = render_semantic_notes(state["semantic"])
+    assert len(rendered) <= 1600
+    assert state["semantic"]["entries"][-1]["text"] in rendered
+    assert "agent_get_conversation_notes" in rendered
+    for line in rendered.splitlines():
+        if line.startswith("- id="):
+            assert any(line.endswith(row["text"]) for row in state["semantic"]["entries"])
+    combined = render_conversation_state(state, "继续")
+    assert len(combined) <= 1600
+    assert combined == rendered
+
+
+def test_mixed_legacy_and_semantic_notes_share_one_budget_without_partial_lines():
+    state = update_conversation_state({}, "记住：广告必须保持暂停状态", "legacy")
+    for i in range(8):
+        quote = f"要求{i}：" + "完整记录" * 55
+        state = apply_note_patch(state, quote, f"turn-{i}", i, [
+            {"operation": "add", "subject": f"主题{i}", "quote": quote},
+        ])
+    rendered = render_conversation_state(state, "继续")
+    assert len(rendered) <= 1600
+    assert rendered.endswith("读取完整记录。")
+    assert state["semantic"]["entries"][-1]["text"] in rendered

@@ -32,7 +32,10 @@ class WorkspaceAssets(StaticFiles):
         if path == "css/chat.css" and scope["method"] in {"GET", "HEAD"}:
             return Response(
                 self.stylesheet if scope["method"] == "GET" else "",
-                media_type="text/css", headers={"Cache-Control": "no-cache"},
+                media_type="text/css", headers={
+                    "Cache-Control": "no-cache",
+                    "Content-Length": str(len(self.stylesheet.encode("utf-8"))),
+                },
             )
         response = await super().get_response(path, scope)
         # Preserve ETag/304 support while requiring validation for reused URLs.

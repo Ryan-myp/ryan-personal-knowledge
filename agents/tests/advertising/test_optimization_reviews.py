@@ -155,7 +155,7 @@ def test_execution_and_readback_require_matching_audited_target_and_value(review
             {"execution_mode": "live", "execution_status": "executed"},
             "2026-10-29T01:00:00+00:00",
         ),
-        ("get", "t2", {"campaign": {"budget": 80}}, "2026-10-29T02:00:00+00:00"),
+        ("get", "t2", {"data_status": "live", "campaign": {"budget": 80}}, "2026-10-29T02:00:00+00:00"),
     ):
         store.record_tool_call(
             ToolCallRecord(

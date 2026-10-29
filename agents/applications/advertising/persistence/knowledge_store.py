@@ -149,12 +149,18 @@ class KnowledgeRepository:
         now = datetime.now().isoformat()
         with self._lock:
             conn = self._get_conn()
+            existing = self._knowledge_row(conn.execute(
+                "SELECT * FROM knowledge_documents WHERE document_id = ? AND tenant_id = ?",
+                (str(document_id), str(tenant_id)),
+            ).fetchone())
+            if not existing or existing.status == "deprecated":
+                return None
+            origin = existing.derived_from if existing.derived_from.startswith("builtin:") else ""
             cursor = conn.execute(
                 """UPDATE knowledge_documents SET status = 'draft', updated_at = ?
-                   WHERE tenant_id = ? AND title = (
-                       SELECT title FROM knowledge_documents WHERE document_id = ?
-                   ) AND status = 'published' AND document_id != ?""",
-                (now, str(tenant_id), str(document_id), str(document_id)),
+                   WHERE tenant_id = ? AND (title = ? OR (? != '' AND derived_from = ?))
+                   AND status = 'published' AND document_id != ?""",
+                (now, str(tenant_id), existing.title, origin, origin, str(document_id)),
             )
             cursor = conn.execute(
                 """UPDATE knowledge_documents

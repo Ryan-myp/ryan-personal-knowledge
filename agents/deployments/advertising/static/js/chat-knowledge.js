@@ -131,9 +131,10 @@
             showResourceList('knowledge');
         }
 
-        function setKnowledgeEditorMode(documentId = '') {
+        function setKnowledgeEditorMode(documentId = '', metadata = {}) {
             knowledgeState.editingDocumentId = documentId || '';
-            const editing = Boolean(knowledgeState.editingDocumentId);
+            knowledgeState.editorMetadata = {...metadata};
+            const editing = Boolean(knowledgeState.editingDocumentId || metadata.derived_from?.startsWith('builtin:'));
             const cancel = document.getElementById('knowledgeCancelEditButton');
             const draftButton = document.getElementById('knowledgeSaveDraftButton');
             const publishButton = document.getElementById('knowledgeSavePublishButton');
@@ -181,20 +182,43 @@
             try {
                 const item = await apiFetch(`/knowledge/documents/${encodeURIComponent(documentId)}`);
                 if (sequence !== knowledgeEditSequence) return;
-                document.getElementById('knowledgeTitle').value = item.title || '';
-                document.getElementById('knowledgeContent').value = item.content || '';
-                document.getElementById('knowledgeWritePlatform').value = item.platform || 'all';
-                document.getElementById('knowledgeWriteType').value = item.knowledge_type || 'general';
-                document.getElementById('knowledgeVersion').value = item.version || '1.0.0';
-                document.getElementById('knowledgeTags').value = (item.tags || []).join(', ');
-                document.getElementById('knowledgeSource').value = item.source || 'user';
-                setKnowledgeEditorMode(documentId);
-                setKnowledgeWriteStatus(item.status === 'published' ? '正在编辑已发布版本；保存会生成新的草稿版本。' : '正在编辑草稿。');
-                showKnowledgeManagementView(false);
-                document.getElementById('knowledgeContent')?.focus();
+                fillKnowledgeEditor(item, documentId);
             } catch (error) {
                 if (sequence !== knowledgeEditSequence) return;
                 setKnowledgeWriteStatus(error.message || '知识文档读取失败。', true);
+            }
+        }
+
+        function fillKnowledgeEditor(item, documentId = '') {
+            const metadata = Object.fromEntries(['layer','source_ref','confidence','wiki_type',
+                'derived_from','raw_sha256','wikilinks'].filter(key => item[key] != null).map(key => [key,item[key]]));
+            const revision = !documentId || item.status === 'published' || Boolean(item.published_at);
+            const versions = (knowledgeState.managedItems || []).filter(row => row.title === item.title
+                || (metadata.derived_from && row.derived_from === metadata.derived_from)).map(row => row.version);
+            document.getElementById('knowledgeTitle').value = item.title || item.topic || '';
+            document.getElementById('knowledgeContent').value = item.content || '';
+            document.getElementById('knowledgeWritePlatform').value = item.platform || 'all';
+            document.getElementById('knowledgeWriteType').value = item.knowledge_type || 'general';
+            document.getElementById('knowledgeVersion').value = revision ? nextResourceRevision(item.version, versions) : item.version;
+            document.getElementById('knowledgeTags').value = (item.tags || []).join(', ');
+            document.getElementById('knowledgeSource').value = item.source || 'user';
+            setKnowledgeEditorMode(documentId, metadata);
+            setKnowledgeWriteStatus(revision ? '修改将保存为新版本；发布后生效，旧版本保留。' : '正在编辑草稿；发布后生效。');
+            showKnowledgeManagementView(false);
+            document.getElementById('knowledgeContent')?.focus();
+        }
+
+        async function editBuiltinKnowledgeDocument(item) {
+            const origin = `builtin:${item.document_id}`;
+            const existing = (knowledgeState.managedItems || []).find(row => row.derived_from === origin && row.status !== 'deprecated');
+            if (existing) return editKnowledgeDocument(existing.document_id);
+            const sequence = ++knowledgeEditSequence;
+            try {
+                const detail = await apiFetch(`/knowledge/builtin/${encodeURIComponent(item.document_id)}`);
+                if (sequence !== knowledgeEditSequence) return;
+                fillKnowledgeEditor({...detail, derived_from:origin});
+            } catch (error) {
+                if (sequence === knowledgeEditSequence) setKnowledgeWriteStatus(error.message || '知识正文读取失败，请重试。', true);
             }
         }
 
@@ -547,11 +571,14 @@
             } else {
                 const readOnly = document.createElement('span');
                 readOnly.className = 'knowledge-reader-readonly';
-                readOnly.textContent = '内置 · 只读';
+                readOnly.textContent = '内置原版';
+                const edit = document.createElement('button');
+                edit.type = 'button'; edit.textContent = '编辑文档';
+                edit.onclick = () => editBuiltinKnowledgeDocument(item);
                 const clone = document.createElement('button');
                 clone.type = 'button'; clone.textContent = '复制为我的草稿';
                 clone.onclick = () => cloneKnowledgeDocument(item);
-                actions.append(readOnly, clone);
+                actions.append(readOnly, edit, clone);
             }
             const footer = document.createElement('footer');
             footer.className = 'knowledge-reader-footer';
@@ -653,6 +680,8 @@
                 if (button) button.disabled = true;
             }
             const payload = {
+                confidence: 0.8,
+                ...(knowledgeState.editorMetadata || {}),
                 title,
                 content,
                 platform: document.getElementById('knowledgeWritePlatform')?.value || 'all',
@@ -660,7 +689,6 @@
                 tags: (document.getElementById('knowledgeTags')?.value || '').split(',').map(item => item.trim()).filter(Boolean),
                 source: document.getElementById('knowledgeSource')?.value.trim() || 'user',
                 version: document.getElementById('knowledgeVersion')?.value.trim() || '1.0.0',
-                confidence: 0.8,
             };
             try {
                 const editingId = knowledgeState.editingDocumentId;
@@ -670,7 +698,9 @@
                     body: JSON.stringify(payload),
                 });
                 if (sequence !== knowledgeEditSequence) return;
-                setKnowledgeEditorMode(created.document_id);
+                setKnowledgeEditorMode(created.document_id, Object.fromEntries(
+                    Object.keys(knowledgeState.editorMetadata || {}).map(key => [key, created[key] ?? payload[key]])));
+                document.getElementById('knowledgeVersion').value = created.version || payload.version;
                 if (publishNow) {
                     await apiFetch(`/knowledge/documents/${encodeURIComponent(created.document_id)}/publish`, { method: 'POST' });
                     if (sequence !== knowledgeEditSequence) return;
@@ -678,7 +708,6 @@
                 } else {
                     setKnowledgeWriteStatus(created.version_mode === 'new_draft' ? '已生成新版本草稿；发布后才会进入检索和 Agent 上下文。' : '已保存为草稿；发布后才会进入检索和 Agent 上下文。');
                 }
-                setKnowledgeEditorMode(created.document_id);
                 resourceCatalogs.knowledge.hasDraft = false;
                 if (document.getElementById('knowledgeQuery')?.value.trim()) await searchKnowledge();
                 else await loadKnowledgeCatalog();

@@ -322,6 +322,20 @@ def create_knowledge_router(context: ApiContext) -> APIRouter:
             raise HTTPException(status_code=404, detail="知识文档不存在或无权访问")
         return result
 
+    @router.get("/knowledge/builtin/{document_id:path}", tags=["knowledge"])
+    async def get_builtin_knowledge_document(
+        document_id: str, http_request: Request,
+        x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+    ):
+        principal = context.authorize_request(x_api_key, http_request)
+        context.require_permission(principal, "knowledge.read")
+        provider = getattr(context.runtime(), "knowledge_provider", None)
+        document = next((item for item in getattr(provider, "documents", ())
+                         if item.document_id == document_id), None)
+        if document is None:
+            raise HTTPException(status_code=404, detail="内置知识不存在")
+        return {**document.to_dict(), "content": document.excerpt}
+
     @router.put("/knowledge/documents/{document_id}", tags=["knowledge"])
     async def update_knowledge_document(
         document_id: str,
@@ -336,7 +350,7 @@ def create_knowledge_router(context: ApiContext) -> APIRouter:
                 ManagedKnowledgeManager(store()).update_document,
                 principal.tenant_id,
                 document_id,
-                body.model_dump(),
+                body.model_dump(exclude_unset=True),
                 principal.user_id,
             )
         except KnowledgeDocumentError as error:

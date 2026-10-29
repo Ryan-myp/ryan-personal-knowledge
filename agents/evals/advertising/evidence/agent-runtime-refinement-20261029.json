@@ -1,0 +1,124 @@
+{
+  "date": "2026-10-29",
+  "baseline_commit": "6c5bf8a",
+  "scope": "context_budget_conversation_constraints_optimization_evidence_workspace_boot",
+  "verification": {
+    "make_ad_agent_check": "passed",
+    "python_tests_passed": 3424,
+    "frontend_tests_passed": 232,
+    "targeted_python_tests_passed": 64,
+    "targeted_module_line_coverage_percent": 94.16,
+    "targeted_modules": [
+      "agents/applications/advertising/operations/conversation_state.py",
+      "agents/applications/advertising/operations/optimization_evidence.py",
+      "agents/applications/advertising/operations/semantic_constraints.py",
+      "agents/applications/advertising/run/initial_tool_budget.py",
+      "agents/deployments/advertising/workspace_assets.py"
+    ],
+    "tool_contracts_validated": 328,
+    "knowledge_pages_validated": 86,
+    "git_diff_check": "passed",
+    "quality_delta": {
+      "scope": "changed_python_sources_vs_HEAD",
+      "files_scanned": 6,
+      "baseline_findings": 4,
+      "current_findings": 4,
+      "new_findings": [],
+      "gate_passed": true,
+      "whole_repository_gate": "not_assessed_by_delta_gate"
+    },
+    "whole_repository_qguard": {
+      "passed": false,
+      "files": 784,
+      "findings": 4997,
+      "score": 0,
+      "status": "existing_debt_not_resolved"
+    }
+  },
+  "prompt_benchmark": {
+    "units": "serialized_characters_not_tokens",
+    "model": "fixed_offline_response",
+    "cases": [
+      {
+        "case_id": "greeting",
+        "before_chars": 24472,
+        "after_chars": 24472,
+        "before_tools": 2,
+        "after_tools": 2
+      },
+      {
+        "case_id": "capabilities",
+        "before_chars": 31956,
+        "after_chars": 31956,
+        "before_tools": 2,
+        "after_tools": 2
+      },
+      {
+        "case_id": "knowledge",
+        "before_chars": 65540,
+        "after_chars": 50222,
+        "before_tools": 33,
+        "after_tools": 6
+      },
+      {
+        "case_id": "report",
+        "before_chars": 33087,
+        "after_chars": 33087,
+        "before_tools": 2,
+        "after_tools": 2
+      },
+      {
+        "case_id": "templates",
+        "before_chars": 46378,
+        "after_chars": 46378,
+        "before_tools": 10,
+        "after_tools": 10
+      },
+      {
+        "case_id": "creation",
+        "before_chars": 41368,
+        "after_chars": 41368,
+        "before_tools": 10,
+        "after_tools": 10
+      },
+      {
+        "case_id": "followup",
+        "before_chars": 43365,
+        "after_chars": 49479,
+        "before_tools": 5,
+        "after_tools": 9
+      }
+    ]
+  },
+  "browser": {
+    "injectedExecutionErrorCaught": true,
+    "laterModulesBlocked": true,
+    "refreshRecovered": true,
+    "historyAndNewChatPassed": true,
+    "unexpectedErrors": 0,
+    "providerRequests": 0
+  },
+  "service": {
+    "host": "0.0.0.0",
+    "port": 8766,
+    "ready": "ready",
+    "tool_count": 354,
+    "session_count": 513,
+    "user_templates": 14,
+    "sampled_session_ids_preserved": true,
+    "user_template_ids_preserved": true,
+    "database_schema_changed": false,
+    "database_backed_up_outside_repository": true,
+    "asset_revision": "12c71b435757a4750f16de8b",
+    "html_cache_control": "no-store",
+    "deployed_loader_matches": true
+  },
+  "provider_calls": 0,
+  "external_model_calls": 0,
+  "limitations": [
+    "Natural-language quality and latency were not model-evaluated.",
+    "Same-target repeated audit calls remain ambiguous; evidence scans fail closed above 100 records.",
+    "Array readback paths are not added in this round.",
+    "The followup prompt grew because smaller eligible tools are no longer skipped after an oversized candidate."
+  ]
+}

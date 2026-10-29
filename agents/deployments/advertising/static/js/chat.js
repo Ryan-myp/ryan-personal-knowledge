@@ -27,7 +27,8 @@
         'chat-creation.js',
         'chat-messages.js',
     ];
-    const version = new URL(document.currentScript.src).searchParams.get('v')
+    const loaderURL = document.currentScript.src;
+    const version = new URL(loaderURL).searchParams.get('v')
         || Date.now().toString(36);
     const status = document.getElementById('workspaceBootStatus');
     const message = document.getElementById('workspaceBootMessage');
@@ -56,15 +57,34 @@
         if (retry) retry.hidden = true;
         const script = document.createElement('script');
         script.src = sourceURL(index);
+        let executionFailed = false;
+        const executionError = event => {
+            if (event.filename !== new URL(script.src, loaderURL).href) return;
+            executionFailed = true;
+            window.removeEventListener('error', executionError);
+            if (status) status.hidden = false;
+            if (message) message.textContent = '工作区初始化失败，请刷新页面重试。';
+            if (!retry) return;
+            retry.hidden = false;
+            retry.textContent = '刷新页面';
+            // A partially executed module may already have declared globals.
+            retry.onclick = () => window.location.reload();
+        };
+        window.addEventListener('error', executionError);
         script.onload = () => {
+            window.removeEventListener('error', executionError);
             preloads.get(index)?.remove();
             preloads.delete(index);
+            if (executionFailed) return;
             load(index + 1);
         };
         script.onerror = () => {
+            window.removeEventListener('error', executionError);
+            if (executionFailed) return;
             if (message) message.textContent = '工作区加载失败，请检查连接后重试。';
             if (!retry) return;
             retry.hidden = false;
+            retry.textContent = '重试';
             retry.onclick = () => { script.remove(); load(index); };
         };
         document.head.appendChild(script);

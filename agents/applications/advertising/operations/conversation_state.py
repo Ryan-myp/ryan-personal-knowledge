@@ -10,7 +10,9 @@ from agents.agent_harness.conversation_recall import (
     relevant_user_requests, is_contextual_followup, has_recall_terms,
 )
 from agents.agent_harness.redaction import redact_for_persistence
-from .semantic_constraints import valid_semantic_notes, render_semantic_notes, note_id
+from .semantic_constraints import (
+    valid_semantic_notes, render_semantic_notes, note_id,
+)
 
 
 _MAX_ENTRIES = 8
@@ -135,9 +137,10 @@ def render_conversation_state(state: Any, current_input: str) -> str:
     )
     if is_contextual_followup(current_input) and not has_recall_terms(current_input):
         matched = tuple(item["text"] for item in candidates[-4:])
-    semantic = render_semantic_notes(state.get("semantic")) if isinstance(state, Mapping) else ""
-    legacy = "\n".join(
+    legacy = [
         f"- {item['kind']} [id={note_id(item)}; user turn {item['source_turn_id']}]: {item['text']}"
-        for item in candidates if item["text"] in matched
-    )[:1600]
-    return "\n".join(part for part in (semantic, legacy) if part)[:2400]
+        for item in reversed(candidates) if item["text"] in matched
+    ]
+    return render_semantic_notes(
+        state.get("semantic") if isinstance(state, Mapping) else None, legacy_lines=legacy,
+    )

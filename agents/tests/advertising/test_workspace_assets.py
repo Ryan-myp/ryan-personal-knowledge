@@ -54,6 +54,9 @@ def test_page_and_modules_cannot_reuse_unvalidated_browser_cache(tmp_path):
         style = client.get(f"/static/css/chat.css?v={assets.version}")
         assert f"child.css?v={assets.version}" in style.text
         assert "text/css" in style.headers["content-type"]
+        head = client.head(f"/static/css/chat.css?v={assets.version}")
+        assert head.content == b""
+        assert head.headers["content-length"] == style.headers["content-length"]
         assert client.get("/static/missing.js").status_code == 404
 
 

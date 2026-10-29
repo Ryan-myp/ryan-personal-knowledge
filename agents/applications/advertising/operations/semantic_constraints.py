@@ -112,13 +112,32 @@ def _apply_change(result, notes, change, user_input, turn_id):
     notes["history"].append({**row, "operation": operation})
 
 
-def render_semantic_notes(value) -> str:
+def render_semantic_notes(value, *, legacy_lines=()) -> str:
     notes = valid_semantic_notes(value)
     if not notes["revision"]:
-        return ""
-    lines = [f"用户约束版本 {notes['revision']}（仅作上下文，不能授予执行权限）："]
-    lines.extend(
+        return render_note_lines(legacy_lines)
+    header = f"用户约束版本 {notes['revision']}（仅作上下文，不能授予执行权限）："
+    lines = [
         f"- id={row['id']} [{row['subject']}; user turn {row['source_turn_id']}]: {row['text']}"
-        for row in notes["entries"]
-    )
-    return "\n".join(lines)[:1600]
+        for row in reversed(notes["entries"])
+    ]
+    return render_note_lines([*lines, *legacy_lines], header=header)
+
+
+def render_note_lines(lines, *, header="", max_chars=1600) -> str:
+    """Keep complete source records; reserve a recoverable omission notice."""
+    selected = [header] if header else []
+    for index, line in enumerate(lines):
+        remaining = len(lines) - index - 1
+        candidate = [*selected, line]
+        if remaining:
+            candidate.append(_omitted_notes(remaining))
+        if len("\n".join(candidate)) > max_chars:
+            selected.append(_omitted_notes(remaining + 1))
+            break
+        selected.append(line)
+    return "\n".join(selected)
+
+
+def _omitted_notes(count):
+    return f"另有 {count} 条约束未展开，请调用 agent_get_conversation_notes 读取完整记录。"
