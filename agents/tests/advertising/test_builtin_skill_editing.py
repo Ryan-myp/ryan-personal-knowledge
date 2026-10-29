@@ -1,8 +1,11 @@
 from pathlib import Path
+from types import SimpleNamespace
 
 from agents.agent_platform.management.skill_management import BuiltinSkillCatalog, ManagedSkillManager
 from agents.applications.advertising.composition.ad_application import AdvertisingComposition
 from agents.applications.advertising.persistence.store import AdAgentStore
+from agents.applications.advertising.integrations.selected_context import _selected_guidance
+from agents.agent_harness import TurnRequest
 
 
 def test_builtin_revision_publishes_as_tenant_guidance_and_unpublishes_without_changing_tools(tmp_path):
@@ -18,12 +21,20 @@ def test_builtin_revision_publishes_as_tenant_guidance_and_unpublishes_without_c
         files = dict(builtin['files'])
         import base64
         original = base64.b64decode(files['SKILL.md']['content']).decode()
-        files['SKILL.md'] = original + '\n\n修订验证标记：报告先核对统计口径。\n'
+        files['SKILL.md'] = original.replace('# ', '# 修订验证标记：报告先核对统计口径。', 1)
         manager.create_version('tenant-a', 'account-diagnostics', '1.5.1', files, 'u')
         published = manager.publish('tenant-a', 'account-diagnostics', '1.5.1', runtime=runtime)
         assert published['status'] == 'published'
         loaded = runtime.get_managed_skills('tenant-a')['account-diagnostics']
         assert '修订验证标记' in loaded.raw_markdown
+        request = TurnRequest(user_input='广告诊断报告', tenant_id='tenant-a')
+        selected = [SimpleNamespace(skill_refs=['account-diagnostics'])]
+        catalog = runtime.platform_application.agent.skill_catalog
+        guidance = catalog.build_request_context(request, selected)
+        assert '修订验证标记' in guidance
+        assert guidance.count('## Skill: account-diagnostics') == 1
+        assert len(guidance) <= 6000
+        assert _selected_guidance(runtime, request, selected) == ''
         assert not runtime.get_managed_skills('tenant-b')
         assert [tool.name for tool in runtime.registry.list_all()] == tools_before
         assert BuiltinSkillCatalog(root).get_version('account-diagnostics', '1.5.0')['sha256'] == builtin['sha256']

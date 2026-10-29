@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Annotated, Any, Literal, Optional
 
 from fastapi import APIRouter, Header, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
 
 from agents.deployments.advertising.api.context import ApiContext
@@ -20,9 +21,22 @@ from agents.applications.advertising.knowledge.knowledge_ingest import (
     RawKnowledgeManager,
 )
 from agents.applications.advertising.knowledge.knowledge_management import (
+    KnowledgeCatalogQuery,
     KnowledgeDocumentError,
     ManagedKnowledgeManager,
 )
+
+
+class KnowledgeListQuery(BaseModel):
+    """HTTP bounds; omitted fields preserve the existing self-owned list call."""
+
+    status: Optional[Literal["", "draft", "published", "deprecated"]] = None
+    limit: int = Field(100, ge=1, le=200)
+    offset: int = Field(0, ge=0)
+    q: str = Field("", max_length=2000)
+    platform: Optional[str] = Field(None, max_length=64)
+    category: Optional[str] = Field(None, max_length=64)
+    source: Literal["all", "builtin", "managed"] = "managed"
 
 
 def create_knowledge_router(context: ApiContext) -> APIRouter:
@@ -272,19 +286,28 @@ def create_knowledge_router(context: ApiContext) -> APIRouter:
     @router.get("/knowledge/documents", tags=["knowledge"])
     async def list_knowledge_documents(
         http_request: Request,
+        query: Annotated[KnowledgeListQuery, Query()],
         x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
-        status: Optional[str] = Query(None, max_length=32),
-        limit: int = Query(100, ge=1, le=200),
     ):
         principal = context.authorize_request(x_api_key, http_request)
         context.require_permission(principal, "ads.read")
+        backend = store()
+        if query.source != "builtin" and not callable(
+            getattr(backend, "page_knowledge_documents", None)
+        ):
+            raise HTTPException(status_code=503, detail="知识分页存储接口尚未接入")
+        provider = None
+        if query.source != "managed":
+            provider = getattr(context.runtime(), "knowledge_provider", None)
+        if query.source != "managed" and provider is None:
+            raise HTTPException(status_code=503, detail="内置知识库未初始化")
         result = await run_in_threadpool(
-            ManagedKnowledgeManager(store()).list_documents,
+            ManagedKnowledgeManager(backend).page_documents,
             principal.tenant_id,
-            status=status,
-            limit=limit,
+            query=KnowledgeCatalogQuery(**query.model_dump()),
+            builtin_documents=getattr(provider, "documents", ()),
         )
-        return {"tenant_id": principal.tenant_id, "documents": result}
+        return {"tenant_id": principal.tenant_id, **result}
 
     @router.post("/knowledge/documents", tags=["knowledge"])
     async def create_knowledge_document(

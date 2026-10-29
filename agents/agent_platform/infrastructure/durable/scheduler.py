@@ -254,14 +254,7 @@ class SchedulerService:
             with self._lock:
                 self._metrics.claimed_total += 1
             try:
-                task = self.submit_turn(schedule, occurrence)
-                task_id = str(task.get("task_id") if isinstance(task, dict) else getattr(task, "task_id", ""))
-                if not task_id:
-                    raise RuntimeError("scheduled Agent task did not return task_id")
-                if not self.store.attach_scheduled_task_run(
-                    occurrence.schedule_run_id, task_id, lease_owner=self.worker_id
-                ):
-                    raise RuntimeError("scheduled occurrence is no longer owned")
+                self._ensure_task_link(schedule, occurrence)
                 # Advance only after the durable Agent task exists. If the
                 # process dies before this point, the same occurrence is
                 # recovered by its unique run key on the next scan.
@@ -292,6 +285,26 @@ class SchedulerService:
                 logger.exception("failed to submit scheduled Agent task")
         self.reconcile_once()
         return len(claimed)
+
+    def _ensure_task_link(self, schedule: Any, occurrence: Any) -> None:
+        if occurrence.task_id:
+            task = self.store.get_task(
+                occurrence.task_id, tenant_id=occurrence.tenant_id,
+                user_id=occurrence.user_id,
+            )
+            if task is None:
+                raise RuntimeError("scheduled occurrence task is unavailable")
+            # A previous submission committed. Only repair the schedule cursor;
+            # calling the submitter again could repeat an external write.
+            return
+        task = self.submit_turn(schedule, occurrence)
+        task_id = task.get("task_id") if isinstance(task, dict) else getattr(task, "task_id", None)
+        if not task_id:
+            raise RuntimeError("scheduled Agent task did not return task_id")
+        if not self.store.attach_scheduled_task_run(
+            occurrence.schedule_run_id, str(task_id), lease_owner=self.worker_id,
+        ):
+            raise RuntimeError("scheduled occurrence is no longer owned")
 
     def reconcile_once(self) -> int:
         runs = self.store.list_scheduled_task_runs(statuses=["queued", "running"], limit=100)

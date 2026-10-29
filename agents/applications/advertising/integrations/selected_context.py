@@ -10,6 +10,8 @@ def _selected_guidance(owner, request, tools):
     # Registered packages are already selected by the Harness using these tools.
     app = getattr(owner, "platform_application", None)
     catalog = getattr(getattr(app, "agent", None), "skill_catalog", None)
+    if getattr(catalog, "handles_managed_guidance", False):
+        return ""
     if catalog is not None and catalog.list_skills():
         return owner.tool_selector._managed_skill_context(
             request.user_input,

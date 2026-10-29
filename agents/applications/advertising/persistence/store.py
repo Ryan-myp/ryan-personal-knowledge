@@ -1078,9 +1078,11 @@ class AdAgentStore:
                 """UPDATE tasks SET status = 'queued', error = NULL, result = NULL,
                    updated_at = ?, started_at = NULL, finished_at = NULL,
                    lease_owner = NULL, lease_expires_at = NULL, metadata = ?
-                   WHERE task_id = ? AND status = 'recovery_required'""",
-                [now, json.dumps(metadata, ensure_ascii=False, sort_keys=True), str(task_id)]
-                + scope_params,
+                   WHERE task_id = ? AND status = 'recovery_required'
+                     AND (? IS NULL OR tenant_id = ?)
+                     AND (? IS NULL OR user_id = ?)""",
+                [now, json.dumps(metadata, ensure_ascii=False, sort_keys=True), str(task_id),
+                 tenant_id, str(tenant_id), user_id, str(user_id)],
             )
             conn.commit()
             if cursor.rowcount != 1:
@@ -1439,11 +1441,13 @@ class AdAgentStore:
                 return False
             if status in terminal_statuses and current not in terminal_statuses:
                 schedule_id = str(row["schedule_id"])
+                # Reconciliation may finish an older occurrence while the
+                # scheduler owns the next one. Only advance releases a claim.
                 conn.execute(
                     """UPDATE scheduled_tasks SET run_count = run_count + 1,
                        success_count = success_count + ?, failure_count = failure_count + ?,
                        last_run_at = ?, last_run_status = ?, last_task_id = COALESCE(?, last_task_id),
-                       lease_owner = NULL, lease_expires_at = NULL, updated_at = ?
+                       updated_at = ?
                        WHERE schedule_id = ?""",
                     (int(status == "succeeded"), int(status in {
                         "failed", "partially_failed", "cancelled", "recovery_required",
@@ -1850,9 +1854,11 @@ class AdAgentStore:
                 assignments.append("status = ?")
                 values.append(status)
             values.append(str(run_id))
+            # Delayed event repair remains replayable, but cannot replace the
+            # Kernel's final outcome (including lease-loss recovery).
             conn.execute(
                 "UPDATE execution_runs SET " + ", ".join(assignments)
-                + " WHERE run_id = ?",
+                + " WHERE run_id = ? AND finished_at IS NULL",
                 values,
             )
             conn.commit()
@@ -2530,6 +2536,16 @@ class AdAgentStore:
         self, tenant_id: str, status: Optional[str] = None, limit: int = 100,
     ) -> list[KnowledgeDocumentRecord]:
         return self._knowledge.list_knowledge_documents(tenant_id, status, limit)
+
+    def page_knowledge_documents(
+        self, tenant_id: str, *, status: Optional[str] = None,
+        limit: int = 100, offset: int = 0, q: str = "",
+        platform: Optional[str] = None, category: Optional[str] = None,
+    ) -> dict[str, Any]:
+        return self._knowledge.page_knowledge_documents(
+            tenant_id, status=status, limit=limit, offset=offset,
+            q=q, platform=platform, category=category,
+        )
 
     def publish_knowledge_document(
         self, document_id: str, *, tenant_id: str,

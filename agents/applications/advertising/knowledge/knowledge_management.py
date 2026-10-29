@@ -13,6 +13,7 @@ import threading
 import time
 import uuid
 from collections import OrderedDict
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Iterable, Mapping, Optional
 
@@ -31,6 +32,19 @@ from agents.applications.advertising.persistence.interfaces import KnowledgeStor
 
 class KnowledgeDocumentError(ValueError):
     """Raised when a submitted Wiki document is invalid or unsafe."""
+
+
+@dataclass(frozen=True)
+class KnowledgeCatalogQuery:
+    """Bounded management inventory query; source is ownership, not attribution."""
+
+    status: Optional[str] = None
+    limit: int = 100
+    offset: int = 0
+    q: str = ""
+    platform: Optional[str] = None
+    category: Optional[str] = None
+    source: str = "managed"
 
 
 _SEMVER_RE = re.compile(
@@ -118,9 +132,8 @@ class ManagedKnowledgeManager:
         value = record.to_dict()
         if not include_content:
             value.pop("content", None)
-        value["markdown"] = ManagedKnowledgeManager.to_markdown(record)
-        if not include_content:
-            value.pop("markdown", None)
+        else:
+            value["markdown"] = ManagedKnowledgeManager.to_markdown(record)
         return value
 
     @staticmethod
@@ -319,6 +332,63 @@ class ManagedKnowledgeManager:
             document_id, tenant_id=str(tenant_id or "default")
         )
         return self._public(record, include_content=True) if record else None
+
+    def page_documents(
+        self, tenant_id: str, *, query: KnowledgeCatalogQuery = KnowledgeCatalogQuery(),
+        builtin_documents: Iterable[KnowledgeDocument] = (),
+    ) -> dict[str, Any]:
+        """Management inventory, including drafts and originals of builtin edits.
+
+        All-source pages concatenate builtin IDs ascending and managed rows by
+        updated_at descending / ID ascending. Offsets address that combined
+        inventory after filtering, never the retrieval provider's ranked hits.
+        Builtins are already loaded at startup; only one bounded tenant page is
+        read. Categories are tenant-visible facets independent of the page.
+        """
+        limit = max(1, min(int(query.limit), 200))
+        offset = max(0, int(query.offset))
+        builtins = list(builtin_documents) if query.source in {"all", "builtin"} else []
+        categories = {item.category or item.knowledge_type or "general" for item in builtins}
+        builtin_matches = sorted(
+            (item for item in builtins if self._matches_catalog(item, query)),
+            key=lambda item: item.document_id,
+        )
+        documents = []
+        for item in builtin_matches[offset:offset + limit]:
+            metadata = item.to_dict()
+            metadata.pop("excerpt", None)
+            documents.append({**metadata, "catalog_source": "builtin"})
+        total = len(builtin_matches)
+        if query.source in {"all", "managed"}:
+            page = self.store.page_knowledge_documents(
+                str(tenant_id or "default"), status=query.status,
+                limit=max(1, limit - len(documents)), offset=max(0, offset - total),
+                q=query.q, platform=query.platform, category=query.category,
+            )
+            total += page["total"]
+            categories.update(page["categories"])
+            documents.extend(
+                {**self._public(record), "catalog_source": "managed"}
+                for record in page["documents"][:limit - len(documents)]
+            )
+        return {
+            "documents": documents, "total": total, "limit": limit, "offset": offset,
+            "has_more": offset + len(documents) < total, "categories": sorted(categories),
+        }
+
+    @staticmethod
+    def _matches_catalog(document: KnowledgeDocument, query: KnowledgeCatalogQuery) -> bool:
+        category_value = document.category or document.knowledge_type or "general"
+        if query.platform and document.platform != query.platform:
+            return False
+        if query.category and category_value != query.category:
+            return False
+        if query.status and document.status != query.status:
+            return False
+        text = "\n".join((
+            document.title or document.topic, document.excerpt, " ".join(document.tags),
+        ))
+        return not query.q.strip() or query.q.strip().lower() in text.lower()
 
     def publish(self, tenant_id: str, document_id: str) -> Optional[dict[str, Any]]:
         record = self.store.publish_knowledge_document(

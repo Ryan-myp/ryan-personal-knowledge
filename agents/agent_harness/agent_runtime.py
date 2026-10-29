@@ -117,6 +117,7 @@ class AgentRuntime:
             ),
             execute_unlocked=self._execute_pipeline,
             busy_error=ports.busy_error,
+            finalize_result=self._finalize_run,
         )
 
     @property
@@ -244,42 +245,7 @@ class AgentRuntime:
                         "error_type": type(error).__name__,
                     },
                 )
-        try:
-            result = self.pipeline.execute(request)
-        except Exception as error:
-            if store is not None:
-                try:
-                    store.finish_run(
-                        str(request.run_id),
-                        status="failed",
-                        metadata={"error_type": type(error).__name__},
-                    )
-                except Exception as finish_error:
-                    if hasattr(error, "add_note"):
-                        error.add_note(
-                            "RunStore finish_run failed: "
-                            f"{type(finish_error).__name__}"
-                        )
-            raise
-        result_metadata = (
-            dict(result.get("run_metadata") or {})
-            if isinstance(result, dict)
-            and isinstance(result.get("run_metadata"), dict)
-            else {}
-        )
-        if isinstance(result, RunResult):
-            application_data = result.application_data
-            if isinstance(application_data, Mapping):
-                declared_metadata = application_data.get("run_metadata")
-                if isinstance(declared_metadata, Mapping):
-                    result_metadata.update(
-                        redact_for_persistence(dict(declared_metadata)),
-                    )
-                for key in ("reason", "error_type", "workflow_id"):
-                    if key in application_data and key not in result_metadata:
-                        result_metadata[key] = redact_for_persistence(
-                            application_data[key],
-                        )
+        result = self.pipeline.execute(request)
         if observer_errors:
             runtime_signals = {
                 "observer_error_types": sorted(set(observer_errors)),
@@ -317,20 +283,34 @@ class AgentRuntime:
                     "recovery_required": bool(run_store_errors),
                     "runtime_signals": runtime_signals,
                 }
-            result_metadata.update(runtime_signals)
-        if self.alerts is not None:
-            try:
-                normalized_preview = RunResult.from_payload(result)
-                if normalized_preview.recovery_required:
-                    self.alerts.publish({
-                        "type": "run_recovery_required",
-                        "run_id": str(request.run_id or ""),
-                        "turn_id": str(request.turn_id or ""),
-                        "signals": dict(normalized_preview.runtime_signals),
-                    })
-            except Exception as error:
-                record_observer_error(error)
+        return result
+
+    @staticmethod
+    def _result_metadata(result: Any) -> dict[str, Any]:
+        application_data = (
+            result.application_data if isinstance(result, RunResult) else result
+        )
+        if not isinstance(application_data, Mapping):
+            return {}
+        declared = application_data.get("run_metadata")
+        metadata = dict(declared) if isinstance(declared, Mapping) else {}
+        for key in ("reason", "error_type", "workflow_id"):
+            if key in application_data and key not in metadata:
+                metadata[key] = application_data[key]
+        return redact_for_persistence(metadata)
+
+    def _finalize_run(self, request: TurnRequest, result: Any) -> Any:
+        """Persist once, after the Kernel has settled the lease outcome."""
         normalized = RunResult.from_payload(result)
+        if normalized.runtime_signals.get("run_store_phase") == "start":
+            return result
+        result_metadata = self._result_metadata(result)
+        result_metadata.update(redact_for_persistence(dict(normalized.runtime_signals)))
+        observer_errors = list(normalized.runtime_signals.get("observer_error_types") or ())
+        self._publish_recovery_alert(request, normalized, observer_errors)
+        if observer_errors:
+            result_metadata["observer_error_types"] = sorted(set(observer_errors))
+        store = self.run_store
         if store is None:
             return result
         try:
@@ -338,48 +318,52 @@ class AgentRuntime:
                 str(request.run_id),
                 status=normalized.status.value,
                 metadata={
+                    **result_metadata,
                     "effect_state": normalized.effect_state,
                     "recovery_required": normalized.recovery_required,
-                    **redact_for_persistence(result_metadata),
                 },
             )
             if finished is False:
                 raise RuntimeError("RunStore rejected run completion")
         except Exception as error:
-            if isinstance(result, RunResult):
-                result = replace(
-                    result,
-                    status=RunStatus.RECOVERY_REQUIRED,
-                    recovery_required=True,
-                    runtime_signals={
-                        **dict(result.runtime_signals),
-                        "run_store_error": True,
-                        "observer_error_types": sorted({
-                            *observer_errors,
-                            type(error).__name__,
-                        }),
-                        "run_store_error_types": sorted({
-                            *run_store_errors,
-                            type(error).__name__,
-                        }),
-                    },
-                )
-            elif isinstance(result, dict):
-                result = dict(result)
-                result["recovery_required"] = True
-                result["runtime_signals"] = {
-                    **dict(result.get("runtime_signals") or {}),
-                    "run_store_error": True,
-                    "observer_error_types": sorted({
-                        *observer_errors,
-                        type(error).__name__,
-                    }),
-                    "run_store_error_types": sorted({
-                        *run_store_errors,
-                        type(error).__name__,
-                    }),
-                }
+            return self._completion_failure(result, error, observer_errors)
         return result
+
+    def _publish_recovery_alert(
+        self, request: TurnRequest, result: RunResult, errors: list[str],
+    ) -> None:
+        if self.alerts is None or not result.recovery_required:
+            return
+        try:
+            self.alerts.publish({
+                "type": "run_recovery_required",
+                "run_id": str(request.run_id or ""),
+                "turn_id": str(request.turn_id or ""),
+                "signals": dict(result.runtime_signals),
+            })
+        except Exception as error:
+            errors.append(type(error).__name__)
+
+    @staticmethod
+    def _completion_failure(result: Any, error: Exception, observer_errors: list[str]) -> Any:
+        signals = dict(RunResult.from_payload(result).runtime_signals)
+        signals.update({
+            "run_store_error": True,
+            "observer_error_types": sorted({*observer_errors, type(error).__name__}),
+            "run_store_error_types": sorted({
+                *(signals.get("run_store_error_types") or ()), type(error).__name__,
+            }),
+        })
+        if isinstance(result, RunResult):
+            return replace(
+                result, status=RunStatus.RECOVERY_REQUIRED,
+                recovery_required=True, runtime_signals=signals,
+            )
+        payload = dict(result) if isinstance(result, dict) else {"value": result}
+        return {
+            **payload, "status": "recovery_required", "recovery_required": True,
+            "runtime_signals": signals,
+        }
 
     def register_tool(
         self, definition: Any, executor: Any, *, source_id: str = "local",

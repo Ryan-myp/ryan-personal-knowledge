@@ -1161,7 +1161,10 @@ class Agent:
                 if isinstance(configured_sources, (list, tuple, set, frozenset)):
                     source_ids = tuple(str(item) for item in configured_sources)
             build_tool_context = getattr(self.skill_catalog, "build_tool_context", None)
-            if callable(build_tool_context):
+            build_request_context = getattr(self.skill_catalog, "build_request_context", None)
+            if callable(build_request_context):
+                skill_context = build_request_context(request, tools, source_ids=source_ids)
+            elif callable(build_tool_context):
                 skill_context = build_tool_context(request.user_input, tools, source_ids=source_ids)
             else:
                 skill_context = self.skill_catalog.build_context(

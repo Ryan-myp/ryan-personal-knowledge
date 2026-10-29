@@ -6,6 +6,7 @@
             toolQuery: '',
             advancedInputEdited: false,
             testTrigger: null,
+            savePending: false,
         };
 
         function setMCPConfigSections(hidden) {
@@ -462,8 +463,8 @@
             if (!result.errors.length) advanced.value = JSON.stringify(result.input, null, 2);
         }
 
-        async function saveMCPServer() {
-            const payload = {
+        function readMCPServerForm() {
+            return {
                 name: document.getElementById('mcpNameInput').value.trim(),
                 endpoint: document.getElementById('mcpEndpointInput').value.trim(),
                 auth_type: document.getElementById('mcpAuthTypeInput').value,
@@ -473,16 +474,43 @@
                 description: document.getElementById('mcpDescriptionInput').value.trim(),
                 transport: 'streamable_http',
             };
+        }
+
+        async function saveMCPServer() {
+            if (mcpState.savePending) return;
+            const sequence = resourceCatalogs.mcp.sequence;
+            const payload = readMCPServerForm();
+            const snapshot = JSON.stringify(payload);
             if (!payload.name || !payload.endpoint) { showMCPNotice('请填写 Server 名称和 Endpoint。', true); return; }
+            mcpState.savePending = true;
+            const button = document.getElementById('mcpSaveButton');
+            if (button) button.disabled = true;
             try {
                 const isNew = !mcpState.selectedId;
                 const result = await apiFetch(isNew ? '/mcp/servers' : `/mcp/servers/${encodeURIComponent(mcpState.selectedId)}`, {
                     method: isNew ? 'POST' : 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
                 });
+                if (sequence !== resourceCatalogs.mcp.sequence) return;
+                mcpState.selectedId = result.server_id;
+                mcpState.selected = result;
+                mcpState.servers = [result, ...mcpState.servers.filter(server => server.server_id !== result.server_id)];
+                resourceCatalogs.mcp.draft = null;
+                if (JSON.stringify(readMCPServerForm()) !== snapshot) {
+                    resourceCatalogs.mcp.hasDraft = true;
+                    renderMCPServerList();
+                    showMCPNotice('服务端已保存提交时的快照；新增编辑仍未保存，请再次保存。');
+                    return;
+                }
                 resourceCatalogs.mcp.hasDraft = false;
+                // The write response is the saved server; avoid a later reload replacing fresh input.
+                selectMCPServer(result.server_id);
                 showMCPNotice(isNew ? 'MCP Server 已保存为草稿，请运行完整校验。' : 'MCP Server 配置已保存；连接配置变化后需要重新校验。');
-                await loadMCPServers(result.server_id);
-            } catch (error) { showMCPNotice(error.message || 'MCP Server 保存失败', true); }
+            } catch (error) {
+                if (sequence === resourceCatalogs.mcp.sequence) showMCPNotice(error.message || 'MCP Server 保存失败', true);
+            } finally {
+                mcpState.savePending = false;
+                if (button) button.disabled = false;
+            }
         }
 
         async function validateMCPServer() {

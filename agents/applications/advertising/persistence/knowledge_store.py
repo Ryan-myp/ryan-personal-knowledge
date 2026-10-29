@@ -9,6 +9,31 @@ from .models import KnowledgeDocumentRecord, RawKnowledgeSourceRecord
 from .errors import PersistenceConflictError
 
 
+# Count and page use the same predicates and parameter mapping. The projection
+# deliberately substitutes an empty body, even when body text matches the query.
+_KNOWLEDGE_PAGE_COUNT_SQL = """
+    SELECT COUNT(*) FROM knowledge_documents
+    WHERE tenant_id = :tenant_id
+      AND (:status = '' OR status = :status)
+      AND (:platform = '' OR platform = :platform)
+      AND (:category = '' OR knowledge_type = :category)
+      AND (:q = '' OR instr(lower(title || char(10) || content || char(10) || tags), lower(:q)) > 0)
+"""
+_KNOWLEDGE_PAGE_SQL = """
+    SELECT document_id, tenant_id, title, '' AS content, platform, layer,
+           knowledge_type, source, source_ref, version, confidence, tags,
+           status, created_by, created_at, updated_at, published_at,
+           wiki_type, derived_from, raw_sha256, wikilinks
+    FROM knowledge_documents
+    WHERE tenant_id = :tenant_id
+      AND (:status = '' OR status = :status)
+      AND (:platform = '' OR platform = :platform)
+      AND (:category = '' OR knowledge_type = :category)
+      AND (:q = '' OR instr(lower(title || char(10) || content || char(10) || tags), lower(:q)) > 0)
+    ORDER BY updated_at DESC, document_id ASC LIMIT :limit OFFSET :offset
+"""
+
+
 class KnowledgeRepository:
     def __init__(self, connection_provider, lock):
         self._get_conn = connection_provider
@@ -142,6 +167,35 @@ class KnowledgeRepository:
         with self._lock:
             rows = self._get_conn().execute(query, params).fetchall()
             return [self._knowledge_row(row) for row in rows if row]
+
+    def page_knowledge_documents(
+        self, tenant_id: str, *, status: Optional[str] = None,
+        limit: int = 100, offset: int = 0, q: str = "",
+        platform: Optional[str] = None, category: Optional[str] = None,
+    ) -> dict[str, Any]:
+        """Filter before paging; count and metadata rows share one locked snapshot.
+
+        Management categories for tenant documents are their knowledge_type.
+        Body text participates in search but is never materialized in list rows.
+        """
+        params = {
+            "tenant_id": str(tenant_id), "status": status or "",
+            "platform": platform or "", "category": category or "", "q": q.strip(),
+            "limit": max(1, min(int(limit), 200)), "offset": max(0, int(offset)),
+        }
+        with self._lock:
+            conn = self._get_conn()
+            total = conn.execute(_KNOWLEDGE_PAGE_COUNT_SQL, params).fetchone()[0]
+            rows = conn.execute(_KNOWLEDGE_PAGE_SQL, params).fetchall()
+            categories = conn.execute(
+                "SELECT DISTINCT knowledge_type FROM knowledge_documents "
+                "WHERE tenant_id = ? ORDER BY knowledge_type",
+                (str(tenant_id),),
+            ).fetchall()
+        return {
+            "documents": [KnowledgeDocumentRecord.from_row(dict(row)) for row in rows],
+            "total": total, "categories": [row[0] for row in categories],
+        }
 
     def publish_knowledge_document(
         self, document_id: str, *, tenant_id: str,

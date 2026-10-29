@@ -1,0 +1,241 @@
+{
+  "date": "2026-10-29",
+  "scope": [
+    "tenant_skill_context",
+    "run_finalization",
+    "task_recovery",
+    "schedule_recovery",
+    "knowledge_server_pagination",
+    "management_save_races"
+  ],
+  "validation": {
+    "make_ad_agent_check": "passed",
+    "python_tests_passed": 3498,
+    "frontend_tests_passed": 256,
+    "focused_coverage_tests_passed": 68,
+    "changed_python_line_coverage": {
+      "scope": "changed_executable_python_lines",
+      "covered": 212,
+      "executable": 231,
+      "percent": 91.77,
+      "files": {
+        "agents/agent_harness/agent.py": {
+          "covered": 3,
+          "executable": 4,
+          "missing": [
+            1167
+          ]
+        },
+        "agents/agent_harness/agent_runtime.py": {
+          "covered": 30,
+          "executable": 39,
+          "missing": [
+            294,
+            299,
+            306,
+            312,
+            337,
+            338,
+            344,
+            345,
+            358
+          ]
+        },
+        "agents/agent_harness/runtime_kernel.py": {
+          "covered": 50,
+          "executable": 52,
+          "missing": [
+            327,
+            341
+          ]
+        },
+        "agents/agent_platform/infrastructure/durable/scheduler.py": {
+          "covered": 11,
+          "executable": 13,
+          "missing": [
+            303,
+            307
+          ]
+        },
+        "agents/applications/advertising/composition/ad_application_assembly.py": {
+          "covered": 1,
+          "executable": 1,
+          "missing": []
+        },
+        "agents/applications/advertising/integrations/selected_context.py": {
+          "covered": 2,
+          "executable": 2,
+          "missing": []
+        },
+        "agents/applications/advertising/knowledge/knowledge_management.py": {
+          "covered": 38,
+          "executable": 40,
+          "missing": [
+            383,
+            385
+          ]
+        },
+        "agents/applications/advertising/persistence/knowledge_store.py": {
+          "covered": 10,
+          "executable": 10,
+          "missing": []
+        },
+        "agents/applications/advertising/persistence/store.py": {
+          "covered": 2,
+          "executable": 2,
+          "missing": []
+        },
+        "agents/deployments/advertising/api/routes/knowledge.py": {
+          "covered": 17,
+          "executable": 19,
+          "missing": [
+            298,
+            303
+          ]
+        },
+        "agents/applications/advertising/integrations/managed_skill_catalog.py": {
+          "covered": 48,
+          "executable": 49,
+          "missing": [
+            19
+          ]
+        }
+      }
+    },
+    "browser_fixture": {
+      "skillInflightEditsPreserved": true,
+      "skillNextVersionSaved": true,
+      "mcpNewDraftPreserved": true,
+      "knowledgeBeyond100Accessible": true,
+      "knowledgeServerSearchFindsOldDraft": true,
+      "knowledgeFailedPagePreservesRows": true,
+      "browserErrors": [],
+      "providerCalls": 0,
+      "productionDataChanged": false
+    },
+    "production_readonly_browser": {
+      "knowledgeTotal": 86,
+      "pageSize": 20,
+      "paging": true,
+      "fullDetail": true,
+      "pageErrors": [],
+      "realProviderCalls": 0,
+      "writeRequests": 0
+    },
+    "provider_contract_count": 328,
+    "git_diff_check": "passed",
+    "whole_repository_qguard": {
+      "passed": false,
+      "files": 785,
+      "findings": 4994,
+      "score": 0
+    },
+    "incremental_qguard": {
+      "scope": "changed_python_sources_vs_HEAD",
+      "files_scanned": 12,
+      "baseline_findings": 160,
+      "current_findings": 157,
+      "new_findings": [
+        {
+          "file": "agents/agent_harness/runtime_kernel.py",
+          "rule_id": "ai_slop.generic_exception",
+          "severity": "high",
+          "source_hash": "d985c2e7f7969d722fd4147f56bf9de64857dd42eb67f5c57371399b369b034f",
+          "line": 348
+        },
+        {
+          "file": "agents/agent_harness/runtime_kernel.py",
+          "rule_id": "ai_slop.generic_exception",
+          "severity": "high",
+          "source_hash": "a4c167ff93917951c57cdb5ca78c0419da49aaa6af21e5cfc817ac0386048566",
+          "line": 370
+        }
+      ],
+      "gate_passed": false,
+      "whole_repository_gate": "not_assessed_by_delta_gate"
+    },
+    "incremental_findings_review": "两处统一扩展边界捕获 Exception：收尾后重抛原错误，或为原错附加收尾错误类型；未吞错，未添加忽略规则或降低阈值。"
+  },
+  "performance_sample": {
+    "fixture": "8个同名内置/托管Skill，本地假数据；不是实测模型延迟",
+    "before_chars": 12000,
+    "after_chars": 6000,
+    "cached_context_median_ms": 0.0074,
+    "cached_context_p95_ms": 0.0084,
+    "repetitions": 100,
+    "external_calls": 0
+  },
+  "service": {
+    "status": "ready",
+    "host": "0.0.0.0",
+    "port": 8766,
+    "original_configuration": true,
+    "original_database": true,
+    "backup_created": true,
+    "sessions": 514,
+    "user_templates": 14,
+    "recent_session_ids_preserved": true,
+    "template_ids_preserved": true,
+    "management_counts_before": {
+      "knowledge_documents": 0,
+      "skill_versions": 0,
+      "skill_releases": 0,
+      "scheduled_tasks": 5,
+      "mcp_servers": 0,
+      "raw_knowledge_sources": 0
+    },
+    "management_counts_after": {
+      "knowledge_documents": 0,
+      "skill_versions": 0,
+      "skill_releases": 0,
+      "scheduled_tasks": 5,
+      "mcp_servers": 0,
+      "raw_knowledge_sources": 0
+    },
+    "management_ids_preserved": true,
+    "registered_tools": 354,
+    "knowledge_read_checks": [
+      {
+        "route": "/knowledge/documents?source=all&limit=20&offset=0",
+        "total": 86,
+        "rows": 20,
+        "offset": 0,
+        "body_bytes": 28561,
+        "elapsed_ms": 51.36,
+        "metadata_only": true
+      },
+      {
+        "route": "/knowledge/documents?source=all&limit=20&offset=20",
+        "total": 86,
+        "rows": 20,
+        "offset": 20,
+        "body_bytes": 28301,
+        "elapsed_ms": 11.01,
+        "metadata_only": true
+      },
+      {
+        "chat_http_ok": true,
+        "static_revision": [
+          "42c44577f06a2ec916ef80a4",
+          "42c44577f06a2ec916ef80a4"
+        ]
+      }
+    ],
+    "temporary_service_closed": true
+  },
+  "boundaries": {
+    "schema_migration": false,
+    "real_provider_validation": false,
+    "real_model_evaluation": false,
+    "credentials_changed": false,
+    "live_permissions_changed": false,
+    "skill_scripts_executed": false,
+    "production_test_writes": false,
+    "git_commit_created": false
+  },
+  "limitations": [
+    "全仓和增量严格质量门禁仍未通过；不可将功能回归通过表述为质量门禁通过。",
+    "上下文样本仅证明同名 Skill 去重及共享预算，不代表完整 Prompt 或真实模型耗时减半。",
+    "没有重新测量真实模型的意图识别、多轮回答质量，未扩大广告类型 live 验证范围。"
+  ]
+}

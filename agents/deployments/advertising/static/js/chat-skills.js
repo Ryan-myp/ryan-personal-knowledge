@@ -105,7 +105,7 @@
             } catch (_) { return value || ''; }
         }
 
-        async function selectSkillVersion(skillName, version, source = 'managed') {
+        async function selectSkillVersion(skillName, version, source = 'managed', savedDetail = null) {
             const sequence = ++skillDetailSequence;
             setResourceView('skills', 'detail');
             skillState.browsingOnly = true;
@@ -124,7 +124,7 @@
                 const endpoint = source === 'builtin'
                     ? `/skills/builtin/${encodeURIComponent(skillName)}/versions/${encodeURIComponent(version)}`
                     : `/skills/${encodeURIComponent(skillName)}/versions/${encodeURIComponent(version)}`;
-                const data = await apiFetch(endpoint);
+                const data = savedDetail || await apiFetch(endpoint);
                 if (sequence !== skillDetailSequence) return;
                 skillState.selected = { skillName, version, source: source || data.source || 'managed' };
                 skillState.detail = data;
@@ -409,16 +409,36 @@
             const button = document.getElementById('skillSaveButton');
             if (button) button.disabled = true;
             try {
-                const skillName = document.getElementById('skillNameInput').value.trim().toLowerCase();
-                const version = document.getElementById('skillVersionInput').value.trim();
+                const nameInput = document.getElementById('skillNameInput');
+                const versionInput = document.getElementById('skillVersionInput');
+                const skillName = nameInput.value.trim().toLowerCase();
+                const version = versionInput.value.trim();
                 if (!skillName || !version) throw new Error('请填写 Skill 名称和语义化版本号');
+                // Compare raw edits too: an unfinished filename must survive a successful save.
+                const snapshot = () => JSON.stringify([nameInput.value, versionInput.value, skillState.files]);
+                const submitted = snapshot();
+                const files = collectSkillFiles();
                 const data = await apiFetch(`/skills/${encodeURIComponent(skillName)}/versions`, {
                     method: 'POST', headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ version, files: collectSkillFiles() }),
+                    body: JSON.stringify({ version, files }),
                 });
                 if (sequence !== skillDetailSequence) return;
+                const saved = {...data, skill_name: skillName, version, source: 'managed'};
+                skillState.versions = [saved, ...skillState.versions.filter(item =>
+                    item.source === 'builtin' || item.skill_name !== skillName || item.version !== version)];
+                resourceCatalogs.skills.draft = null;
+                if (snapshot() !== submitted) {
+                    resourceCatalogs.skills.hasDraft = true;
+                    if (nameInput.value.trim().toLowerCase() === skillName && versionInput.value.trim() === version) {
+                        versionInput.value = nextSkillRevision(skillName, version, skillState.versions);
+                    }
+                    renderSkillList();
+                    showSkillNotice(`已保存 ${skillName}@${version} 的提交快照；新增编辑仍未保存，请使用新版本号再次保存。`);
+                    return;
+                }
                 resourceCatalogs.skills.hasDraft = false;
-                await loadManagedSkills({ skillName, version });
+                // Reuse the accepted files instead of asynchronously reloading over newer edits.
+                await selectSkillVersion(skillName, version, 'managed', {...saved, files});
                 showSkillNotice(`已保存 ${skillName}@${version}，digest: ${data.sha256 || '已生成'}`);
             } catch (error) {
                 if (sequence === skillDetailSequence) showSkillNotice(error.message, true);

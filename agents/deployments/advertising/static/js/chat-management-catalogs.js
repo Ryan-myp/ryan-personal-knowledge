@@ -45,11 +45,7 @@ function restoreResourceDraft(kind, draft) {
 }
 
 function renderKnowledgeCatalogTable() {
-    const query=String(document.getElementById('knowledgeQuery')?.value || '').trim().toLowerCase();
-    const platform=document.getElementById('knowledgePlatform')?.value || '';
-    const managed=(knowledgeState.managedItems || []).filter(item=>(!platform || item.platform===platform)
-        && (!query || [item.title,item.content,...(item.tags || [])].join(' ').toLowerCase().includes(query)));
-    const items=mergeKnowledgeCatalog(knowledgeState.items || [],managed);
+    const items=knowledgeState.catalogItems || mergeKnowledgeCatalog(knowledgeState.items || [],knowledgeState.managedItems || []);
     const rows=items.map(item=>{
         const isManaged=String(item.document_id || '').startsWith('managed:');
         const id=isManaged ? item.document_id.slice(8) : item.document_id;
@@ -67,8 +63,15 @@ function renderKnowledgeCatalogTable() {
             filters:{source,status,category},filterLabels:{source:isManaged?'自建':'内置',status:statusLabel,category:categoryLabel},
             cells:[knowledgePlatformLabel(item.platform),categoryLabel,item.version || '—',statusLabel,isManaged?'自建':'内置'],open,actions};
     });
+    const categories=(knowledgeState.catalogCategories || []).map(value=>
+        [value,knowledgeCategoryLabels[value] || knowledgeTypeLabel(value)]);
     renderResourceCatalog('knowledge',rows,{title:'知识库列表',search:false,
-        columns:['知识标题','平台','分类','版本','状态','来源'],filters:[{key:'category',label:'分类'},{key:'source',label:'来源'},{key:'status',label:'状态'}]});
+        loadPage:loadManagedKnowledgeDocuments, pagination:knowledgeState.catalogPage || {page:1,pages:1,total:0,has_more:false},
+        columns:['知识标题','平台','分类','版本','状态','来源'],filters:[
+            {key:'category',label:'分类',options:categories},
+            {key:'source',label:'来源',options:[['builtin','内置'],['managed','自建']]},
+            {key:'status',label:'状态',options:[['draft','草稿'],['published','已发布'],['deprecated','已归档']]},
+        ]});
 }
 
 async function openKnowledgeCatalogEntry(item) {
@@ -80,6 +83,9 @@ async function openKnowledgeCatalogEntry(item) {
         if(String(item.document_id || '').startsWith('managed:')) {
             detail=await apiFetch(`/knowledge/documents/${encodeURIComponent(item.document_id.slice(8))}`);
             detail={...detail,document_id:item.document_id,excerpt:detail.content || ''};
+        } else {
+            detail=await apiFetch(`/knowledge/builtin/${encodeURIComponent(item.document_id)}`);
+            detail={...detail,excerpt:detail.content || ''};
         }
         if(sequence!==resourceCatalogs.knowledge.sequence) return;
         renderKnowledgeReader(detail);

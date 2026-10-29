@@ -32,6 +32,11 @@ class KnowledgeStorePort(Protocol):
         self, tenant_id: str, status: Optional[str] = None,
         limit: int = 100,
     ) -> list[Any]: ...
+    def page_knowledge_documents(
+        self, tenant_id: str, *, status: Optional[str] = None,
+        limit: int = 100, offset: int = 0, q: str = "",
+        platform: Optional[str] = None, category: Optional[str] = None,
+    ) -> dict[str, Any]: ...
     def publish_knowledge_document(
         self, document_id: str, *, tenant_id: str,
     ) -> Optional[Any]: ...

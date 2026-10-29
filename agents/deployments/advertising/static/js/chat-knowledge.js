@@ -1,6 +1,7 @@
         let knowledgeReadSequence = 0;
         let knowledgeEditSequence = 0;
         let knowledgeSavePending = false;
+        let knowledgeCatalogPending = null;
 
         function traceNodeMatchesFilter(node) {
             if (traceFilter.status !== 'all' && node.state !== traceFilter.status) return false;
@@ -164,14 +165,57 @@
             renderKnowledgeCatalogTable();
         }
 
-        async function loadManagedKnowledgeDocuments() {
-            const request = beginCatalogLoad('knowledge', {slot: 'managed', retry: () => loadManagedKnowledgeDocuments()});
+        function loadManagedKnowledgeDocuments() {
+            const state = resourceCatalogs.knowledge;
+            const params = new URLSearchParams({
+                limit: String(state.limit), offset: String((state.page - 1) * state.limit),
+                source: state.filters.source || 'all',
+                q: document.getElementById('knowledgeQuery')?.value.trim() || '',
+                platform: document.getElementById('knowledgePlatform')?.value || '',
+                category: state.filters.category || '', status: state.filters.status || '',
+            });
+            return loadKnowledgeManagementPage(params);
+        }
+
+        function loadKnowledgeManagementPage(params) {
+            const key = params.toString();
+            if (knowledgeCatalogPending?.key === key) return knowledgeCatalogPending.promise;
+            const promise = fetchKnowledgeManagementPage(new URLSearchParams(key));
+            knowledgeCatalogPending = {key, promise};
+            void promise.finally(() => {
+                if (knowledgeCatalogPending?.promise === promise) knowledgeCatalogPending = null;
+            });
+            return promise;
+        }
+
+        async function fetchKnowledgeManagementPage(params) {
+            const request = beginCatalogLoad('knowledge', {retry: () => loadKnowledgeManagementPage(params)});
+            ++knowledgeReadSequence;
+            setKnowledgeStatus('正在读取知识列表…');
             try {
-                const data = await apiFetch('/knowledge/documents?limit=100');
-                if (!isCurrentCatalogLoad(request)) return;
-                renderManagedKnowledgeDocuments(data.documents || []);
+                let data = await apiFetch(`/knowledge/documents?${params.toString()}`);
+                if (!isCurrentCatalogLoad(request)) return false;
+                // A deletion can remove the last page. Refetch its new boundary once.
+                if (data.offset > 0 && data.offset >= data.total) {
+                    params.set('offset', String(Math.max(0, Math.ceil(data.total / data.limit) - 1) * data.limit));
+                    data = await apiFetch(`/knowledge/documents?${params.toString()}`);
+                    if (!isCurrentCatalogLoad(request)) return false;
+                }
+                knowledgeState.catalogItems = data.documents.map(item => item.catalog_source === 'managed'
+                    ? {...item, document_id: `managed:${item.document_id}`} : item);
+                knowledgeState.catalogCategories = data.categories || [];
+                knowledgeState.catalogPage = {total:data.total, page:Math.floor(data.offset / data.limit) + 1,
+                    pages:Math.max(1,Math.ceil(data.total / data.limit)), has_more:data.has_more};
+                resourceCatalogs.knowledge.page = knowledgeState.catalogPage.page;
+                knowledgeState.summary = '';
+                renderKnowledgeCatalogTable();
+                setKnowledgeStatus(`知识列表 · 共 ${data.total} 条`);
+                return true;
             } catch (error) {
-                request.error = error.message || '自建知识读取失败';
+                if (!isCurrentCatalogLoad(request)) return false;
+                request.error = error.message || '知识列表读取失败';
+                setKnowledgeStatus(`${request.error}；保留此前列表，请重试。`, true);
+                return false;
             } finally {
                 finishCatalogLoad(request, request.error);
             }
@@ -226,7 +270,7 @@
             try {
                 await apiFetch(`/knowledge/documents/${encodeURIComponent(documentId)}/${publish ? 'publish' : 'unpublish'}`, { method: 'POST' });
                 setKnowledgeWriteStatus(publish ? '知识已发布，Agent 后续可以检索。' : '知识已下线，Agent 不会再检索。');
-                await Promise.all([loadManagedKnowledgeDocuments(), loadKnowledgeCatalog()]);
+                await loadManagedKnowledgeDocuments();
                 showResourceList('knowledge');
             } catch (error) { window.alert(`${publish ? '发布' : '下线'}失败：${error.message || '请稍后重试'}`); }
         }
@@ -242,7 +286,7 @@
                     resourceCatalogs.knowledge.hasDraft = false;
                 }
                 setKnowledgeWriteStatus(status === 'published' ? '知识已归档。' : '草稿已删除。');
-                await Promise.all([loadManagedKnowledgeDocuments(), loadKnowledgeCatalog()]);
+                await loadManagedKnowledgeDocuments();
                 showResourceList('knowledge');
             } catch (error) { window.alert(`操作失败：${error.message || '请稍后重试'}`); }
         }
@@ -587,7 +631,18 @@
             reader.append(header, context, body, footer);
         }
 
-        function cloneKnowledgeDocument(item) {
+        async function cloneKnowledgeDocument(item) {
+            const sequence = ++knowledgeEditSequence;
+            try {
+                const detail = await apiFetch(`/knowledge/builtin/${encodeURIComponent(item.document_id)}`);
+                if (sequence !== knowledgeEditSequence) return;
+                fillClonedKnowledgeDocument({...detail, excerpt:detail.content || ''});
+            } catch (error) {
+                if (sequence === knowledgeEditSequence) setKnowledgeWriteStatus(error.message || '知识正文读取失败', true);
+            }
+        }
+
+        function fillClonedKnowledgeDocument(item) {
             const platform = document.getElementById('knowledgeWritePlatform');
             const platformValue = String(item.platform || 'all');
             const platformOption = platform && Array.from(platform.options).some(option => option.value === platformValue) ? platformValue : 'all';
@@ -613,55 +668,32 @@
 
         async function searchKnowledge() {
             showKnowledgeSearchView();
+            resourceCatalogs.knowledge.page = 1;
+            const loaded = await loadManagedKnowledgeDocuments();
+            if (!loaded) return;
             const query = document.getElementById('knowledgeQuery')?.value.trim() || '';
             const platform = document.getElementById('knowledgePlatform')?.value || '';
-            if (!query) {
-                await loadKnowledgeCatalog();
-                return;
-            }
+            const summarize = document.getElementById('knowledgeSmartSummary')?.checked || false;
+            if (!query || !summarize) return;
             const sequence = ++knowledgeReadSequence;
-            const request = beginCatalogLoad('knowledge', {retry: () => searchKnowledge()});
-            setKnowledgeStatus('正在检索已发布知识…');
+            setKnowledgeStatus('列表已加载；正在总结已发布知识…');
             try {
-                const summarize = document.getElementById('knowledgeSmartSummary')?.checked || false;
                 const params = new URLSearchParams({ query, limit: '10', summarize: String(summarize) });
                 if (platform) params.set('platform', platform);
                 const data = await apiFetch(`/knowledge/search?${params.toString()}`, {timeoutMs: summarize ? 120000 : 30000});
                 if (sequence !== knowledgeReadSequence) return;
                 const results = Array.isArray(data.results) ? data.results : [];
-                renderKnowledgeResults(results, data.summary || '', data.summary_mode || 'lexical');
-                setKnowledgeStatus(summarize
-                    ? `找到 ${results.length} 条已发布知识 · 已完成 BM25 检索与智能总结。`
-                    : `找到 ${results.length} 条已发布知识 · 本地 BM25 快速检索完成。`);
+                knowledgeState.summary = data.summary || '';
+                knowledgeState.summaryMode = data.summary_mode || 'llm';
+                setKnowledgeStatus(`知识列表 · 共 ${knowledgeState.catalogPage.total} 条 · 已总结 ${results.length} 条已发布知识。`);
             } catch (error) {
                 if (sequence !== knowledgeReadSequence) return;
-                request.error = error.message || '知识库暂时不可用';
                 setKnowledgeStatus(error.message || '知识库暂时不可用。', true);
-            } finally {
-                finishCatalogLoad(request, request.error);
             }
         }
 
-        async function loadKnowledgeCatalog() {
-            const sequence = ++knowledgeReadSequence;
-            const request = beginCatalogLoad('knowledge', {retry: () => loadKnowledgeCatalog()});
-            const platform = document.getElementById('knowledgePlatform')?.value || '';
-            setKnowledgeStatus('正在加载已发布知识目录…');
-            try {
-                const params = new URLSearchParams({ limit: '100' });
-                if (platform) params.set('platform', platform);
-                const data = await apiFetch(`/knowledge/catalog?${params.toString()}`);
-                if (sequence !== knowledgeReadSequence) return;
-                const results = Array.isArray(data.documents) ? data.documents : [];
-                renderKnowledgeResults(results);
-                setKnowledgeStatus(`知识目录 · ${Number(data.count ?? results.length)} 条已发布知识`);
-            } catch (error) {
-                if (sequence !== knowledgeReadSequence) return;
-                request.error = error.message || '知识目录暂时不可用';
-                setKnowledgeStatus(error.message || '知识目录暂时不可用。', true);
-            } finally {
-                finishCatalogLoad(request, request.error);
-            }
+        function loadKnowledgeCatalog() {
+            return loadManagedKnowledgeDocuments();
         }
 
         async function saveKnowledgeDocument(publishNow = false) {
@@ -709,8 +741,6 @@
                     setKnowledgeWriteStatus(created.version_mode === 'new_draft' ? '已生成新版本草稿；发布后才会进入检索和 Agent 上下文。' : '已保存为草稿；发布后才会进入检索和 Agent 上下文。');
                 }
                 resourceCatalogs.knowledge.hasDraft = false;
-                if (document.getElementById('knowledgeQuery')?.value.trim()) await searchKnowledge();
-                else await loadKnowledgeCatalog();
                 await loadManagedKnowledgeDocuments();
                 if (sequence !== knowledgeEditSequence) return;
                 showResourceList('knowledge');

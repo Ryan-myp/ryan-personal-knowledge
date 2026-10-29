@@ -17,7 +17,6 @@ from contextvars import ContextVar
 from typing import Any, Callable, Mapping, Optional
 
 from agents.agent_harness import (
-    InMemorySkillCatalog,
     RuntimePorts,
     TurnRequest,
 )
@@ -72,6 +71,7 @@ from ..integrations.integration import (
     AdvertisingToolCatalog,
     registered_advertising_tool_sources,
 )
+from ..integrations.managed_skill_catalog import AdvertisingSkillCatalog
 from ..execution.ad_tool_policy_factory import AdvertisingToolPolicyFactory
 from ..operations.ad_workflow_services import AdWorkflowServices
 from ..execution.input_builder import ToolInputBuilder
@@ -587,7 +587,7 @@ class AdApplicationAssembly:
                 runtime,
                 ToolSelector(policies=getattr(runtime, "policies", ())),
             ),
-            "skill_catalog": InMemorySkillCatalog(max_context_chars=6000, max_skills=6),
+            "skill_catalog": AdvertisingSkillCatalog(runtime, max_context_chars=6000, max_skills=6),
             "tool_policy": services.tool_policy,
             "context_provider": AdvertisingContextProvider(runtime),
             "input_sanitizer": runtime._redact_for_persistence,

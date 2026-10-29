@@ -92,25 +92,31 @@ function catalogButton(label, action, className = '') {
     return button;
 }
 
+function refreshResourceCatalog(kind) {
+    const state = resourceCatalogs[kind];
+    if (state.config.loadPage) return state.config.loadPage();
+    renderResourceCatalog(kind, state.rows, state.config);
+}
+
 function mountResourceCatalog(kind, config) {
     const target = document.getElementById(`${kind}Catalog`);
     if (!target || target.dataset.mounted) return target;
     target.dataset.mounted = 'true';
     const state = resourceCatalogs[kind];
     const filterbar = catalogElement('form','resource-catalog-filters');
-    const apply = () => { state.page=1; renderResourceCatalog(kind,state.rows,state.config); };
+    const apply = () => { state.page=1; return refreshResourceCatalog(kind); };
     filterbar.onsubmit = event => { event.preventDefault(); apply(); };
     if (config.search !== false) {
         const label = catalogElement('label','resource-catalog-search','搜索');
         const input = catalogElement('input'); input.type='search'; input.id=`${kind}CatalogQuery`;
         input.placeholder=config.placeholder || '搜索名称或说明'; input.maxLength=200; input.value=state.q;
-        input.oninput=()=>{state.q=input.value; apply();};
+        input.oninput=()=>{state.q=input.value; return apply();};
         label.append(input); filterbar.append(label);
     }
     for (const filter of config.filters) {
         const label=catalogElement('label','',filter.label), select=catalogElement('select');
         select.id=`${kind}CatalogFilter-${filter.key}`;
-        select.onchange=()=>{state.filters[filter.key]=select.value; apply();};
+        select.onchange=()=>{state.filters[filter.key]=select.value; return apply();};
         label.append(select); filterbar.append(label);
     }
     const resume=catalogButton('继续未保存的编辑',()=>resumeResourceDraft(kind),'resource-catalog-resume');
@@ -131,8 +137,12 @@ function mountResourceCatalog(kind, config) {
     const info=catalogElement('span'); info.id=`${kind}CatalogPageInfo`; info.setAttribute('role','status');
     const sizeLabel=catalogElement('label','','每页'), size=catalogElement('select'); size.id=`${kind}CatalogSize`;
     for(const value of [10,20,50]) size.add(new Option(`${value} 条`,String(value)));
-    size.value=String(state.limit); size.onchange=()=>{state.limit=Number(size.value);apply();}; sizeLabel.append(size);
-    const turn=direction=>{state.page+=direction;renderResourceCatalog(kind,state.rows,state.config);target.scrollTop=0;};
+    size.value=String(state.limit); size.onchange=()=>{state.limit=Number(size.value);return apply();}; sizeLabel.append(size);
+    const turn=direction=>{
+        state.page=(state.config.pagination?.page || state.page)+direction;
+        target.scrollTop=0;
+        return refreshResourceCatalog(kind);
+    };
     const previous=catalogButton('上一页',()=>turn(-1)), next=catalogButton('下一页',()=>turn(1));
     previous.id=`${kind}CatalogPrevious`; next.id=`${kind}CatalogNext`;
     pagination.append(info,sizeLabel,previous,next);
@@ -145,13 +155,14 @@ function renderResourceCatalog(kind, rows, config) {
     const state=resourceCatalogs[kind]; state.rows=rows; state.config=config;
     for(const filter of config.filters) {
         const select=document.getElementById(`${kind}CatalogFilter-${filter.key}`);
-        const options=new Map(rows.map(row=>[row.filters[filter.key],row.filterLabels?.[filter.key] || row.filters[filter.key]]));
+        const options=new Map(filter.options || rows.map(row=>[row.filters[filter.key],row.filterLabels?.[filter.key] || row.filters[filter.key]]));
         select.replaceChildren(new Option(`全部${filter.label}`,''));
         for(const [value,label] of options) if(value) select.add(new Option(label,value));
         if(state.filters[filter.key] && !options.has(state.filters[filter.key])) select.add(new Option(state.filters[filter.key],state.filters[filter.key]));
         select.value=state.filters[filter.key] || '';
     }
-    const page=resourceCatalogPage(rows,state); state.page=page.page;
+    const page=config.pagination ? {...config.pagination, items:rows} : resourceCatalogPage(rows,state);
+    if (!config.loadPage) state.page=page.page;
     const body=document.getElementById(`${kind}CatalogRows`); body.replaceChildren();
     for(const row of page.items) {
         const tr=catalogElement('tr',`resource-catalog-row ${kind}-catalog-row`);
@@ -165,7 +176,7 @@ function renderResourceCatalog(kind, rows, config) {
     if(!page.items.length) {const tr=catalogElement('tr'), td=catalogElement('td','monitoring-empty');td.id=`${kind}CatalogEmpty`;td.colSpan=config.columns.length+1;tr.append(td);body.append(tr);}
     document.getElementById(`${kind}CatalogPageInfo`).textContent=`共 ${page.total} 条 · 第 ${page.page} / ${page.pages} 页`;
     document.getElementById(`${kind}CatalogPrevious`).disabled=page.page<=1;
-    document.getElementById(`${kind}CatalogNext`).disabled=page.page>=page.pages;
+    document.getElementById(`${kind}CatalogNext`).disabled=page.has_more === undefined ? page.page>=page.pages : !page.has_more;
     document.getElementById(`${kind}CatalogResume`).hidden=!state.hasDraft;
     renderCatalogLoadStatus(kind);
 }

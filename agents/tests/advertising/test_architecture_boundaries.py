@@ -59,7 +59,7 @@ def test_advertising_application_modules_have_single_layer_ownership():
             "ad_skill_lifecycle.py", "ad_skill_plugins.py",
             "ad_tool_source_registration.py", "ad_tool_source_services.py",
             "ad_turn_context.py", "integration.py", "provider_bindings.py",
-            "selected_context.py",
+            "selected_context.py", "managed_skill_catalog.py",
             "skill_evaluation.py",
         },
         "operations": {

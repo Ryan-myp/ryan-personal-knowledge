@@ -167,16 +167,19 @@ class SessionLease:
         lease_seconds: float,
         *,
         busy_error: type[Exception] = RuntimeSessionBusyError,
+        recover_release_errors: bool = False,
     ) -> None:
         self.store = store
         self.session_id = str(session_id)
         self.owner = str(owner)
         self.lease_seconds = float(lease_seconds)
         self.busy_error = busy_error
+        self.recover_release_errors = recover_release_errors
         self._acquired = False
         self._lost = threading.Event()
         self._stop = threading.Event()
         self._thread: Optional[threading.Thread] = None
+        self._release_error_type: Optional[str] = None
 
     def __enter__(self) -> "SessionLease":
         acquire = getattr(self.store, "acquire_session_lease", None)
@@ -230,6 +233,9 @@ class SessionLease:
         self._stop.set()
         if self._thread is not None:
             self._thread.join(timeout=0.2)
+            if self._thread.is_alive():
+                # Do not report success while an ownership check is unresolved.
+                self._lost.set()
         release_error: Optional[Exception] = None
         if self._acquired:
             release = getattr(self.store, "release_session_lease", None)
@@ -239,17 +245,40 @@ class SessionLease:
                     if released is False:
                         raise RuntimeError("session lease release rejected")
                 except Exception as error:
+                    self._lost.set()
+                    self._release_error_type = type(error).__name__
                     if _exc is not None and hasattr(_exc, "add_note"):
                         _exc.add_note(
                             "session lease release failed: "
                             f"{type(error).__name__}"
                         )
-                    elif _exc is None:
+                    elif _exc is None and not self.recover_release_errors:
                         release_error = error
         self._thread = None
         self._acquired = False
         if release_error is not None:
             raise release_error
+
+    def normalize_result(self, result: Any) -> Any:
+        """Apply the final lease outcome after heartbeat and release cleanup."""
+        if not self.lost:
+            return result
+        from .results import RunResult, RunStatus
+
+        signals: dict[str, Any] = {"session_lease_lost": True}
+        if self._release_error_type is not None:
+            signals["session_lease_release_error_type"] = self._release_error_type
+        if isinstance(result, RunResult):
+            return replace(
+                result, status=RunStatus.RECOVERY_REQUIRED,
+                recovery_required=True,
+                runtime_signals={**dict(result.runtime_signals), **signals},
+            )
+        payload = dict(result) if isinstance(result, dict) else {"value": result}
+        return {
+            **payload, "status": "recovery_required", "recovery_required": True,
+            "runtime_signals": {**dict(payload.get("runtime_signals") or {}), **signals},
+        }
 
 
 class AgentRuntimeKernel:
@@ -272,6 +301,7 @@ class AgentRuntimeKernel:
         session_lock_provider: Optional[Callable[[TurnRequest], Any]] = None,
         execute_unlocked: Callable[[TurnRequest], Any],
         busy_error: type[Exception] = RuntimeSessionBusyError,
+        finalize_result: Optional[Callable[[TurnRequest, Any], Any]] = None,
     ) -> None:
         self.session_manager = session_manager
         self.session_locks = session_locks
@@ -287,7 +317,61 @@ class AgentRuntimeKernel:
         self.session_lock_provider = session_lock_provider
         self.execute_unlocked = execute_unlocked
         self.busy_error = busy_error
+        self.finalize_result = finalize_result
         self._session_lock_refs: dict[str, int] = {}
+
+    def _finish_result(self, request: TurnRequest, lease: SessionLease, result: Any) -> Any:
+        result = lease.normalize_result(result)
+        if self.finalize_result is not None:
+            return self.finalize_result(request, result)
+        return result
+
+    def _run_leased(self, request: TurnRequest) -> Any:
+        # Each acquisition needs its own token: a delayed heartbeat/release
+        # from an earlier Run must never match this Runtime's next Run.
+        lease = SessionLease(
+            self.session_manager, str(request.session_id),
+            f"{self.lease_owner}:{uuid.uuid4().hex}", self.lease_seconds,
+            busy_error=self.busy_error, recover_release_errors=True,
+        )
+        executing = False
+        try:
+            with lease:
+                if self.refresh_session is not None:
+                    self.refresh_session(request)
+                request = replace(request, lease_lost_event=AnyCancellationToken(
+                    request.lease_lost_event, lease.lost_event,
+                ))
+                lease.assert_owned()
+                executing = True
+                result = self.execute_unlocked(request)
+        except Exception as error:
+            # Extension failures may have any Exception type. Complete only
+            # this Run after cleanup, then re-raise the original exception.
+            if executing:
+                self._finish_failed_run(request, lease, error)
+            raise
+        # Keep the local session lock through finalization, but stop the
+        # durable lease first so its outcome cannot change after finish_run.
+        return self._finish_result(request, lease, result)
+
+    def _finish_failed_run(
+        self, request: TurnRequest, lease: SessionLease, error: Exception,
+    ) -> None:
+        try:
+            result = self._finish_result(request, lease, {
+                "status": "failed", "run_metadata": {"error_type": type(error).__name__},
+            })
+            signals = getattr(result, "runtime_signals", None)
+            if isinstance(result, dict):
+                signals = result.get("runtime_signals")
+            if (signals or {}).get("run_store_error") and hasattr(error, "add_note"):
+                error.add_note("RunStore finish_run failed")
+        except Exception as finish_error:
+            # A failing extension finalizer must not replace the pipeline
+            # error. Keep only its safe class name as an attached diagnostic.
+            if hasattr(error, "add_note"):
+                error.add_note(f"Run finalization failed: {type(finish_error).__name__}")
 
     def _get_session_lock(self, session_id: str) -> threading.RLock:
         with self.session_locks_guard:
@@ -354,60 +438,7 @@ class AgentRuntimeKernel:
             try:
                 with lock:
                     self.ensure_session(normalized)
-                    with SessionLease(
-                        self.session_manager,
-                        session_id,
-                        self.lease_owner,
-                        self.lease_seconds,
-                        busy_error=self.busy_error,
-                    ) as lease:
-                        if self.refresh_session is not None:
-                            self.refresh_session(normalized)
-                        normalized = replace(
-                            normalized,
-                            lease_lost_event=AnyCancellationToken(
-                                normalized.lease_lost_event,
-                                lease.lost_event,
-                            ),
-                        )
-                        lease.assert_owned()
-                        result = self.execute_unlocked(normalized)
-                        if lease.lost:
-                            signals = {"session_lease_lost": True}
-                            if isinstance(result, dict):
-                                result = dict(result)
-                                result["recovery_required"] = True
-                                result["runtime_signals"] = {
-                                    **dict(result.get("runtime_signals") or {}),
-                                    **signals,
-                                }
-                            else:
-                                try:
-                                    from .results import RunResult, RunStatus
-
-                                    if isinstance(result, RunResult):
-                                        result = replace(
-                                            result,
-                                            status=RunStatus.RECOVERY_REQUIRED,
-                                            recovery_required=True,
-                                            runtime_signals={
-                                                **dict(result.runtime_signals),
-                                                **signals,
-                                            },
-                                        )
-                                    else:
-                                        result = {
-                                            "value": result,
-                                            "recovery_required": True,
-                                            "runtime_signals": signals,
-                                        }
-                                except (ImportError, TypeError):
-                                    result = {
-                                        "value": result,
-                                        "recovery_required": True,
-                                        "runtime_signals": signals,
-                                    }
-                        return result
+                    return self._run_leased(normalized)
             finally:
                 if self.session_lock_provider is None:
                     self._release_session_lock(session_id, lock)

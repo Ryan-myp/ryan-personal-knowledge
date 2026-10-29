@@ -26,7 +26,7 @@ function environment(file, overrides = {}) {
         skillState: { expanded: new Set(), files: [], versions: [] },
         templateBrowser: {view: 'list', hasDraft: false},
         renderTemplateLibrary() {},
-        resourceCatalogs: {knowledge:{},skills:{},mcp:{}},
+        resourceCatalogs: {knowledge:{filters:{},page:1,limit:20},skills:{},mcp:{}},
         setResourceView() {}, showResourceList() {}, trackResourceDraft() {},
         renderSkillsCatalogTable() {}, renderKnowledgeCatalogTable() {}, renderMCPCatalogTable() {},
         knowledgeState: { managedItems: [] },
@@ -97,21 +97,22 @@ test('failed knowledge refresh preserves the last usable catalog', async () => {
         apiFetch: async () => {throw new Error('offline');},
         serviceFetch: async () => {throw new Error('offline');},
     });
-    context.knowledgeState.items = [{title:'keep me'}];
+    context.knowledgeState.catalogItems = [{title:'keep me'}];
     await context.loadKnowledgeCatalog();
-    assert.equal(context.knowledgeState.items[0]?.title,'keep me');
+    assert.equal(context.knowledgeState.catalogItems[0]?.title,'keep me');
 });
 
 test('old managed knowledge refresh cannot replace newly loaded documents', async () => {
     const old = deferred();
     let count = 0;
     const {context} = environment('chat-knowledge.js', {apiFetch: () => ++count === 1
-        ? old.promise : Promise.resolve({documents:[{document_id:'new'}]})});
+        ? old.promise : Promise.resolve({documents:[{document_id:'new',catalog_source:'managed'}],total:1,offset:0,limit:20,has_more:false})});
     const first = context.loadManagedKnowledgeDocuments();
+    context.resourceCatalogs.knowledge.filters.source = 'managed';
     await context.loadManagedKnowledgeDocuments();
-    old.resolve({documents:[{document_id:'old'}]});
+    old.resolve({documents:[{document_id:'old',catalog_source:'managed'}],total:1,offset:0,limit:20,has_more:false});
     await first;
-    assert.equal(context.knowledgeState.managedItems[0].document_id,'new');
+    assert.equal(context.knowledgeState.catalogItems[0].document_id,'managed:new');
 });
 
 test('Skill binary assets survive loading and saving without decoding corruption', async () => {
@@ -152,20 +153,18 @@ test('new Skill draft invalidates a pending version read', async () => {
 
 test('late knowledge search cannot replace a newer query', async () => {
     const old = deferred();
-    const reply = title => ({ results: [{ title }] });
+    const reply = title => ({documents:[{title,document_id:title,catalog_source:'managed'}],total:1,offset:0,limit:20,has_more:false});
     const { context } = environment('chat-knowledge.js', {
         apiFetch: endpoint => endpoint.includes('old') ? old.promise : Promise.resolve(reply('NEW')),
     });
-    const rendered = [];
     context.showKnowledgeSearchView = () => {};
-    context.renderKnowledgeResults = items => rendered.push(items);
     context.document.getElementById('knowledgeQuery').value = 'old';
     const first = context.searchKnowledge();
     context.document.getElementById('knowledgeQuery').value = 'new';
     await context.searchKnowledge();
     old.resolve(reply('OLD'));
     await first;
-    assert.equal(rendered.at(-1)[0].title, 'NEW');
+    assert.equal(context.knowledgeState.catalogItems[0].title, 'NEW');
 });
 
 test('knowledge publish failure keeps saved draft identity for retry', async () => {
