@@ -21,6 +21,10 @@ class AdvertisingCapabilityCatalog:
         tool_lines, has_live_adapter = self._tool_lines(tools)
         lines = self._execution_lines(request, has_live_adapter)
         lines.extend(tool_lines + self._skill_lines(skills))
+        if len("\n".join(lines)) > max_chars:
+            tool_lines, _ = self._tool_lines(tools, description_limit=64)
+            lines = self._execution_lines(request, has_live_adapter)
+            lines.extend(tool_lines + self._skill_lines(skills, description_limit=24))
         return self._redact_and_bound("\n".join(lines), max_chars)
 
     def read_account_candidates(
@@ -119,14 +123,14 @@ class AdvertisingCapabilityCatalog:
 
     @classmethod
     def _skill_lines(
-        cls, skills: dict[str, tuple[str, Any]],
+        cls, skills: dict[str, tuple[str, Any]], *, description_limit: int = 48,
     ) -> list[str]:
         lines = [
             "Skills (advisory guidance only; they do not execute operations):",
         ]
         for name, (source, skill) in sorted(skills.items()):
             description = cls._single_line(
-                cls._field(skill, "description", ""), limit=48,
+                cls._field(skill, "description", ""), limit=description_limit,
             )
             suffix = f": {description}" if description else ""
             lines.append(f"- {name} [{source}]{suffix}")
@@ -135,7 +139,9 @@ class AdvertisingCapabilityCatalog:
         return lines
 
     @classmethod
-    def _tool_lines(cls, tools: list[Any]) -> tuple[list[str], bool]:
+    def _tool_lines(
+        cls, tools: list[Any], *, description_limit: int = 140,
+    ) -> tuple[list[str], bool]:
         groups: dict[tuple[str, str], set[tuple[str, str]]] = {}
         fallback_tools: set[str] = set()
         platform_tools: set[str] = set()
@@ -158,7 +164,7 @@ class AdvertisingCapabilityCatalog:
             )
             if namespace == "agent-platform" and name:
                 description = cls._single_line(
-                    cls._field(tool, "description", ""), limit=140,
+                    cls._field(tool, "description", ""), limit=description_limit,
                 )
                 suffix = f" ({resource}:{action}): {description}" if description else ""
                 platform_tools.add(
@@ -172,6 +178,10 @@ class AdvertisingCapabilityCatalog:
                 continue
             if name:
                 fallback_tools.add(f"{name} [{kind},{support}]")
+        return cls._render_tool_groups(groups, platform_tools, fallback_tools), has_live_adapter
+
+    @staticmethod
+    def _render_tool_groups(groups, platform_tools, fallback_tools):
         lines = [
             "Tools (registered structured execution contracts):",
             "Action markers: R/W=read/write; L=live adapter declared only; "
@@ -190,7 +200,7 @@ class AdvertisingCapabilityCatalog:
         lines.extend(f"- {name}" for name in sorted(fallback_tools))
         if not groups and not fallback_tools and not platform_tools:
             lines.append("- none registered")
-        return lines, has_live_adapter
+        return lines
 
     @classmethod
     def _tool_state(cls, tool: Any) -> tuple[str, bool]:

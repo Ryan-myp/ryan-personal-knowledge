@@ -84,6 +84,16 @@ class KnowledgeStorePort(Protocol):
 class PersistenceBackend(KnowledgeStorePort, Protocol):
     """Aggregate backend contract retained for the application composition root."""
 
+    def get_optimization_review(
+        self, review_id: str, tenant_id: str, user_id: str,
+    ) -> Optional[dict]: ...
+    def list_optimization_reviews(
+        self, tenant_id: str, user_id: str, limit: int = 20, offset: int = 0,
+    ) -> list[dict]: ...
+    def save_optimization_review(
+        self, review_id: str, tenant_id: str, user_id: str, payload: dict, *, expected_version: int,
+    ) -> bool: ...
+
     def create_session(
         self, session_id: str, user_id: str,
         account_id: Optional[str] = None, metadata: Optional[dict] = None,

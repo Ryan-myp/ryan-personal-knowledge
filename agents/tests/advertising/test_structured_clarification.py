@@ -35,10 +35,11 @@ def test_advertising_conversation_returns_a_visible_clarification_without_provid
 
 def test_interaction_tool_visibility_does_not_change_account_namespace_resolution():
     ask = clarification_tool_source(required_permission="ads.read").list_bindings()[0].definition
-    report = SimpleNamespace(name="report", namespace="example", traits=[])
+    report = SimpleNamespace(name="report", namespace="example", traits=[], scope_fields=[], input_schema={})
     tools = [report, ask]
     runtime = SimpleNamespace(registry=SimpleNamespace(list_all=lambda: tools))
     selector = SimpleNamespace(
+        detect_namespaces=lambda *_: ["example"],
         is_read_only_request=lambda *_: False,
         has_declared_resource_target=lambda *_: True,
         explicitly_requests_discovery=lambda *_: False,

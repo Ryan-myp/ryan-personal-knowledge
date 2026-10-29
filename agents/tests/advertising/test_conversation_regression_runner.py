@@ -8,6 +8,24 @@ from scripts.advertising.run_conversation_regressions import (
 )
 
 
+def test_repeated_suite_keeps_every_failure_and_does_not_inflate_unique_coverage():
+    from scripts.advertising.run_conversation_regressions import ReleaseGate
+    responses = iter([{"reply": "ok"}, {"reply": "bad"}, {"reply": "ok"}])
+    case = RegressionCase(id="repeat", input="hello", assertions={"reply_contains": ["ok"]})
+    report = run_suite([case], lambda _: next(responses), mode="model_backed_offline_providers",
+                       repeats=3, release_gate=ReleaseGate(min_cases=2, max_p95_ms=10000))
+    assert report["passed"] == 2 and report["failed"] == 1
+    assert report["unique_cases"] == 1 and report["repeats"] == 3
+    assert not report["release_ready"]
+    assert "insufficient_samples" in report["release_blockers"]
+    assert [row["attempt"] for row in report["cases"]] == [1, 2, 3]
+
+
+def test_repeat_budget_is_bounded():
+    with pytest.raises(ValueError):
+        run_suite([], lambda _: {}, mode="fixture_contract", repeats=1000)
+
+
 def test_manual_expectations_are_not_automatically_marked_as_passed():
     called = []
     cases = [

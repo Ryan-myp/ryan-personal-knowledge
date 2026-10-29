@@ -27,7 +27,8 @@
         'chat-creation.js',
         'chat-messages.js',
     ];
-    const version = '20261029-workspace-resilience-v1';
+    const version = new URL(document.currentScript.src).searchParams.get('v')
+        || Date.now().toString(36);
     const status = document.getElementById('workspaceBootStatus');
     const message = document.getElementById('workspaceBootMessage');
     const retry = document.getElementById('workspaceBootRetry');

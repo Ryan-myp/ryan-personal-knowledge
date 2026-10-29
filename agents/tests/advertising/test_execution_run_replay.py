@@ -179,3 +179,31 @@ def test_cancelled_and_partial_runs_have_terminal_timestamps():
     assert cancelled.finished_at
     assert partial.status == "partially_failed"
     assert partial.finished_at
+
+
+def test_terminal_run_pages_have_explicit_completion_and_owned_cursors():
+    from types import SimpleNamespace
+    from agents.applications.advertising.operations.ad_conversation_services import AdConversationServices
+
+    store = AdAgentStore(":memory:")
+    store.create_execution_run(_run())
+    for seq in range(1, 601):
+        store.append_execution_run_event("run-1", {"seq": seq, "type": "done"})
+    store.update_execution_run("run-1", status="succeeded")
+    service = AdConversationServices(SimpleNamespace(
+        _session_manager=SessionManager(store=store),
+        _execution_run_dict=AdConversationServices._execution_run_dict,
+    ))
+    try:
+        first = service.get_latest_run("session-1", "user-1", "tenant-1")
+        assert first["has_more"] is True
+        assert first["next_after_seq"] == first["latest_seq"] == 511
+        second = service.get_run_events("run-1", "user-1", "tenant-1", 511)
+        assert second["has_more"] is False
+        assert second["next_after_seq"] == 600
+        assert len(first["events"] + second["events"]) == 600
+        assert service.get_run_events("run-1", "other", "tenant-1") is None
+        empty = service.get_run_events("run-1", "user-1", "tenant-1", 600)
+        assert empty["has_more"] is False and empty["next_after_seq"] == 600
+    finally:
+        store.close()

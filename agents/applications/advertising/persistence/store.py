@@ -44,6 +44,7 @@ from .memory_store import MemoryRepository
 from .session_store import SessionRepository
 from .knowledge_store import KnowledgeRepository
 from .workflow_store import WorkflowRepository
+from .optimization_store import OptimizationReviewRepository
 from .errors import PersistenceConflictError
 from .schedule_pages import SchedulePageQuery, read_schedule_page
 from agents.agent_harness.core.memory import MemoryRecord
@@ -92,6 +93,18 @@ class AdAgentStore:
         self._sessions = SessionRepository(self._get_conn, self._lock)
         self._knowledge = KnowledgeRepository(self._get_conn, self._lock)
         self._workflows = WorkflowRepository(self._get_conn, self._lock)
+        self._optimization_reviews = OptimizationReviewRepository(self._get_conn, self._lock)
+
+    def get_optimization_review(self, review_id, tenant_id, user_id):
+        return self._optimization_reviews.get(review_id, tenant_id, user_id)
+
+    def list_optimization_reviews(self, tenant_id, user_id, limit=20, offset=0):
+        return self._optimization_reviews.list(tenant_id, user_id, limit, offset)
+
+    def save_optimization_review(self, review_id, tenant_id, user_id, payload, *, expected_version):
+        return self._optimization_reviews.save(
+            review_id, tenant_id, user_id, payload, expected_version=expected_version,
+        )
     
     def _get_conn(self) -> sqlite3.Connection:
         """Get thread-safe database connection (single connection mode)"""

@@ -2478,7 +2478,7 @@ def test_workspace_does_not_present_unavailable_live_preference_as_executable():
 
 
 def test_chat_template_busts_cached_assets_after_conversation_ui_changes():
-    template = api_server.TEMPLATE_PATH.read_text(encoding="utf-8")
+    template = api_server.workspace_assets.page(api_server.TEMPLATE_PATH).body.decode()
     bootstrap = (
         api_server.STATIC_PATH / "js" / "chat.js"
     ).read_text(encoding="utf-8")
@@ -2495,7 +2495,8 @@ def test_chat_template_busts_cached_assets_after_conversation_ui_changes():
     assert css_version is not None
     assert js_version is not None
     assert css_version.group(1) == js_version.group(1)
-    assert f"const version = '{js_version.group(1)}'" in bootstrap
+    assert js_version.group(1) == api_server.workspace_assets.version
+    assert "document.currentScript.src" in bootstrap
     assert "?v=${version}" in bootstrap
 
 

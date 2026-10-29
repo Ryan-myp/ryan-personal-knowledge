@@ -378,7 +378,7 @@ def test_registered_provider_capabilities_fit_default_catalog_budget():
             TurnRequest(user_input="你好，你有什么能力？")
         )
 
-        assert len(runtime.registry.list_all()) == 313
+        assert len(runtime.registry.list_all()) == 318
         assert len(catalog) <= 9_000
         assert "[catalog truncated;" not in catalog
         assert all(
@@ -464,7 +464,7 @@ def test_plain_greeting_receives_registered_capabilities_and_intro_policy():
     assert not any(tool.namespace in {"google-ads", "meta", "tiktok"} for tool in tools)
 
 
-def test_ad_selector_exposes_specific_tools_beyond_the_old_sixteen_tool_prefix():
+def test_ad_selector_bounds_initial_schemas_while_specific_variants_remain_registered():
     from agents.tools.advertising.providers.tiktok import create_tiktok_tool_source
 
     tools = [
@@ -482,6 +482,6 @@ def test_ad_selector_exposes_specific_tools_beyond_the_old_sixteen_tool_prefix()
 
     visible = select_tools(request, tools)
 
-    assert "tiktok_smart_plus_create_campaign" in {
-        item.name for item in visible
-    }
+    assert "tiktok_create_app_ad" in {item.name for item in visible}
+    assert len(visible) <= 8
+    assert "tiktok_smart_plus_create_campaign" in {item.name for item in tools}

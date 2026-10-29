@@ -75,6 +75,8 @@ def test_registered_provider_source_is_part_of_platform_dependencies():
         'provider-module:example',
         'agent-platform:clarification',
         'agent-platform:tool-discovery',
+        'agent-platform:conversation-notes',
+        'advertising:optimization-reviews',
     }
     assert {
         tool.name for tool in runtime._platform_application.harness.tools.list_tools()
@@ -85,6 +87,11 @@ def test_registered_provider_source_is_part_of_platform_dependencies():
         'example_lookup',
         'agent_request_input',
         'agent_discover_tools',
+        'agent_get_conversation_notes',
+        'agent_update_conversation_notes',
+        'agent_create_optimization_review',
+        'agent_get_optimization_review',
+        'agent_update_optimization_review',
     }
 
 

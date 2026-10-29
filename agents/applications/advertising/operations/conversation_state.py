@@ -6,8 +6,11 @@ import re
 from typing import Any, Mapping
 
 from agents.agent_harness import AgentMessage
-from agents.agent_harness.conversation_recall import relevant_user_requests
+from agents.agent_harness.conversation_recall import (
+    relevant_user_requests, is_contextual_followup, has_recall_terms,
+)
 from agents.agent_harness.redaction import redact_for_persistence
+from .semantic_constraints import valid_semantic_notes, render_semantic_notes, note_id
 
 
 _MAX_ENTRIES = 8
@@ -47,7 +50,7 @@ def valid_conversation_state(value: Any) -> dict[str, list[dict[str, str]]]:
     raw = value.get("entries") if isinstance(value, Mapping) else None
     entries: list[dict[str, str]] = []
     if not isinstance(raw, list):
-        return {"entries": entries}
+        raw = []
     for item in raw[-_MAX_ENTRIES:]:
         if not isinstance(item, Mapping) or item.get("source_role") != "user":
             continue
@@ -67,13 +70,19 @@ def valid_conversation_state(value: Any) -> dict[str, list[dict[str, str]]]:
             "kind": kind, "text": safe, "source_turn_id": turn,
             "source_role": "user",
         })
-    return {"entries": entries}
+    result = {"entries": entries}
+    if isinstance(value, Mapping) and "semantic" in value:
+        result["semantic"] = valid_semantic_notes(value["semantic"])
+    return result
 
 
 def update_conversation_state(
     state: Any, user_input: str, turn_id: str,
 ) -> dict[str, list[dict[str, str]]]:
     result = valid_conversation_state(state)
+    history = result.get("semantic", {}).get("history", [])
+    if any(row.get("source_turn_id") == turn_id for row in history):
+        return result
     text = " ".join(str(user_input or "").split())
     if (
         _QUESTION.search(text)
@@ -124,9 +133,11 @@ def render_conversation_state(state: Any, current_input: str) -> str:
          for item in candidates],
         limit=4, max_chars=1200,
     )
-    if not matched:
-        return ""
-    return "\n".join(
-        f"- {item['kind']} [user turn {item['source_turn_id']}]: {item['text']}"
+    if is_contextual_followup(current_input) and not has_recall_terms(current_input):
+        matched = tuple(item["text"] for item in candidates[-4:])
+    semantic = render_semantic_notes(state.get("semantic")) if isinstance(state, Mapping) else ""
+    legacy = "\n".join(
+        f"- {item['kind']} [id={note_id(item)}; user turn {item['source_turn_id']}]: {item['text']}"
         for item in candidates if item["text"] in matched
     )[:1600]
+    return "\n".join(part for part in (semantic, legacy) if part)[:2400]

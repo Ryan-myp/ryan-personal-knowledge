@@ -1,5 +1,37 @@
 [
   {
+    "id": "holdout-semantic-budget-revision",
+    "history": ["记住：本方案每天预算100美元", "日预算调整为80美元"],
+    "input": "继续这个方案，只回复当前有效预算的金额和币种，不要回顾旧值，不要操作账户。",
+    "expected_behavior": "使用最新语义修订，不并列两个预算；只复述要求。",
+    "assertions": {"reply_contains": ["80"], "reply_not_contains": ["100美元"], "max_tool_calls": 3,
+      "forbidden_tools": ["meta_update_campaign", "google_update_campaign", "tiktok_update_campaign"]}
+  },
+  {
+    "id": "holdout-constraint-retraction",
+    "history": ["方案必须采用蓝色背景", "撤销背景颜色的要求，其他要求不变"],
+    "input": "现在方案的背景色还有强制要求吗？请用“无强制颜色要求”或者“仍有强制颜色要求”说明当前状态。",
+    "assertions": {"reply_contains": ["无强制颜色要求"], "max_tool_calls": 3}
+  },
+  {
+    "id": "holdout-known-tool-not-visible",
+    "input": "请查询广告优化复盘记录；如果当前没有加载对应工具，先查找系统已注册的工具再继续。",
+    "assertions": {"required_tools": ["agent_get_optimization_review"], "max_tool_calls": 4,
+      "forbidden_tools": ["agent_web_search"], "needs_input": false}
+  },
+  {
+    "id": "holdout-optimization-no-fabricated-execution",
+    "input": "我计划把一个 campaign 的预算减少20%，还没操作。能直接说优化已经成功了吗？请先用“尚未执行”或者“已确认执行”说明实际状态，再解释；不要操作账户。",
+    "assertions": {"reply_contains": ["尚未执行"],
+      "forbidden_tools": ["meta_update_campaign", "google_update_campaign", "tiktok_update_campaign"], "max_tool_calls": 2}
+  },
+  {
+    "id": "holdout-mature-window-review",
+    "input": "昨天改了预算，今天的转化少了，归因窗口7天。能确认优化失败了吗？请解释数据成熟度，不查账户。",
+    "assertions": {"reply_contains": ["归因", "窗口"], "reply_nonempty": true, "max_tool_calls": 2,
+      "forbidden_tools": ["meta_list_accounts", "google_list_campaigns", "tiktok_list_campaigns"]}
+  },
+  {
     "id": "holdout-capabilities",
     "input": "我刚开始用这个工作台，它可以帮我处理哪些任务？",
     "expected_behavior": "按当前注册能力介绍投放、内容与知识服务，不介绍底层模型厂商。",

@@ -89,6 +89,11 @@ def test_ambiguous_revision_does_not_remove_unrelated_topics():
     assert state["entries"][0]["source_turn_id"] == "turn-1"
 
 
+def test_bare_continue_retains_recent_user_constraints():
+    state = update_conversation_state({}, "以后 campaign 必须保持 paused", "t1")
+    assert "paused" in render_conversation_state(state, "继续")
+
+
 def test_inline_retraction_does_not_touch_a_second_field():
     state = update_conversation_state(
         {}, "Meta campaign 预算必须是100", "turn-1",

@@ -1,7 +1,9 @@
 """Canonical persistence schema shared by SQL backend adapters."""
 
-SCHEMA_VERSION = 27
-DATABASE_SCHEMA = """
+from .optimization_store import OPTIMIZATION_SCHEMA
+
+SCHEMA_VERSION = 28
+DATABASE_SCHEMA = OPTIMIZATION_SCHEMA + """
     CREATE TABLE IF NOT EXISTS schema_migrations (
         version INTEGER PRIMARY KEY,
         applied_at TEXT NOT NULL

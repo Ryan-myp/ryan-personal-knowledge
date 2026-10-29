@@ -33,7 +33,7 @@ from agents.agent_harness.core.plugins import PluginKind
 
 from fastapi import FastAPI, HTTPException, Header, Request, Query
 from fastapi.responses import HTMLResponse, JSONResponse
-from fastapi.staticfiles import StaticFiles
+from agents.deployments.advertising.workspace_assets import WorkspaceAssets
 from fastapi.middleware.cors import CORSMiddleware
 from typing import Optional
 from starlette.concurrency import run_in_threadpool
@@ -643,7 +643,8 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan,
 )
-app.mount("/static", StaticFiles(directory=STATIC_PATH), name="static")
+workspace_assets = WorkspaceAssets(STATIC_PATH)
+app.mount("/static", workspace_assets, name="static")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS,
@@ -658,8 +659,7 @@ runtime_mcp_servers_app = runtime_mcp_servers.asgi_app()
 @app.get("/", response_class=HTMLResponse)
 async def index():
     try:
-        with open(TEMPLATE_PATH, "r", encoding="utf-8") as f:
-            return f.read()
+        return workspace_assets.page(TEMPLATE_PATH)
     except FileNotFoundError:
         return HTMLResponse("<h1>模板文件不存在</h1>", status_code=404)
 

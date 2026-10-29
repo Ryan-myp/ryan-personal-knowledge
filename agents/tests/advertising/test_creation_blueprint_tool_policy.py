@@ -359,7 +359,9 @@ def test_live_tool_visibility_hides_unapproved_tiktok_legacy_write():
             "tiktok_smart_plus_create_adgroup",
             "tiktok_smart_plus_create_ad",
         },
-        creation_blueprints=SimpleNamespace(get=lambda *_args, **_kwargs: None),
+        creation_blueprints=SimpleNamespace(
+            get=lambda *_args, **_kwargs: None, list=lambda: [TIKTOK_BLUEPRINT],
+        ),
         _canonical_platform=lambda value: str(value or "").lower(),
         registry=SimpleNamespace(list_all=lambda: tools),
     )
@@ -395,7 +397,9 @@ def test_dry_run_tool_visibility_keeps_legacy_tiktok_write():
     ]
     runtime = SimpleNamespace(
         _live_approved_tools=set(),
-        creation_blueprints=SimpleNamespace(get=lambda *_args, **_kwargs: None),
+        creation_blueprints=SimpleNamespace(
+            get=lambda *_args, **_kwargs: None, list=lambda: [TIKTOK_BLUEPRINT],
+        ),
         _canonical_platform=lambda value: str(value or "").lower(),
         registry=SimpleNamespace(list_all=lambda: tools),
     )

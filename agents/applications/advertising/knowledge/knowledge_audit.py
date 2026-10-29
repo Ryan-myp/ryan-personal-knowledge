@@ -242,11 +242,13 @@ def audit_knowledge_base(
             confidence = None
         if confidence is None or not 0 <= confidence <= 1:
             issues.append(_issue("error", "invalid_confidence", "confidence 必须在 0 到 1 之间", page))
+        from .freshness import review_window_days
+        review_days = review_window_days(metadata, stale_days)
         updated = _parse_date(metadata.get("updated_at") or metadata.get("updated"))
         if not updated:
             issues.append(_issue("error", "invalid_updated_at", "updated_at 必须是 YYYY-MM-DD", page))
-        elif today and (today - updated).days > stale_days:
-            issues.append(_issue("warning", "stale_document", f"文档已超过 {stale_days} 天未更新", page))
+        elif today and (today - updated).days > review_days:
+            issues.append(_issue("warning", "stale_document", f"文档已超过 {review_days} 天未更新", page))
 
         source_kind = str(
             metadata.get("source_kind")
@@ -264,11 +266,11 @@ def audit_knowledge_base(
                     "官方或代码来源页面缺少有效的 last_verified_at",
                     page,
                 ))
-            elif today and (today - verified).days > stale_days:
+            elif today and (today - verified).days > review_days:
                 issues.append(_issue(
                     "warning",
                     "stale_source_verification",
-                    f"来源已超过 {stale_days} 天未重新核验",
+                    f"来源已超过 {review_days} 天未重新核验",
                     page,
                 ))
 

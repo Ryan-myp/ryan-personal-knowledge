@@ -1157,6 +1157,7 @@
             updateChatQueuePanel();
             selectedConversationId = null;
             loadedConversationTurnIds.clear();
+            renderedAssistantTurnIds.clear();
             pendingRequest = null;
             pendingBlueprintRequest = null;
             pendingBlueprintContinuation = null;

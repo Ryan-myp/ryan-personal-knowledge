@@ -445,7 +445,13 @@ def migrate_27(conn):
     ))
 
 
+def migrate_28(conn):
+    from .optimization_store import OPTIMIZATION_SCHEMA
+    conn.executescript(_mysql_schema(OPTIMIZATION_SCHEMA))
+
+
 MIGRATIONS = {
+    28: migrate_28,
     1: migrate_1,
     2: migrate_2,
     3: migrate_3,

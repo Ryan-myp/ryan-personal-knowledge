@@ -148,6 +148,7 @@
         }
 
         function renderStreamResult(data, requestParams) {
+            if (data.turn_id) renderedAssistantTurnIds.add(data.turn_id);
             sessionId = data.session_id || sessionId;
             selectedConversationId = sessionId;
             const results = data.results || [];
@@ -772,6 +773,7 @@
                     generation: requestSequence,
                 };
                 loadedConversationTurnIds.clear();
+                renderedAssistantTurnIds.clear();
                 for (const message of (Array.isArray(data.messages) ? data.messages : [])) {
                     if (message.turn_id) loadedConversationTurnIds.add(message.turn_id);
                 }
@@ -825,6 +827,7 @@
                     message.content, message.tools, message.ui, message.attachments,
                 )) continue;
                 const role = message.role === 'user' ? 'user' : 'agent';
+                if (role === 'agent' && message.turn_id) renderedAssistantTurnIds.add(message.turn_id);
                 if (role === 'user') precedingUserInput = String(message.content || '');
                 addMessage(
                     message.content || '',

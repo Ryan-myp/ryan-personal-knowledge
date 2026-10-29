@@ -1,5 +1,5 @@
 {
-  "digest": "88313773c413a99219b5c18c02ccc9a9a1e5250bb5fdaa8f59494b32acadc9d6",
+  "digest": "1911be0f52da5bf6f8861a620668a85a611e22e48843b4b5fd5d0dffa6f0e236",
   "format_version": 1,
   "platforms": {
     "advertising": {
@@ -226,9 +226,190 @@
       ]
     },
     "agent-platform": {
-      "digest": "e90bc4a55255e215992f868acbd4c694634b112e42fb195863106554b6f0bff7",
-      "tool_count": 6,
+      "digest": "00f9f8c74c48ee107a84fc2dd8b5b58623e52384d3d5b9aa898700aab2afd0d3",
+      "tool_count": 11,
       "tools": [
+        {
+          "action": "record",
+          "activation_rules": [],
+          "cancellation_mode": "cooperative",
+          "contract_hash": "d4db82b3e6614336d4dbfa368f7bd831a13daab23df57ef272329b033c72c700",
+          "contract_version": "1.0.0",
+          "description": "登记广告优化建议与成熟基线，跨轮次去重；不会调整广告。需明确目标资源、变更字段、预期值、观察窗口。",
+          "effect_class": "internal_write",
+          "idempotency_key_field": null,
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "account_id": {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              "baseline": {
+                "additionalProperties": false,
+                "properties": {
+                  "attribution_days": {
+                    "maximum": 90,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "currency": {
+                    "maxLength": 200,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "end_date": {
+                    "maxLength": 10,
+                    "minLength": 1,
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                    "type": "string"
+                  },
+                  "metric": {
+                    "maxLength": 200,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "source": {
+                    "maxLength": 200,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "start_date": {
+                    "maxLength": 10,
+                    "minLength": 1,
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                    "type": "string"
+                  },
+                  "timezone": {
+                    "maxLength": 200,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "unit": {
+                    "maxLength": 200,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "value": {
+                    "minimum": 0,
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "metric",
+                  "unit",
+                  "currency",
+                  "timezone",
+                  "source",
+                  "value",
+                  "attribution_days",
+                  "start_date",
+                  "end_date"
+                ],
+                "type": "object"
+              },
+              "cooldown_days": {
+                "maximum": 90,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "expected_value": {
+                "maxLength": 500,
+                "type": [
+                  "string",
+                  "number",
+                  "boolean"
+                ]
+              },
+              "field": {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              "namespace": {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              "observation_days": {
+                "maximum": 90,
+                "minimum": 7,
+                "type": "integer"
+              },
+              "proposal": {
+                "maxLength": 1000,
+                "minLength": 1,
+                "type": "string"
+              },
+              "resource_id": {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              "resource_type": {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "namespace",
+              "account_id",
+              "resource_type",
+              "resource_id",
+              "field",
+              "proposal",
+              "expected_value",
+              "baseline",
+              "cooldown_days",
+              "observation_days"
+            ],
+            "requires": [],
+            "requires_any_of": [],
+            "type": "object"
+          },
+          "integration_api_version": null,
+          "intent_aliases": [],
+          "intent_types": [
+            "optimization_review_create"
+          ],
+          "live_permission": null,
+          "live_support": false,
+          "max_output_bytes": 64000,
+          "name": "agent_create_optimization_review",
+          "namespace": "agent-platform",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "readback_tool": null,
+          "related_resource_id_fields": [],
+          "related_resource_type": null,
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": null,
+          "resource_type": "optimization_review",
+          "result_id_fields": [],
+          "result_items_key": null,
+          "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
+          "skill": "ad-growth-operations",
+          "skill_refs": [
+            "ad-growth-operations"
+          ],
+          "timeout_seconds": 10,
+          "traits": [
+            "local",
+            "durable",
+            "scoped_local_state",
+            "bounded_output"
+          ]
+        },
         {
           "action": "search",
           "activation_rules": [],
@@ -312,6 +493,137 @@
             "runtime_tool_discovery",
             "local",
             "catalog",
+            "bounded_output"
+          ]
+        },
+        {
+          "action": "get",
+          "activation_rules": [],
+          "cancellation_mode": "cooperative",
+          "contract_hash": "be14a5e7b544a4e98027ef58e15dbb0272086a59fd9f37d95136d5d46b32b8c5",
+          "contract_version": "1.0.0",
+          "description": "读取当前会话的用户约束、来源 ID 和版本。",
+          "effect_class": "read",
+          "idempotency_key_field": null,
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {},
+            "required": [],
+            "requires": [],
+            "requires_any_of": [],
+            "type": "object"
+          },
+          "integration_api_version": null,
+          "intent_aliases": [],
+          "intent_types": [
+            "conversation_notes_get"
+          ],
+          "live_permission": null,
+          "live_support": false,
+          "max_output_bytes": 12000,
+          "name": "agent_get_conversation_notes",
+          "namespace": "agent-platform",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "readback_tool": null,
+          "related_resource_id_fields": [],
+          "related_resource_type": null,
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "conversation_notes",
+          "result_id_fields": [],
+          "result_items_key": null,
+          "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
+          "skill": "conversation-continuity",
+          "skill_refs": [
+            "conversation-continuity"
+          ],
+          "timeout_seconds": 5,
+          "traits": [
+            "local",
+            "advisory_memory",
+            "bounded_output"
+          ]
+        },
+        {
+          "action": "get",
+          "activation_rules": [],
+          "cancellation_mode": "cooperative",
+          "contract_hash": "15d2dcd2c731e93a2786f134487803eb6e15a29dc44f64a48950fe445cf91d84",
+          "contract_version": "1.0.0",
+          "description": "查询当前用户的广告优化复盘记录、状态、执行回读证据和效果；支持分页。",
+          "effect_class": "read",
+          "idempotency_key_field": null,
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "limit": {
+                "maximum": 20,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "offset": {
+                "maximum": 10000,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "review_id": {
+                "maxLength": 64,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [],
+            "requires": [],
+            "requires_any_of": [],
+            "type": "object"
+          },
+          "integration_api_version": null,
+          "intent_aliases": [],
+          "intent_types": [
+            "optimization_review_get"
+          ],
+          "live_permission": null,
+          "live_support": false,
+          "max_output_bytes": 64000,
+          "name": "agent_get_optimization_review",
+          "namespace": "agent-platform",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "readback_tool": null,
+          "related_resource_id_fields": [],
+          "related_resource_type": null,
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.read"
+          ],
+          "resource_id_field": null,
+          "resource_type": "optimization_review",
+          "result_id_fields": [],
+          "result_items_key": null,
+          "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
+          "skill": "ad-growth-operations",
+          "skill_refs": [
+            "ad-growth-operations"
+          ],
+          "timeout_seconds": 10,
+          "traits": [
+            "local",
+            "durable",
+            "scoped_local_state",
             "bounded_output"
           ]
         },
@@ -742,6 +1054,302 @@
             "agent_schedule",
             "durable",
             "internal_control_plane"
+          ]
+        },
+        {
+          "action": "update",
+          "activation_rules": [],
+          "cancellation_mode": "cooperative",
+          "contract_hash": "74507f7afb5249b361f9276acde1e0ae63fbcae11187ee1d9b93c1149309cbbd",
+          "contract_version": "1.0.0",
+          "description": "用户明确增加、修改或撤销要求时维护会话约束。理解语义相同的要求后引用旧 ID 替换，不要追加相互冲突的约束；quote 必须逐字引用当前用户消息。仅记忆，不代表授权或已执行。",
+          "effect_class": "internal_write",
+          "idempotency_key_field": null,
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "changes": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "operation": {
+                      "enum": [
+                        "add",
+                        "replace",
+                        "retract"
+                      ],
+                      "type": "string"
+                    },
+                    "quote": {
+                      "maxLength": 240,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "replaces": {
+                      "items": {
+                        "pattern": "^[a-f0-9]{20}$",
+                        "type": "string"
+                      },
+                      "maxItems": 16,
+                      "type": "array",
+                      "uniqueItems": true
+                    },
+                    "subject": {
+                      "maxLength": 120,
+                      "minLength": 1,
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "operation",
+                    "subject",
+                    "quote"
+                  ],
+                  "type": "object"
+                },
+                "maxItems": 8,
+                "minItems": 1,
+                "type": "array"
+              },
+              "expected_revision": {
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "required": [
+              "expected_revision",
+              "changes"
+            ],
+            "requires": [],
+            "requires_any_of": [],
+            "type": "object"
+          },
+          "integration_api_version": null,
+          "intent_aliases": [],
+          "intent_types": [
+            "conversation_notes_update"
+          ],
+          "live_permission": null,
+          "live_support": false,
+          "max_output_bytes": 12000,
+          "name": "agent_update_conversation_notes",
+          "namespace": "agent-platform",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "readback_tool": null,
+          "related_resource_id_fields": [],
+          "related_resource_type": null,
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": null,
+          "resource_type": "conversation_notes",
+          "result_id_fields": [],
+          "result_items_key": null,
+          "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
+          "skill": "conversation-continuity",
+          "skill_refs": [
+            "conversation-continuity"
+          ],
+          "timeout_seconds": 5,
+          "traits": [
+            "local",
+            "advisory_memory",
+            "bounded_output"
+          ]
+        },
+        {
+          "action": "update",
+          "activation_rules": [],
+          "cancellation_mode": "cooperative",
+          "contract_hash": "e4f52f92f8c2f5fc974dfc07cf4ae82cd0e72911a57311e3a222268a449e9c9c",
+          "contract_version": "1.0.0",
+          "description": "推进优化复盘：link_execution 验证既有 live 审计，verify_readback 核验预期字段，review 比较成熟同口径数据，reopen 在冷却结束后开启下一轮。执行和回读传 evidence，回读再传 readback_path，复盘传 outcome，新一轮传 outcome 作为基线以及 proposal/expected_value。不能以模型声明替代证据；不调用渠道 API。",
+          "effect_class": "internal_write",
+          "idempotency_key_field": null,
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [],
+            "properties": {
+              "action": {
+                "enum": [
+                  "link_execution",
+                  "verify_readback",
+                  "review",
+                  "reopen"
+                ],
+                "type": "string"
+              },
+              "evidence": {
+                "additionalProperties": false,
+                "properties": {
+                  "session_id": {
+                    "maxLength": 200,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "tool_name": {
+                    "maxLength": 200,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "turn_id": {
+                    "maxLength": 200,
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "session_id",
+                  "turn_id",
+                  "tool_name"
+                ],
+                "type": "object"
+              },
+              "expected_value": {
+                "maxLength": 500,
+                "type": [
+                  "string",
+                  "number",
+                  "boolean"
+                ]
+              },
+              "expected_version": {
+                "minimum": 1,
+                "type": "integer"
+              },
+              "outcome": {
+                "additionalProperties": false,
+                "properties": {
+                  "attribution_days": {
+                    "maximum": 90,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "currency": {
+                    "maxLength": 200,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "end_date": {
+                    "maxLength": 10,
+                    "minLength": 1,
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                    "type": "string"
+                  },
+                  "metric": {
+                    "maxLength": 200,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "source": {
+                    "maxLength": 200,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "start_date": {
+                    "maxLength": 10,
+                    "minLength": 1,
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+                    "type": "string"
+                  },
+                  "timezone": {
+                    "maxLength": 200,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "unit": {
+                    "maxLength": 200,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "value": {
+                    "minimum": 0,
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "metric",
+                  "unit",
+                  "currency",
+                  "timezone",
+                  "source",
+                  "value",
+                  "attribution_days",
+                  "start_date",
+                  "end_date"
+                ],
+                "type": "object"
+              },
+              "proposal": {
+                "maxLength": 1000,
+                "minLength": 1,
+                "type": "string"
+              },
+              "readback_path": {
+                "maxLength": 200,
+                "minLength": 1,
+                "type": "string"
+              },
+              "review_id": {
+                "maxLength": 64,
+                "minLength": 1,
+                "type": "string"
+              }
+            },
+            "required": [
+              "review_id",
+              "expected_version",
+              "action"
+            ],
+            "requires": [],
+            "requires_any_of": [],
+            "type": "object"
+          },
+          "integration_api_version": null,
+          "intent_aliases": [],
+          "intent_types": [
+            "optimization_review_update"
+          ],
+          "live_permission": null,
+          "live_support": false,
+          "max_output_bytes": 64000,
+          "name": "agent_update_optimization_review",
+          "namespace": "agent-platform",
+          "parent_resource_id_field": null,
+          "parent_resource_type": null,
+          "readback_tool": null,
+          "related_resource_id_fields": [],
+          "related_resource_type": null,
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": null,
+          "resource_type": "optimization_review",
+          "result_id_fields": [],
+          "result_items_key": null,
+          "risk_level": "low",
+          "scope_fields": [],
+          "scope_required": false,
+          "scope_type": null,
+          "skill": "ad-growth-operations",
+          "skill_refs": [
+            "ad-growth-operations"
+          ],
+          "timeout_seconds": 10,
+          "traits": [
+            "local",
+            "durable",
+            "scoped_local_state",
+            "bounded_output"
           ]
         }
       ]
@@ -55695,5 +56303,5 @@
       "tool_source_api_version": "v1.3"
     }
   },
-  "tool_count": 323
+  "tool_count": 328
 }

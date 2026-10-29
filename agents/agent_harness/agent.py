@@ -1125,12 +1125,16 @@ class Agent:
         context_messages: list[AgentMessage] = []
         model_request = request
         if self.context_provider is not None:
+            build_tool_context = getattr(self.context_provider, "build_tool_context", None)
             build_context = getattr(self.context_provider, "build_context", None)
-            if not callable(build_context):
+            if not callable(build_context) and not callable(build_tool_context):
                 raise TypeError("context_provider must expose build_context()")
             started = time.monotonic()
             try:
-                value = build_context(request, transcript)
+                value = (
+                    build_tool_context(request, transcript, tools)
+                    if callable(build_tool_context) else build_context(request, transcript)
+                )
             finally:
                 self._emit(
                     "runtime_phase", request, phase="context_build",

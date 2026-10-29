@@ -1,12 +1,13 @@
 ---
 name: ad-growth-operations
 description: "把广告账户检查设计成有证据、可复盘、有停止条件的定期 Agent 任务"
-version: "1.1.0"
+version: "1.2.0"
 namespace: advertising
 triggers:
   - [定期检查广告, 周度账户检查, 每天检查投放, recurring ad review, weekly ads review, weekly paid media review, paid media review loop]
   - [广告疲劳监控, creative fatigue watch, spend pacing alert, 预算节奏监控]
   - [创建广告定时任务, 定期广告复盘, 广告自动化规则]
+  - [优化复盘, 优化效果, 变更基线, 调整后效果, 预算优化建议]
 ---
 
 # 广告增长运营循环
@@ -47,6 +48,9 @@ triggers:
 - 失败、部分结果或执行状态未知时，不把缺失数据解释成零表现，也不重复重放有副作用的操作。
 
 ## 输出
+
+当前 Registry 若提供优化复盘记录能力，按需加载 `references/outcome-review.md`。
+将建议、执行证据、回读和成熟窗口结果归到同一记录；登记记录不会执行渠道变更，也不代表审批通过。
 
 先给循环草案：目的、读取范围、频率、动作条件、只读/写入级别、状态/去重要求、失败停止条件、
 结果输出和人工确认点。缺少关键 scope、证据、冷却状态或 write gate 时，明确将其标为

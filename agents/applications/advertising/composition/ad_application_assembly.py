@@ -35,6 +35,10 @@ from agents.agent_platform.tools import (
     scheduling_tool_source,
 )
 from agents.agent_platform.tools.clarification import clarification_tool_source
+from agents.agent_platform.tools.conversation_notes import conversation_notes_source
+from ..operations.conversation_notes_service import ConversationNotesService
+from ..operations.optimization_reviews import OptimizationReviewService
+from agents.tools.advertising.shared.optimization_review_tools import optimization_review_source
 from agents.agent_platform.tools.discovery import tool_discovery_source
 from agents.agent_harness.core.plugins import PluginKind
 from agents.agent_harness.core.memory import MemoryManager
@@ -369,7 +373,12 @@ class AdApplicationAssembly:
             runtime, store, security,
         )
         services.bind_scheduling(scheduling_service)
+        notes = ConversationNotesService(runtime)
         for source, description in (
+            (optimization_review_source(OptimizationReviewService(store, runtime.registry)),
+             "Scoped optimization proposals, execution evidence and mature outcome reviews"),
+            (conversation_notes_source(notes.read, notes.update),
+             "Source-backed advisory conversation revisions"),
             (
                 tool_discovery_source(
                     required_permission="ads.read",
@@ -578,7 +587,7 @@ class AdApplicationAssembly:
                 runtime,
                 ToolSelector(policies=getattr(runtime, "policies", ())),
             ),
-            "skill_catalog": InMemorySkillCatalog(),
+            "skill_catalog": InMemorySkillCatalog(max_context_chars=6000, max_skills=6),
             "tool_policy": services.tool_policy,
             "context_provider": AdvertisingContextProvider(runtime),
             "input_sanitizer": runtime._redact_for_persistence,
@@ -751,6 +760,7 @@ class AdApplicationAssembly:
         selector: ToolSelector,
     ) -> Callable[[TurnRequest, Any], list[Any]]:
         def select_tools(request: TurnRequest, tools: Any) -> list[Any]:
+            contextual_namespaces = ()
             request_context = (
                 request.context if isinstance(request.context, Mapping) else {}
             )
@@ -903,6 +913,16 @@ class AdApplicationAssembly:
             selected = _filter_unapproved_live_write_tools(
                 runtime, request, selected,
             )
+            from ..run.initial_tool_budget import bound_initial_tools, blueprint_entry_names
+            explicit_namespaces = selector.detect_namespaces(request.user_input, tools)
+            scoped_namespaces = {tool.namespace for tool in selected if tool.scope_fields}
+            known_namespaces = (
+                set(explicit_namespaces) | scoped_namespaces | set(contextual_namespaces)
+            )
+            if allow_clarification and len(known_namespaces) <= 1:
+                selected = bound_initial_tools(
+                    selected, pinned_names=blueprint_entry_names(runtime),
+                )
             if isinstance(request.context, dict):
                 request.context["_agent_local_catalog"] = bool(selected) and all(
                     bool(getattr(item, "is_read_tool", False))

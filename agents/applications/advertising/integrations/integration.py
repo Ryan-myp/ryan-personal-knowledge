@@ -19,6 +19,7 @@ from agents.tools.creative_media.contracts import CreativeAssetStore
 from agents.tools.advertising.shared.domain.account_scope import tool_call_accounts
 from .ad_capability_catalog import AdvertisingCapabilityCatalog
 from .ad_turn_context import AdTurnContextService
+from .selected_context import build_selected_context
 
 
 class _ContextTrace:
@@ -53,6 +54,10 @@ class AdvertisingContextProvider:
         self.owner = owner
         self._service = AdTurnContextService()
         self._contexts: dict[str, dict[str, Any]] = {}
+        self._selected_contexts: dict[str, tuple[tuple, dict]] = {}
+
+    def build_tool_context(self, request, messages, tools) -> dict[str, Any]:
+        return build_selected_context(self, request, messages, tools)
 
     def build_context(
         self, request: Any, _messages: list[AgentMessage],
@@ -164,6 +169,7 @@ class AdvertisingContextProvider:
     def cleanup(self, request: Any, _state: Any = None) -> None:
         """Release the bounded context snapshot owned by one Run."""
         self._contexts.pop(str(getattr(request, "run_id", "") or ""), None)
+        self._selected_contexts.pop(str(getattr(request, "run_id", "") or ""), None)
 
     def _account_from_platform_params(self, request_context: Mapping[str, Any]) -> Any:
         values_by_platform = request_context.get("platform_params")
@@ -595,6 +601,8 @@ class AdvertisingToolExecutor:
             ),
             "account_scope": getattr(principal, "account_scope", None),
         }
+        if "advisory_memory" in self.definition.traits:
+            metadata["source_user_input"] = self.owner._redact_for_persistence(request.user_input)
         if (
             self.definition.resource_type == "creation_template"
             and self.definition.action == "get"
@@ -746,7 +754,8 @@ class AdvertisingToolExecutor:
         )
         tool_context = copy.copy(session.ctx)
         tool_context.scope = dict(session.ctx.scope)
-        if self._is_internal_write():
+        scoped_local = {"advisory_memory", "scoped_local_state"} & set(self.definition.traits)
+        if self._is_internal_write() or scoped_local:
             tool_context.scope["principal"] = request.principal
         tool_context.account_id = self._request_account(
             request_context, input_data, session,

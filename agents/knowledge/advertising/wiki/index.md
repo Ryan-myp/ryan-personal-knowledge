@@ -1,7 +1,7 @@
 # LLM 知识库索引
 
-> **版本**: v2.10.2
-> **更新时间**: 2026-10-26
+> **版本**: v2.10.3
+> **更新时间**: 2026-10-29
 > **定位**: 为单 Agent 提供可检索、可引用、不可执行的广告业务上下文
 
 ## 知识地图
@@ -50,6 +50,7 @@ knowledge_base/
 │   └── unit-economics-and-channel-mix.md
 ├── expertise/
 │   ├── optimization-diagnostic-framework.md
+│   ├── optimization-outcome-review.md
 │   ├── experimentation-and-learning.md
 │   ├── best-practices.md
 │   └── error-patterns.md
@@ -88,6 +89,7 @@ knowledge_base/
 | “商品目录/Feed 有拒绝、缺货、ID/价格不匹配，广告为什么没量？” | `business/catalog-feed-quality-operations` + Google/Meta/TikTok 商品目录专题 |
 | “广告审核中、被拒登、账户受限，怎么诊断、修复或申诉并验证恢复？” | `business/ad-review-and-recovery` + 对应平台审核/约束专题 |
 | “数据为什么异常？” | `optimization-diagnostic-framework` + 对应平台 measurement 文档 |
+| “调整后效果有没有变好，如何避免重复调整？” | `expertise/optimization-outcome-review` + `ad-growth-operations` 的复盘记录流程 |
 | “账户审计覆盖不完整，健康分应该怎么算？” | `evidence-driven-performance-diagnosis` |
 | “Google 搜索词/转化报表或 Meta Insights 数据可信吗，指标如何解读？” | `agents/skills/advertising/practices/account-diagnostics/` + 对应平台 measurement/reporting 文档 |
 | “TikTok 报表没有花费，DV360 Line Item 报表为空？” | `agents/skills/advertising/practices/account-diagnostics/` 的平台参考 + TikTok/DV360 报表专题；先核实当前 Tool 的查询层级、状态与完整性 |

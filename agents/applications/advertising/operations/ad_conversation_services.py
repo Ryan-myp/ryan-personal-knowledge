@@ -265,14 +265,8 @@ class AdConversationServices:
         result = self.runtime._execution_run_dict(record)
         if result is None:
             return None
-        events = self.runtime._session_manager.list_execution_run_events(
-            result["run_id"], after_seq=0, limit=512
-        )
-        result["events"] = events
-        result["latest_seq"] = max(
-            [int(item.get("seq", 0)) for item in events if isinstance(item, dict)]
-            or [0]
-        )
+        from .run_event_page import run_event_page
+        result.update(run_event_page(self.runtime._session_manager, result["run_id"], 0, 511))
         result["recovery_message"] = (
             "服务中断导致本次执行状态未知，请先回查 Provider/工作流后再继续。"
             if result.get("status") == "recovery_required" else None
@@ -310,14 +304,8 @@ class AdConversationServices:
         result = self.runtime._execution_run_dict(record)
         if result is None:
             return None
-        events = self.runtime._session_manager.list_execution_run_events(
-            run_id, after_seq=max(0, int(after_seq)), limit=limit
-        )
-        result["events"] = events
-        result["latest_seq"] = max(
-            [int(item.get("seq", 0)) for item in events if isinstance(item, dict)]
-            or [max(0, int(after_seq))]
-        )
+        from .run_event_page import run_event_page
+        result.update(run_event_page(self.runtime._session_manager, run_id, after_seq, limit))
         result["recovery_message"] = (
             "服务中断导致本次执行状态未知，请先回查 Provider/工作流后再继续。"
             if result.get("status") == "recovery_required" else None

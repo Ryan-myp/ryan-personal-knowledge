@@ -1,0 +1,177 @@
+{
+  "date": "2026-10-29",
+  "baseline_commit": "56d4ec4",
+  "scope": [
+    "source_verified_conversation_revisions",
+    "selected_tool_skill_context",
+    "terminal_event_paging_and_reply_recovery",
+    "bounded_initial_prompt",
+    "repeated_evaluation_and_ci",
+    "durable_optimization_outcome_reviews",
+    "cohesive_modules_and_quality_delta",
+    "knowledge_review_freshness"
+  ],
+  "provider_requests": 0,
+  "external_model_requests": 0,
+  "verification": {
+    "make_ad_agent_check": "passed",
+    "frontend_tests_passed": 229,
+    "targeted_coverage_tests_passed": 56,
+    "new_module_coverage_percent": 90.55,
+    "coverage_scope": [
+      "agents/agent_platform/tools/conversation_notes.py",
+      "agents/applications/advertising/integrations/selected_context.py",
+      "agents/applications/advertising/knowledge/freshness.py",
+      "agents/applications/advertising/operations/conversation_notes_service.py",
+      "agents/applications/advertising/operations/optimization_evidence.py",
+      "agents/applications/advertising/operations/optimization_measurements.py",
+      "agents/applications/advertising/operations/optimization_reviews.py",
+      "agents/applications/advertising/operations/run_event_page.py",
+      "agents/applications/advertising/operations/semantic_constraints.py",
+      "agents/applications/advertising/persistence/optimization_store.py",
+      "agents/applications/advertising/run/initial_tool_budget.py",
+      "agents/tools/advertising/shared/optimization_review_tools.py"
+    ],
+    "tool_contracts_validated": 328,
+    "holdout_unique_cases": 17,
+    "real_model_evaluation": "not_run",
+    "skill_up": "not_run_cli_unavailable",
+    "quality_delta": {
+      "gate_passed": true,
+      "files_scanned": 27,
+      "baseline_findings": 154,
+      "current_findings": 153,
+      "new_findings": 0
+    },
+    "whole_repository_qguard": {
+      "gate_passed": false,
+      "scanned_files": 783,
+      "findings": 4997,
+      "score": 0
+    },
+    "git_diff_check": "passed",
+    "creation_audit": {
+      "status": "passed",
+      "create_tools": 75,
+      "blueprints": 33,
+      "lookup_contracts": 284,
+      "mapped_formats": {
+        "google-ads": "30/32",
+        "meta": "13/13",
+        "tiktok": "14/17"
+      },
+      "existing_structured_guidance_gaps": 6,
+      "advanced_payload_fields": 11
+    },
+    "python_tests_passed": 3405,
+    "knowledge_pages_validated": 86,
+    "knowledge_errors": 0,
+    "knowledge_warnings": 0
+  },
+  "prompt_benchmark": {
+    "units": "serialized_characters_not_tokens",
+    "network_blocked": true,
+    "cases": [
+      {
+        "case_id": "greeting",
+        "before_chars": 24441,
+        "after_chars": 24472,
+        "reduction_percent": -0.1,
+        "visible_tools": 2
+      },
+      {
+        "case_id": "capabilities",
+        "before_chars": 33419,
+        "after_chars": 31956,
+        "reduction_percent": 4.4,
+        "visible_tools": 2
+      },
+      {
+        "case_id": "knowledge",
+        "before_chars": 71257,
+        "after_chars": 65540,
+        "reduction_percent": 8.0,
+        "visible_tools": 33
+      },
+      {
+        "case_id": "report",
+        "before_chars": 36827,
+        "after_chars": 33087,
+        "reduction_percent": 10.2,
+        "visible_tools": 2
+      },
+      {
+        "case_id": "templates",
+        "before_chars": 94585,
+        "after_chars": 46378,
+        "reduction_percent": 51.0,
+        "visible_tools": 10
+      },
+      {
+        "case_id": "creation",
+        "before_chars": 94429,
+        "after_chars": 41368,
+        "reduction_percent": 56.2,
+        "visible_tools": 10
+      },
+      {
+        "case_id": "followup",
+        "before_chars": 123188,
+        "after_chars": 43365,
+        "reduction_percent": 64.8,
+        "visible_tools": 5
+      }
+    ]
+  },
+  "service": {
+    "status": "healthy",
+    "host": "0.0.0.0",
+    "port": 8766,
+    "database": "agents/ad_agent/ad_agent.db",
+    "config": "agents/ad_agent/config.test-live.yaml",
+    "before_templates": 14,
+    "before_sessions": 200,
+    "backup": "sqlite_backup_api_outside_git_worktree",
+    "before_table_counts": {
+      "creation_templates": 14,
+      "knowledge_documents": 0,
+      "mcp_servers": 0,
+      "sessions": 513,
+      "skill_versions": 0
+    },
+    "readyz_http_status": 200,
+    "listener": "*:8766",
+    "new_tools_loaded": 5,
+    "configured_registry_tools": 354,
+    "schema_version": 28,
+    "preserved_user_template_ids": true,
+    "preserved_latest_200_session_ids": true,
+    "after_table_counts": {
+      "creation_templates": 14,
+      "knowledge_documents": 0,
+      "mcp_servers": 0,
+      "sessions": 513,
+      "skill_versions": 0
+    },
+    "frontend_recovery_loaded": true,
+    "skills_loaded": [
+      "conversation-continuity@1.0.0",
+      "ad-growth-operations@1.2.0"
+    ]
+  },
+  "migration": {
+    "from": 27,
+    "to": 28,
+    "additive_table": "optimization_reviews",
+    "real_mysql_verification": false
+  },
+  "limitations": [
+    "Model semantic accuracy not established by fixture tests",
+    "Optimization observations are user supplied, not automatically verified report metrics",
+    "Optimization records coordinate one user and are not an enterprise-wide write lock",
+    "Multiple same-name audit calls in one turn require unambiguous evidence",
+    "Before/after metrics are observational, not causal lift",
+    "Whole-repository quality debt remains",
+    "Existing Provider live coverage is not expanded by this round"
+  ]
+}

@@ -4,6 +4,15 @@ from agents.applications.advertising.knowledge.knowledge_audit import audit_know
 from scripts.advertising.normalize_knowledge_metadata import _normalise_page
 
 
+def test_api_and_policy_knowledge_has_shorter_review_window():
+    from agents.applications.advertising.knowledge.freshness import review_window_days
+    assert review_window_days({"layer": "api"}, 180) == 30
+    assert review_window_days({"knowledge_type": "policy"}, 180) == 30
+    assert review_window_days({"layer": "business"}, 180) == 180
+    assert review_window_days({"review_interval_days": 14}, 180) == 14
+    assert review_window_days({"layer": "api", "review_interval_days": 365}, 180) == 30
+
+
 def _page(root, relative, content):
     path = root / relative
     path.parent.mkdir(parents=True, exist_ok=True)

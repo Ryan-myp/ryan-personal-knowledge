@@ -835,6 +835,11 @@ def test_plugin_only_channel_auto_discovers_without_tool_source_or_central_confi
         'new_network_list_campaigns',
         'agent_request_input',
         'agent_discover_tools',
+        'agent_get_conversation_notes',
+        'agent_update_conversation_notes',
+        'agent_create_optimization_review',
+        'agent_get_optimization_review',
+        'agent_update_optimization_review',
     }
     assert runtime.skill_loader.get("new-network-skill").namespace_aliases == ["新网络"]
 
@@ -884,6 +889,11 @@ def test_standard_skill_discovery_does_not_require_category_directories(tmp_path
         'new_network_plan',
         'agent_request_input',
         'agent_discover_tools',
+        'agent_get_conversation_notes',
+        'agent_update_conversation_notes',
+        'agent_create_optimization_review',
+        'agent_get_optimization_review',
+        'agent_update_optimization_review',
     }
     loaded = runtime.skill_loader.get("campaign-planning")
     assert loaded is not None
@@ -914,6 +924,11 @@ def test_untrusted_skill_root_is_advisory_only_by_default(tmp_path):
         'agent_readonly_recipe',
         'agent_request_input',
         'agent_discover_tools',
+        'agent_get_conversation_notes',
+        'agent_update_conversation_notes',
+        'agent_create_optimization_review',
+        'agent_get_optimization_review',
+        'agent_update_optimization_review',
     }
 
 

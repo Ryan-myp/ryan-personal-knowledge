@@ -196,6 +196,16 @@ class DynamicToolSelector:
             )
         return refs
 
+    def build_selected_skill_context(self, user_input, tools, *, tenant_id="default") -> str:
+        """Use actual visible Tools, including dynamic discoveries, without re-routing."""
+        refs = self._associated_skill_refs(tools)
+        sections = [
+            self._triggered_skill_context(user_input, skill_refs=refs),
+            self._managed_skill_context(user_input, tenant_id=tenant_id, skill_refs=refs),
+            self._merge_expert_knowledge(tools),
+        ]
+        return "\n\n".join(section for section in sections if section)[:6000]
+
     def _triggered_skill_context(
         self,
         user_input: str,

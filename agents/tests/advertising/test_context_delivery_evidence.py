@@ -11,6 +11,47 @@ from agents.evals.advertising.skill_up_engine import run
 from agents.tests.advertising.harness_models import ScriptedHarnessModel
 
 
+def test_dynamic_tool_guidance_refreshes_once_per_tool_set_and_cleans_up(monkeypatch):
+    calls = []
+    def guidance(_query, tools, **_kwargs):
+        calls.append([tool.name for tool in tools])
+        return "新技能:" + ",".join(calls[-1])
+    owner = SimpleNamespace(
+        tool_selector=SimpleNamespace(build_selected_skill_context=guidance),
+        _sessions={},
+    )
+    provider = AdvertisingContextProvider(owner)
+    monkeypatch.setattr(provider, "build_context", lambda *_: {
+        "skill_context": {"conversation_state": "用户约束"},
+        "structured_input": {}, "capability_catalog": "",
+    })
+    request = TurnRequest("继续", run_id="r", tenant_id="t")
+    first = SimpleNamespace(name="read", contract_version="1", skill_refs=[])
+    second = SimpleNamespace(name="analyze", contract_version="1", skill_refs=["analysis"])
+    assert "新技能:read" in provider.build_tool_context(request, [], [first])["prompt"]
+    assert "新技能:analyze" in provider.build_tool_context(request, [], [second])["prompt"]
+    assert "用户约束" in provider.build_tool_context(request, [], [second])["prompt"]
+    assert calls == [["read"], ["analyze"]]
+    provider.cleanup(request)
+    assert not provider._selected_contexts
+
+
+def test_selected_guidance_refreshes_budget_and_bounds_new_text(monkeypatch):
+    owner = SimpleNamespace(_sessions={}, tool_selector=SimpleNamespace(
+        build_selected_skill_context=lambda *_args, **_kwargs: "指导" * 10000,
+    ))
+    provider = AdvertisingContextProvider(owner)
+    monkeypatch.setattr(provider, "build_context", lambda *_: {
+        "skill_context": {"context_budget": {"aggregate_used": 999999}},
+        "structured_input": {}, "capability_catalog": "",
+    })
+    result = provider.build_tool_context(TurnRequest("分析", run_id="bounded"), [], [])
+    context = result["skill_context"]
+    assert len(context["expert_knowledge"]) == 6000
+    assert context["context_budget"]["aggregate_used"] == 6000
+    assert context["context_budget"]["truncated"]["expert_knowledge"]
+
+
 def test_rendered_context_records_only_complete_delivered_knowledge():
     prompt, evidence = AdvertisingContextProvider._render_context({
         "expert_knowledge": "g" * 6000,

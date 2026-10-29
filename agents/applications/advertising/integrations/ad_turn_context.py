@@ -53,6 +53,10 @@ class AdTurnContextService:
     )
 
     @staticmethod
+    def render_user_constraints(notes, user_input):
+        return render_conversation_state(notes, user_input)
+
+    @staticmethod
     def _bounded_text(value: Any, limit: int) -> tuple[str, bool]:
         text = str(value or "")
         return text[:limit], len(text) > limit
@@ -300,7 +304,7 @@ class AdTurnContextService:
             budget["conversation_digest"],
         )
         notes, notes_truncated = cls._bounded_text(
-            render_conversation_state(
+            cls.render_user_constraints(
                 session.ctx.metadata.get("conversation_state"), safe_user_input,
             ),
             budget["conversation_state"],
@@ -325,6 +329,20 @@ class AdTurnContextService:
             "conversation_state": notes_truncated,
             "conversation_task_state": task_state_truncated,
         })
+        cls.refresh_budget(skill_context, truncated)
+        session.ctx.metadata["skill_context"] = skill_context
+
+    @classmethod
+    def refresh_budget(cls, skill_context, truncated=None):
+        """Reapply bounds after selected-tool guidance or advisory revisions change."""
+        if truncated is None:
+            truncated = dict(skill_context.get("context_budget", {}).get("truncated", {}))
+        budget = cls._CONTEXT_LIMITS
+        for key, limit in budget.items():
+            value = skill_context.get(key)
+            if isinstance(value, str) and len(value) > limit:
+                skill_context[key] = value[:limit]
+                truncated[key] = True
         aggregate_used = cls._enforce_aggregate_budget(skill_context, truncated)
         skill_context["context_budget"] = {
             "limits": dict(budget),
@@ -345,7 +363,6 @@ class AdTurnContextService:
             },
             "total_truncated": any(truncated.values()),
         }
-        session.ctx.metadata["skill_context"] = skill_context
 
 
 __all__ = ["AdTurnContext", "AdTurnContextService"]

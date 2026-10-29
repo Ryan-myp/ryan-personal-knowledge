@@ -9,6 +9,34 @@ from types import SimpleNamespace
 from agents.agent_harness.core.tool_selector import DynamicToolSelector
 
 
+def test_context_provider_can_follow_the_actual_model_tool_set():
+    seen = []
+    class Context:
+        def build_tool_context(self, request, messages, tools):
+            seen.append([tool.name for tool in tools])
+            return {"prompt": "CURRENT TOOLS"}
+
+    application = AgentApplication.create(
+        model=lambda *_: ModelTurn(content="ok"), context_provider=Context(),
+    )
+    try:
+        result = application.prompt("hello")
+        assert result.status.value == "succeeded"
+        assert seen == [[]]
+    finally:
+        application.close()
+
+
+def test_explicit_tool_skill_context_does_not_rerank_discovered_tools(monkeypatch):
+    selector = DynamicToolSelector(SimpleNamespace(list_all=lambda: {}))
+    tool = SimpleNamespace(skill_refs=["new-skill"])
+    monkeypatch.setattr(selector, "_merge_expert_knowledge", lambda tools: "bound" if tools == [tool] else "")
+    monkeypatch.setattr(selector, "_triggered_skill_context", lambda *a, **k: str(k["skill_refs"]))
+    monkeypatch.setattr(selector, "_managed_skill_context", lambda *a, **k: "managed")
+    result = selector.build_selected_skill_context("继续", [tool], tenant_id="tenant")
+    assert "new-skill" in result and "bound" in result and "managed" in result
+
+
 def test_model_messages_keep_stable_instructions_ahead_of_dynamic_context():
     class ContextProvider:
         @staticmethod

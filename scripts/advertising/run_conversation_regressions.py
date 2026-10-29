@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from itertools import product
 from dataclasses import dataclass
 from functools import partial
 import json
@@ -157,9 +158,12 @@ def run_suite(
     mode: str,
     release_gate: ReleaseGate | None = None,
     on_case_complete: Callable[[Mapping[str, Any]], None] | None = None,
+    repeats: int = 1,
 ) -> dict[str, Any]:
+    if type(repeats) is not int or not 1 <= repeats <= 5:
+        raise ValueError("repeats must be between 1 and 5")
     results = []
-    for case in cases:
+    for attempt, case in product(range(1, repeats + 1), cases):
         started = time.perf_counter()
         tool_names: list[str] = []
         tool_call_count = 0
@@ -202,7 +206,7 @@ def run_suite(
             except (OSError, RuntimeError, ValueError, KeyError, TypeError) as error:
                 result = {"status": "error", "checks": 0, "failures": [type(error).__name__]}
         results.append({
-            "id": case.id, **result,
+            "id": case.id, "attempt": attempt, **result,
             "tool_call_count": tool_call_count,
             "tool_names": tool_names,
             "phase_ms": phase_ms,
@@ -225,7 +229,8 @@ def run_suite(
     if release_gate is not None:
         if mode != "model_backed_offline_providers":
             blockers.append("model_backed_required")
-        if len(durations) < release_gate.min_cases:
+        graded_ids = {row["id"] for row in results if row["status"] in {"passed", "failed"}}
+        if len(graded_ids) < release_gate.min_cases:
             blockers.append("insufficient_samples")
         if totals["passed"] != len(results):
             blockers.append("case_failures")
@@ -233,6 +238,7 @@ def run_suite(
             blockers.append("latency_p95_exceeded")
     return {
         "schema_version": "agent-regression-report/v1", "mode": mode,
+        "unique_cases": len(cases), "repeats": repeats,
         "complete": True, "completed_cases": len(results),
         "provider_e2e": False, "total": len(results), **totals, "cases": results,
         "gate_passed": totals["passed"] == len(results) and bool(results),
@@ -275,6 +281,19 @@ def _model_response(
     return result["metadata"]["runtime_result"]
 
 
+def _suite_executor(args):
+    if args.model_backed:
+        load_default_local_env()
+        adapter = configured_model_adapter()
+        if adapter is None:
+            raise RuntimeError("model evaluation is not configured")
+        return partial(_model_response, model_adapter=adapter)
+    if args.responses.stat().st_size > 4_194_304:
+        raise ValueError("response evidence exceeds 4 MiB")
+    responses = json.loads(args.responses.read_text(encoding="utf-8"))
+    return lambda case: responses[case.id]
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--cases", type=Path, required=True)
@@ -285,6 +304,7 @@ def main() -> int:
     parser.add_argument("--release-gate", action="store_true")
     parser.add_argument("--min-cases", type=int, default=6)
     parser.add_argument("--max-p95-ms", type=float)
+    parser.add_argument("--repeats", type=int, choices=range(1, 6), default=1)
     args = parser.parse_args()
     if args.release_gate and (not args.model_backed or args.max_p95_ms is None):
         parser.error("--release-gate requires --model-backed and --max-p95-ms")
@@ -294,29 +314,14 @@ def main() -> int:
     )
     cases = load_cases(args.cases)
     progress = RegressionProgressWriter(
-        args.output, total=len(cases),
+        args.output, total=len(cases) * args.repeats,
         mode="model_backed_offline_providers" if args.model_backed else "replay_assertions",
     )
-    if args.model_backed:
-        load_default_local_env()
-        adapter = configured_model_adapter()
-        if adapter is None:
-            raise RuntimeError("model evaluation is not configured")
-        report = run_suite(
-            cases,
-            partial(_model_response, model_adapter=adapter),
-            mode="model_backed_offline_providers",
-            release_gate=release_gate,
-            on_case_complete=progress.record,
-        )
-    else:
-        if args.responses.stat().st_size > 4_194_304:
-            raise ValueError("response evidence exceeds 4 MiB")
-        responses = json.loads(args.responses.read_text(encoding="utf-8"))
-        report = run_suite(
-            cases, lambda case: responses[case.id], mode="replay_assertions",
-            on_case_complete=progress.record,
-        )
+    report = run_suite(
+        cases, _suite_executor(args),
+        mode="model_backed_offline_providers" if args.model_backed else "replay_assertions",
+        release_gate=release_gate, on_case_complete=progress.record, repeats=args.repeats,
+    )
     rendered = json.dumps(report, ensure_ascii=False, indent=2)
     if args.output:
         _write_report(args.output, rendered + "\n")

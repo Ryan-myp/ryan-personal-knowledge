@@ -61,6 +61,11 @@ jobs:
           cache-dependency-path: requirements.txt
       - name: Install dependencies
         run: make ad-agent-install
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Run frontend regression tests
+        run: make ad-agent-frontend-test
       - name: Build standalone Agent Harness wheel
         run: |
           mkdir -p /tmp/agent-harness-wheel
@@ -131,6 +136,7 @@ jobs:
           git clone --filter=blob:none --no-checkout https://github.com/alibaba/skill-up.git /tmp/skill-up
           git -C /tmp/skill-up fetch --depth=1 origin "$SKILL_UP_REF"
           git -C /tmp/skill-up checkout "$SKILL_UP_REF"
+          cd /tmp/skill-up
           go build -o /tmp/skill-up-bin ./cmd/skill-up
       - name: Validate skill-up evaluation config
         if: ${{ env.AD_AGENT_EVAL_API_KEY != '' && env.AD_AGENT_EVAL_MODEL != '' }}

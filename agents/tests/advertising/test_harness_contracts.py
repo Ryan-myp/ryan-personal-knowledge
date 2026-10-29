@@ -276,6 +276,11 @@ def test_skill_unload_rolls_back_when_catalog_refresh_fails_once():
         'atomic_unload_read',
         'agent_request_input',
         'agent_discover_tools',
+        'agent_get_conversation_notes',
+        'agent_update_conversation_notes',
+        'agent_create_optimization_review',
+        'agent_get_optimization_review',
+        'agent_update_optimization_review',
     }
     assert runtime.get_loaded_skills()["atomic-unload"] is skill
     assert runtime.plugin_registry.get("skill:atomic-unload").state.value == "active"
@@ -290,6 +295,11 @@ def test_skill_unload_rolls_back_when_catalog_refresh_fails_once():
         'agent_readonly_recipe',
         'agent_request_input',
         'agent_discover_tools',
+        'agent_get_conversation_notes',
+        'agent_update_conversation_notes',
+        'agent_create_optimization_review',
+        'agent_get_optimization_review',
+        'agent_update_optimization_review',
     }
 
 
@@ -361,6 +371,11 @@ def test_skill_lifecycle_serializes_register_and_unload():
         'agent_readonly_recipe',
         'agent_request_input',
         'agent_discover_tools',
+        'agent_get_conversation_notes',
+        'agent_update_conversation_notes',
+        'agent_create_optimization_review',
+        'agent_get_optimization_review',
+        'agent_update_optimization_review',
     }
 
 

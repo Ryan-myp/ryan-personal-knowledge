@@ -31,6 +31,7 @@
         let pendingConversationDeleteIds = [];
         let pendingConversationRenameId = null;
         const loadedConversationTurnIds = new Set();
+        const renderedAssistantTurnIds = new Set();
         let workspaceTheme = 'dark';
         const creationCardState = new Map();
         const creationCardEvaluationTimers = new Map();
@@ -85,6 +86,8 @@
         let durableRunPollToken = 0;
         let activeDurableRunId = null;
         let durableRunSeq = 0;
+        let durableRunRecoveryFailures = 0;
+        let durableRunReplyAttempts = 0;
         let monitoringRefreshTimer = null;
         let monitoringRequestToken = 0;
 

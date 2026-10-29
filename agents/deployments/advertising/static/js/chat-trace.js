@@ -294,6 +294,8 @@
             }
             activeDurableRunId = null;
             durableRunSeq = 0;
+            durableRunRecoveryFailures = 0;
+            durableRunReplyAttempts = 0;
         }
 
         function applyDurableRun(run, { reset = true } = {}) {
@@ -301,7 +303,7 @@
             if (reset) resetExecutionTrace();
             for (const event of run.events) applyExecutionEvent(event);
             durableRunSeq = Math.max(
-                Number(run.latest_seq || 0),
+                durableRunSeq, Number(run.next_after_seq || run.latest_seq || 0),
                 ...run.events.map(event => Number(event.seq || 0)),
             );
             if (run.status === 'recovery_required') {
@@ -327,22 +329,48 @@
                 );
                 if (token !== durableRunPollToken) return;
                 applyDurableRun(run, { reset: false });
-                if (run.status === 'running') scheduleDurableRunPoll(1000);
-                else stopDurableRunPolling();
-            } catch (_) {
-                if (token === durableRunPollToken) scheduleDurableRunPoll(2000);
+                if (run.has_more) scheduleDurableRunPoll(0);
+                else if (run.status === 'running') scheduleDurableRunPoll(1000);
+                else {
+                    await finishDurableRunRecovery(run, token);
+                }
+                durableRunRecoveryFailures = 0;
+            } catch (error) {
+                if (token !== durableRunPollToken) return;
+                updateTraceHeader('unknown', '执行记录暂时读取失败，正在重新连接…');
+                if (error?.status === 403 || error?.status === 404) stopDurableRunPolling();
+                else if (++durableRunRecoveryFailures < 6) {
+                    scheduleDurableRunPoll(Math.min(1000 * 2 ** durableRunRecoveryFailures, 15000));
+                } else stopRecoveryWithNotice();
             }
         }
 
-        async function loadLatestDurableRun(targetSessionId) {
+        function stopRecoveryWithNotice() {
             stopDurableRunPolling();
+            updateTraceHeader('unknown', '暂未同步到完整执行结果，请稍后刷新对话；无需重新提交任务。');
+        }
+
+        async function finishDurableRunRecovery(run, token) {
+            const complete = await recoverDurableRunReply(run, token);
+            if (token !== durableRunPollToken) return;
+            if (complete) stopDurableRunPolling();
+            else if (++durableRunReplyAttempts < 6) scheduleDurableRunPoll(1500);
+            else stopRecoveryWithNotice();
+        }
+
+        async function loadLatestDurableRun(targetSessionId, attempt = 0, recoveryToken = null) {
+            if (recoveryToken === null) stopDurableRunPolling();
             if (!targetSessionId) return;
-            const token = durableRunPollToken;
+            const token = recoveryToken ?? durableRunPollToken;
+            if (token !== durableRunPollToken || sessionId !== targetSessionId) return;
             try {
                 const response = await serviceFetch(
                     `/sessions/${encodeURIComponent(targetSessionId)}/runs/latest`,
                 );
-                if (!response.ok) return;
+                if (!response.ok) {
+                    if ([403, 404].includes(response.status)) return;
+                    throw new Error('执行记录读取失败');
+                }
                 const run = await response.json();
                 if (token !== durableRunPollToken || sessionId !== targetSessionId) return;
                 activeDurableRunId = run.run_id || null;
@@ -355,11 +383,39 @@
                     loadedConversationTurnIds.add(run.turn_id);
                 }
                 applyDurableRun(run);
-                if (run.status === 'running') scheduleDurableRunPoll(500);
-                else stopDurableRunPolling();
-            } catch (_) {
-                // Older deployments may not expose durable run replay yet.
+                if (run.has_more) scheduleDurableRunPoll(0);
+                else if (run.status === 'running') scheduleDurableRunPoll(500);
+                else {
+                    await finishDurableRunRecovery(run, token);
+                }
+            } catch (error) {
+                if (token === durableRunPollToken) {
+                    if (attempt >= 5) stopRecoveryWithNotice();
+                    else {
+                        updateTraceHeader('unknown', '执行记录暂时读取失败，正在重新连接…');
+                        durableRunPollTimer = setTimeout(
+                            () => loadLatestDurableRun(targetSessionId, attempt + 1, token),
+                            Math.min(1000 * 2 ** attempt, 15000),
+                        );
+                    }
+                }
             }
+        }
+
+        async function recoverDurableRunReply(run, token) {
+            if (!run.turn_id || !run.session_id || typeof serviceFetch !== 'function') return true;
+            if (sessionId !== run.session_id) return true;
+            if (renderedAssistantTurnIds.has(run.turn_id)) return true;
+            if (isSending) return false;
+            const response = await serviceFetch(`/sessions/${encodeURIComponent(run.session_id)}?limit=10`);
+            if (!response.ok) throw Object.assign(new Error('执行结果读取失败'), { status: response.status });
+            const data = await response.json();
+            if (token !== durableRunPollToken || sessionId !== run.session_id || isSending) return false;
+            const messages = (data.messages || []).filter(message =>
+                message.role === 'assistant' && message.turn_id === run.turn_id
+                && !renderedAssistantTurnIds.has(message.turn_id));
+            if (messages.length) renderConversationHistoryMessages(messages);
+            return messages.length > 0 || renderedAssistantTurnIds.has(run.turn_id);
         }
 
         function toggleTracePanel() {
@@ -642,6 +698,16 @@
                 '浏览器连接已中断，服务端执行结果尚未核实；写操作请勿直接重试。',
             );
             renderExecutionTrace();
+            if (activeDurableRunId) scheduleDurableRunPoll(1000);
+            else if (sessionId) {
+                const targetSessionId = sessionId;
+                const token = durableRunPollToken;
+                durableRunPollTimer = setTimeout(() => {
+                    if (token === durableRunPollToken && sessionId === targetSessionId) {
+                        return loadLatestDurableRun(targetSessionId);
+                    }
+                }, 1000);
+            }
         }
 
         function applyExecutionEvent(event) {

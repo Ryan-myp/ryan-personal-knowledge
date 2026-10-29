@@ -2632,6 +2632,11 @@ class TestIterationContracts:
             'custom_meta_insight',
             'agent_request_input',
             'agent_discover_tools',
+            'agent_get_conversation_notes',
+            'agent_update_conversation_notes',
+            'agent_create_optimization_review',
+            'agent_get_optimization_review',
+            'agent_update_optimization_review',
         }
         assert rt.tool_executor.execute(ToolContext("s1", "u1"), "custom_meta_insight", {}).data == {
             "source": "custom"
@@ -2651,6 +2656,11 @@ class TestIterationContracts:
             'agent_readonly_recipe',
             'agent_request_input',
             'agent_discover_tools',
+            'agent_get_conversation_notes',
+            'agent_update_conversation_notes',
+            'agent_create_optimization_review',
+            'agent_get_optimization_review',
+            'agent_update_optimization_review',
         }
         assert not hasattr(rt, "intent_router")
 
@@ -2697,6 +2707,11 @@ class TestIterationContracts:
             'custom_insight',
             'agent_request_input',
             'agent_discover_tools',
+            'agent_get_conversation_notes',
+            'agent_update_conversation_notes',
+            'agent_create_optimization_review',
+            'agent_get_optimization_review',
+            'agent_update_optimization_review',
         }
         result = rt.tool_executor.execute(
             ToolContext("s1", "u1"), "custom_insight", {}

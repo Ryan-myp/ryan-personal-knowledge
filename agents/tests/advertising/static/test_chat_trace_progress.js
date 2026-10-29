@@ -53,6 +53,108 @@ function environment() {
     return { context, elements };
 }
 
+test('terminal replay drains all pages and ignores stale session responses', async () => {
+    const { context } = environment();
+    const delivered = [];
+    let scheduled;
+    context.setTimeout = callback => { scheduled = callback; return 1; };
+    context.clearTimeout = () => {};
+    context.applyExecutionEvent = event => { delivered.push(event.seq); };
+    context.apiFetch = async url => {
+        const after = Number(new URL(url, 'http://localhost').searchParams.get('after_seq'));
+        const end = Math.min(after + 256, 600);
+        return { status: 'succeeded', has_more: end < 600, next_after_seq: end,
+            events: Array.from({ length: end - after }, (_, i) => ({ seq: after + i + 1, type: 'done' })) };
+    };
+    vm.runInNewContext("activeDurableRunId = 'run-1';", context);
+    await context.pollDurableRun(0);
+    assert.equal(delivered.length, 256);
+    assert.ok(scheduled);
+    await scheduled();
+    await scheduled();
+    assert.equal(delivered.length, 600);
+    assert.equal(new Set(delivered).size, 600);
+    await context.pollDurableRun(0);
+    assert.equal(delivered.length, 600);
+});
+
+test('connection loss schedules GET reconciliation without submitting the chat again', () => {
+    const { context } = environment();
+    let scheduled;
+    context.setTimeout = callback => { scheduled = callback; return 1; };
+    context.clearTimeout = () => {};
+    vm.runInNewContext("sessionId = 's-1'; activeDurableRunId = 'run-1';", context);
+    context.markTraceConnectionUnknown();
+    assert.equal(typeof scheduled, 'function');
+});
+
+test('terminal recovery renders the missing assistant turn only once', async () => {
+    const { context } = environment();
+    vm.runInNewContext("sessionId = 's';", context);
+    const shown = [];
+    context.serviceFetch = async () => ({ ok: true, json: async () => ({ messages: [
+        { role: 'user', turn_id: 't', content: 'question' },
+        { role: 'assistant', turn_id: 't', content: 'recovered' },
+    ] }) });
+    context.renderConversationHistoryMessages = messages => {
+        shown.push(...messages);
+        vm.runInNewContext("renderedAssistantTurnIds.add('t')", context);
+    };
+    const run = { session_id: 's', turn_id: 't' };
+    await context.recoverDurableRunReply(run, 0);
+    await context.recoverDurableRunReply(run, 0);
+    assert.equal(shown.length, 1);
+    assert.equal(shown[0].content, 'recovered');
+});
+
+test('session switch invalidates in-flight replay and recovery', async () => {
+    const { context } = environment();
+    let release;
+    context.clearTimeout = () => {};
+    context.apiFetch = () => new Promise(resolve => { release = resolve; });
+    context.applyExecutionEvent = () => { throw new Error('stale event applied'); };
+    vm.runInNewContext("activeDurableRunId = 'old';", context);
+    const pending = context.pollDurableRun(0);
+    context.stopDurableRunPolling();
+    release({ status: 'succeeded', events: [{ type: 'done' }] });
+    await pending;
+    assert.equal(vm.runInNewContext('activeDurableRunId', context), null);
+});
+
+test('terminal replay waits for the persisted reply and stops after it arrives', async () => {
+    const { context } = environment();
+    const scheduled = [];
+    let reads = 0;
+    context.setTimeout = callback => { scheduled.push(callback); return scheduled.length; };
+    context.clearTimeout = () => {};
+    vm.runInNewContext("sessionId = 's'; activeDurableRunId = 'r';", context);
+    context.apiFetch = async () => ({ status: 'succeeded', session_id: 's', turn_id: 't', events: [] });
+    context.serviceFetch = async () => ({ ok: true, json: async () => ({ messages: ++reads < 2 ? [] : [
+        { role: 'assistant', turn_id: 't', content: '完成' },
+    ] }) });
+    context.renderConversationHistoryMessages = () => vm.runInNewContext("renderedAssistantTurnIds.add('t')", context);
+    await context.pollDurableRun(0);
+    assert.equal(scheduled.length, 1);
+    await scheduled.shift()();
+    assert.equal(reads, 2);
+    assert.equal(vm.runInNewContext('activeDurableRunId', context), null);
+});
+
+test('persistent network failures have a bounded recovery budget', async () => {
+    const { context, elements } = environment();
+    let next;
+    let attempts = 0;
+    context.setTimeout = callback => { next = callback; return 1; };
+    context.clearTimeout = () => { next = null; };
+    vm.runInNewContext("activeDurableRunId = 'r';", context);
+    context.apiFetch = async () => { attempts++; throw new Error('network down'); };
+    await context.pollDurableRun(0);
+    while (next && attempts < 20) { const callback = next; next = null; await callback(); }
+    assert.ok(attempts <= 6);
+    assert.equal(next, null);
+    assert.match(elements.get('traceSubtitle').textContent, /刷新/);
+});
+
 test('compact activity summary follows real run status without exposing tool payloads', () => {
     const { context, elements } = environment();
     context.applyExecutionEvent({ type: 'start', status: 'running' });

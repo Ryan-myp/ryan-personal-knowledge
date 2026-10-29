@@ -4,13 +4,14 @@ const path = require('node:path');
 const test = require('node:test');
 const vm = require('node:vm');
 
-function boot() {
+function boot(version = 'content-version-a') {
     const elements = new Map();
     const scripts = [], links = [];
     const element = () => ({hidden: false, textContent: '', dataset: {}, setAttribute() {},
         remove() {this.removed = true;}});
     for (const id of ['workspaceBootStatus', 'workspaceBootMessage', 'workspaceBootRetry']) elements.set(id, element());
-    const context = {console, setTimeout: () => 1, clearTimeout() {}, document: {
+    const context = {console, URL, setTimeout: () => 1, clearTimeout() {}, document: {
+        currentScript: {src: `http://localhost/static/js/chat.js?v=${version}`},
         getElementById: id => elements.get(id), createElement: element,
         head: {appendChild(node) { (node.rel === 'preload' ? links : scripts).push(node); }},
     }};
@@ -32,6 +33,16 @@ test('boot preloads a bounded window while executing scripts strictly in order',
     }
     assert.equal(new Set(scripts.map(script => script.src)).size, scripts.length);
     assert.equal(elements.get('workspaceBootStatus').hidden, true);
+});
+
+test('all dependencies and preloads inherit the served loader version', () => {
+    for (const version of ['content-version-a', 'content-version-b']) {
+        const {scripts, links} = boot(version);
+        for (let i = 0; i < scripts.length; i++) scripts[i].onload();
+        for (const resource of [...scripts.map(row => row.src), ...links.map(row => row.href)]) {
+            assert.equal(new URL(resource, 'http://localhost').searchParams.get('v'), version);
+        }
+    }
 });
 
 test('failed module offers retry at that module without reexecuting previous scripts', () => {

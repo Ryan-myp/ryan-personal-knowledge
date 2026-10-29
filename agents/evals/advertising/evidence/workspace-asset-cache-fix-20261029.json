@@ -1,0 +1,50 @@
+{
+  "date": "2026-10-29",
+  "issue": "renderedAssistantTurnIds is not defined when new chat modules reuse cached old state",
+  "browser_before": {
+    "phase": "before",
+    "reproduced": "renderedAssistantTurnIds is not defined",
+    "staleHits": 1
+  },
+  "browser_after": {
+    "phase": "after",
+    "errors": [],
+    "staleHits": 0,
+    "version": "5ac3364d487a839e5cd37694",
+    "historyLoaded": true,
+    "newChatPassed": true,
+    "reloadPassed": true,
+    "providerRequests": 0
+  },
+  "verification": {
+    "make_ad_agent_check": "passed",
+    "python_tests_passed": 3408,
+    "frontend_tests_passed": 230,
+    "targeted_http_tests_passed": 117,
+    "new_asset_module_line_coverage_percent": 100,
+    "tool_contracts_validated": 328,
+    "knowledge_pages_validated": 86,
+    "git_diff_check": "passed",
+    "quality_delta": {
+      "passed": true,
+      "new_findings": 0
+    },
+    "whole_repository_qguard": {
+      "passed": false,
+      "findings": 4997,
+      "score": 0
+    }
+  },
+  "service": {
+    "host": "0.0.0.0",
+    "port": 8766,
+    "local_readyz": 200,
+    "lan_readyz": 200,
+    "asset_revision": "5ac3364d487a839e5cd37694",
+    "html_cache_control": "no-store",
+    "static_cache_control": "no-cache",
+    "database_changed": false
+  },
+  "provider_calls": 0,
+  "external_model_calls": 0
+}

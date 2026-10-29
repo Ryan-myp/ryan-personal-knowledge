@@ -73,7 +73,7 @@ def test_builtin_skill_catalog_lists_standard_packages_as_read_only():
     assert instrumentation["location"] == "practices/measurement-instrumentation"
     assert "references/event-measurement-contract.md" in instrumentation["files"]
     assert "references/conversion-qa-runbook.md" in instrumentation["files"]
-    growth_operations = catalog.get_version("ad-growth-operations", "1.1.0")
+    growth_operations = catalog.get_version("ad-growth-operations", "1.2.0")
     assert growth_operations["location"] == "practices/ad-growth-operations"
     assert "references/loop-contract.md" in growth_operations["files"]
     competitor_research = catalog.get_version("competitor-research", "1.0.0")
