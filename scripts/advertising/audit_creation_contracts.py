@@ -26,6 +26,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from scripts.advertising.audit_objective_coverage import audit_objective_coverage
+from scripts.advertising.audit_creation_templates import audit_creation_templates
 
 from agents.tools.advertising.providers.source_factory import (  # noqa: E402
     discover_tool_source_factory,
@@ -525,6 +526,8 @@ def audit_creation_contracts(runtime: AdvertisingComposition) -> dict[str, Any]:
         )
 
     blueprint_coverage = _audit_blueprint_coverage(runtime)
+    templates = audit_creation_templates(runtime)
+    issues.extend(f"内置模板 {item['key']}: {item['error']}" for item in templates["issues"])
     objective_coverage = audit_objective_coverage(runtime)
     for provider, coverage in objective_coverage.items():
         issues.extend(
@@ -541,6 +544,7 @@ def audit_creation_contracts(runtime: AdvertisingComposition) -> dict[str, Any]:
     }
     return {
         "creation_tool_count": len(creation_tools),
+        "builtin_templates": templates,
         "blueprint_count": len(runtime.creation_blueprints.list()),
         "lookup_contract_count": len(lookup_contracts),
         "lookup_contracts": lookup_contracts,

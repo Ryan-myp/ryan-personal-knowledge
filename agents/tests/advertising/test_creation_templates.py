@@ -421,12 +421,12 @@ def test_builtin_templates_are_filtered_by_whitelisted_test_accounts():
     }
     blueprint_paths = glob.glob("agents/tools/advertising/providers/*/blueprints/*.json")
     blueprint_versions = {
-        blueprint["id"]: blueprint["version"]
+        (blueprint["id"], blueprint["version"])
         for path in blueprint_paths
         for blueprint in [json.loads(Path(path).read_text(encoding="utf-8"))]
     }
     assert all(
-        item["blueprint_version"] == blueprint_versions[item["blueprint_id"]]
+        (item["blueprint_id"], item["blueprint_version"]) in blueprint_versions
         for item in definitions
         if item["blueprint_id"] in requested_blueprints
     )

@@ -31,7 +31,8 @@ class AdvertisingCapabilityCatalog:
         self, request: Any, *, max_accounts: int = 20,
     ) -> dict[str, list[str]]:
         """Expose a bounded discovery scope, not write selection or credentials."""
-        scope = getattr(getattr(request, "principal", None), "account_scope", None)
+        principal = getattr(request, "principal", None)
+        scope = getattr(principal, "account_scope", None)
         available = getattr(self.owner, "_available_accounts_for_request", None)
         registry = getattr(self.owner, "registry", None)
         namespaces = getattr(registry, "list_all_namespaces", None)
@@ -42,6 +43,8 @@ class AdvertisingCapabilityCatalog:
         for namespace in sorted(namespaces()):
             if not remaining:
                 break
+            if namespace in getattr(principal, "provider_read_namespaces", ()):
+                continue
             accounts = list(available(namespace, scope))[:remaining]
             if accounts:
                 candidates[str(namespace)] = [str(value) for value in accounts]
@@ -102,6 +105,11 @@ class AdvertisingCapabilityCatalog:
             return False
         if self._field(tool, "scope_required", False) is True:
             namespace = normalize_namespace(self._field(tool, "namespace", ""))
+            if (
+                bool(self._field(tool, "is_read_tool", False))
+                and namespace in getattr(principal, "provider_read_namespaces", ())
+            ):
+                return True
             scope = getattr(principal, "account_scope", {}) or {}
             return any(
                 normalize_namespace(key) == namespace and bool(accounts)
@@ -239,6 +247,18 @@ class AdvertisingCapabilityCatalog:
             f"Current execution mode: {self._single_line(mode, limit=40)}.",
             "A live adapter declaration does not verify account access or live API success.",
         ]
+        read_namespaces = getattr(
+            getattr(request, "principal", None), "provider_read_namespaces", (),
+        )
+        if read_namespaces:
+            lines.extend([
+                "账户权限：在 " + ", ".join(sorted(read_namespaces))
+                + " 可查询当前渠道凭证有权访问的账户；写入仍仅限已授权测试账户。",
+                "不要仅因账户不在测试写入白名单就拒绝查询或要求开启 live；"
+                "未实际请求渠道前，不应声称该账户无权限。",
+                "Credential-bounded reads do not verify Provider authorization. "
+                "Keep the requested account; never substitute a test account on failure.",
+            ])
         if str(mode).casefold() == "dry_run":
             lines.append("In dry_run, write operations are previews only.")
         else:

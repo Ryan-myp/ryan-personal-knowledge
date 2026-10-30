@@ -1270,12 +1270,30 @@ def meta_ad_schema() -> dict[str, Any]:
     }
 
 
+def _lead_thumbnail_fields() -> dict[str, Any]:
+    return {
+        "thumbnail_image_hash": _field(
+            "string", "视频缩略图图片 Hash", minLength=1,
+            lookup_tool="meta_list_image_assets", lookup_result_key="image_assets",
+            selection_value_fields=["hash", "image_hash", "id"],
+            selection_label_fields=["name", "hash", "id"],
+            **_ui_equals("media_type", "VIDEO"),
+        ),
+        "thumbnail_url": _field(
+            "string", "视频缩略图 HTTPS 地址", minLength=1,
+            pattern=r"^https://", **_ui_equals("media_type", "VIDEO"),
+        ),
+    }
+
+
 def meta_lead_ad_schema() -> dict[str, Any]:
     """Create contract for a Meta Lead Ads Instant Form creative."""
+    media = meta_link_ad_schema()
     return {
         "required": ["adset_id", "name", "page_id", "form_id"],
         "requires": ["page_id", "form_id"],
         "properties": {
+            **{key: media["properties"][key] for key in ("media_type", "image_hash", "video_id")},
             "adset_id": _field("string", "Parent Meta Ad Set ID"),
             "name": _field("string", "Ad name", maxLength=400),
             "page_id": _field(
@@ -1299,7 +1317,18 @@ def meta_lead_ad_schema() -> dict[str, Any]:
                 default="SIGN_UP",
             ),
             "status": _field("string", "Initial delivery status", enum=META_STATUS),
+            **_lead_thumbnail_fields(),
         },
+        "conditional_rules": [
+            *media["conditional_rules"],
+            {"if": {"media_type": "IMAGE"},
+             "forbidden": ["video_id", "thumbnail_image_hash", "thumbnail_url"],
+             "message": "IMAGE Lead 广告不能同时绑定视频或视频缩略图"},
+            {"if": {"media_type": "VIDEO"}, "forbidden": ["image_hash"],
+             "message": "VIDEO Lead 广告请使用 thumbnail_image_hash 指定缩略图"},
+            {"if": {"thumbnail_image_hash": {"exists": True}}, "forbidden": ["thumbnail_url"],
+             "message": "缩略图选择图片 Hash 或 HTTPS 地址中的一种"},
+        ],
     }
 
 
@@ -1577,7 +1606,7 @@ def meta_engagement_ad_schema() -> dict[str, Any]:
 def meta_ad_format_catalog() -> list[dict[str, Any]]:
     """Advertised Meta objectives/formats and their current contract depth."""
     source_document = "docs/ad-platform-hierarchy-guide-v5.md"
-    return [
+    entries = [
         {
             "format_id": "awareness", "blueprint_ids": ["meta.awareness"],
             "category": "awareness", "resource_type": "campaign", "coverage": "partial_dry_run",
@@ -1632,7 +1661,7 @@ def meta_ad_format_catalog() -> list[dict[str, Any]]:
             "category": "lead",
             "resource_type": "campaign",
             "coverage": "partial_dry_run",
-            "tool_names": ["meta_create_campaign", "meta_create_adset", "meta_create_ad"],
+            "tool_names": ["meta_create_campaign", "meta_create_adset", "meta_create_lead_ad"],
             "dependencies": ["lead_gen_config", "form_id", "page_id"],
             "supported_fields": ["OUTCOME_LEADS", "LEADS", "lead_gen_config", "lead_gen"],
             "gaps": ["Instant Form lookup/validation"],
@@ -1647,7 +1676,9 @@ def meta_ad_format_catalog() -> list[dict[str, Any]]:
             "tool_names": ["meta_create_lead_ad"],
             "payload_adapter": "MetaAPIClient.create_lead_ad",
             "dependencies": ["ad_set", "page_id", "form_id"],
-            "supported_fields": ["page_id", "form_id", "link", "message", "headline", "description", "call_to_action_type"],
+            "supported_fields": ["page_id", "form_id", "link", "message", "headline", "description",
+                                 "call_to_action_type", "media_type", "image_hash", "video_id",
+                                 "thumbnail_image_hash", "thumbnail_url"],
             "gaps": ["Instant Form lookup/validation", "live mutation approval"],
             "source_document": source_document,
         },
@@ -1738,4 +1769,14 @@ def meta_ad_format_catalog() -> list[dict[str, Any]]:
             "gaps": ["live mutation approval"],
             "source_document": source_document,
         },
+    ]
+    lead = next(item for item in entries if item["format_id"] == "lead.instant_form")
+    return entries + [
+        {**lead, "format_id": format_id,
+         "dependencies": ["ad_set", "page_id", "form_id", *assets],
+         "gaps": ["账户资格、Instant Form 发布状态和素材可用性需要查询确认", "未实测"] }
+        for format_id, assets in (
+            ("lead.image", ["media_type=IMAGE", "image_hash"]),
+            ("lead.video", ["media_type=VIDEO", "video_id"]),
+        )
     ]

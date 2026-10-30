@@ -67,7 +67,7 @@ def test_tiktok_blueprint_is_json_and_references_registered_tools():
     assert versions["tiktok.app_conversion_video"] == "3.0.3"
     assert versions["tiktok.lead_generation"] == "2.1.0"
     assert versions["tiktok.product_sales_video"] == "2.3.0"
-    assert versions["tiktok.traffic_video"] == "3.3.0"
+    assert versions["tiktok.traffic_video"] == "3.4.0"
     assert runtime.creation_blueprints.get("tiktok.app_conversion_video") is not None
 
 
@@ -821,16 +821,12 @@ def test_google_demand_gen_does_not_expose_a_second_ad_group_type_selector():
         "google-ads.demand_gen_product",
     ):
         blueprint = runtime.creation_blueprints.get(blueprint_id)
-        field = next(item for item in blueprint.fields if item["path"] == "ad_group.type")
-        assert field["presentation"] == "derived_readonly"
-        assert field["options"] == ["SEARCH_STANDARD"]
+        assert "ad_group.type" not in {item["path"] for item in blueprint.fields}
         card = runtime.build_creation_ui(ParsedIntent(
             "create_campaign", "创建 Google Demand Gen 广告", ["google-ads"],
             scoped_parameters={"google-ads": {"ad_format": blueprint.ad_format}},
         ))["cards"][0]
-        type_field = next(item for item in card["fields"] if item["path"] == "ad_group.type")
-        assert type_field["control"] == "derived_readonly"
-        assert type_field["options"] == [{"value": "SEARCH_STANDARD", "label": "SEARCH_STANDARD"}]
+        assert "ad_group.type" not in {item["path"] for item in card["fields"]}
 
 
 def test_google_video_ad_group_type_is_derived_from_video_format():
@@ -1675,8 +1671,12 @@ def test_creation_catalog_unifies_ad_types_required_inputs_and_account_templates
         for item in traffic["required_inputs"]
     )
     assert traffic["template_options"]
+    assert any(
+        item.get("account_id") == "7397068114548195329"
+        for item in traffic["template_options"]
+    )
     assert all(
-        item["account_id"] == "7397068114548195329"
+        not item.get("account_id") or item["account_id"] == "7397068114548195329"
         for item in traffic["template_options"]
     )
     assert all(
@@ -2303,6 +2303,7 @@ def test_google_template_schema_changes_publish_contract_version_1_7():
             assert definition.contract_version == {
                 "google_create_campaign": "1.6.0",
                 "google_create_app_ad": "1.7.0",
+                "google_create_ad_group": "1.6.0",
             }.get(tool_name, "1.5.0")
     finally:
         runtime.close(wait=True)

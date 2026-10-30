@@ -126,4 +126,8 @@ class RequestAuthorizer:
             permissions=frozenset(permissions),
             account_scope=account_scope,
             source="shared-service",
+            provider_read_namespaces=getattr(
+                getattr(runtime, "whitelist_validator", None),
+                "provider_read_namespaces", frozenset(),
+            ),
         )

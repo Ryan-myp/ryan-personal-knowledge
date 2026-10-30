@@ -1988,6 +1988,11 @@ class TikTokAPIClient(BasePlatformClient):
             if not creative_info.get("tiktok_item_id"):
                 if asset_format == "SINGLE_VIDEO" and not creative_info.get("video_info"):
                     raise ValueError("SINGLE_VIDEO requires video_id")
+                if (
+                    asset_format in {"SINGLE_IMAGE", "CAROUSEL_ADS"}
+                    and creative_info.get("video_info")
+                ):
+                    raise ValueError("图片或轮播广告不能同时绑定 video_info 或 video_id")
                 if asset_format == "SINGLE_IMAGE" and not creative_info.get("image_info"):
                     raise ValueError("SINGLE_IMAGE requires image_ids or image_web_uris")
                 if asset_format == "CAROUSEL_ADS" and len(creative_info.get("image_info") or []) < 2:

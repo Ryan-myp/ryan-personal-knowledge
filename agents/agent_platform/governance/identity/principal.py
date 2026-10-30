@@ -43,14 +43,28 @@ def _normalize_permissions(value: Any) -> frozenset[str]:
     return frozenset(item.strip() for item in value)
 
 
+def normalize_provider_read_namespaces(value: Any) -> frozenset[str]:
+    """Validate an explicit trusted read grant; wildcard grants are forbidden."""
+    if isinstance(value, (str, bytes)) or not isinstance(
+        value, (list, tuple, set, frozenset)
+    ):
+        raise ValueError("provider_read_namespaces must be an array of namespaces")
+    if any(
+        not isinstance(item, str) or not item.strip() or "*" in item
+        for item in value
+    ):
+        raise ValueError("provider_read_namespaces requires explicit namespace names")
+    return frozenset(normalize_platform(item) for item in value)
+
+
 @dataclass(frozen=True)
 class RequestPrincipal:
     """Authorization claims supplied by a trusted embedding boundary.
 
     ``account_scope`` is deny-by-default: when a principal is present, a
     platform must have an explicit account set and the requested account must
-    be in that set.  This prevents a shared service credential from becoming
-    an authorization grant merely because a user supplied an account ID.
+    be in that set. A trusted embedding can separately grant credential-bounded
+    reads for explicit namespaces. That grant never authorizes mutations.
     """
 
     user_id: str
@@ -58,6 +72,7 @@ class RequestPrincipal:
     permissions: frozenset[str] = field(default_factory=frozenset)
     account_scope: Mapping[str, frozenset[str]] = field(default_factory=dict)
     source: str = "trusted"
+    provider_read_namespaces: frozenset[str] = field(default_factory=frozenset)
 
     def __post_init__(self) -> None:
         user_id = str(self.user_id or "").strip()
@@ -67,6 +82,10 @@ class RequestPrincipal:
         object.__setattr__(self, "user_id", user_id)
         object.__setattr__(self, "tenant_id", tenant_id or "default")
         object.__setattr__(self, "permissions", _normalize_permissions(self.permissions))
+        object.__setattr__(
+            self, "provider_read_namespaces",
+            normalize_provider_read_namespaces(self.provider_read_namespaces),
+        )
         normalized_scope: dict[str, frozenset[str]] = {}
         for platform, accounts in (self.account_scope or {}).items():
             normalized_platform = normalize_platform(platform)
@@ -98,6 +117,7 @@ class RequestPrincipal:
                 for platform, accounts in raw_scope.items()
             },
             source=str(claims.get("source", "trusted")),
+            provider_read_namespaces=claims.get("provider_read_namespaces", ()),
         )
 
     def accounts_for(self, platform: str) -> frozenset[str]:
@@ -109,7 +129,7 @@ class RequestPrincipal:
 
     def to_safe_dict(self) -> dict[str, Any]:
         """Return non-secret claims suitable for audit/context metadata."""
-        return {
+        claims = {
             "user_id": self.user_id,
             "tenant_id": self.tenant_id,
             "permissions": sorted(self.permissions),
@@ -119,3 +139,6 @@ class RequestPrincipal:
             },
             "source": self.source,
         }
+        if self.provider_read_namespaces:
+            claims["provider_read_namespaces"] = sorted(self.provider_read_namespaces)
+        return claims

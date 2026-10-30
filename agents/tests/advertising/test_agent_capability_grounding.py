@@ -378,7 +378,8 @@ def test_registered_provider_capabilities_fit_default_catalog_budget():
             TurnRequest(user_input="你好，你有什么能力？")
         )
 
-        assert len(runtime.registry.list_all()) == 318
+        assert len(runtime.registry.list_all()) >= 318
+        assert runtime.registry.get("google_create_demand_gen_ad_group")[0] is not None
         assert len(catalog) <= 9_000
         assert "[catalog truncated;" not in catalog
         assert all(

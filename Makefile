@@ -73,6 +73,7 @@ ad-agent-compile:
 
 ad-agent-audit:
 	@$(AD_AGENT_PYTHON_WRAPPER) scripts/advertising/audit_provider_tools.py
+	@$(AD_AGENT_PYTHON_WRAPPER) scripts/advertising/audit_creation_contracts.py --strict-guided
 
 ad-agent-validate:
 	@$(AD_AGENT_PYTHON_WRAPPER) scripts/advertising/validate_contracts.py --check-snapshot agents/tools/advertising/contracts/builtin_tools.json

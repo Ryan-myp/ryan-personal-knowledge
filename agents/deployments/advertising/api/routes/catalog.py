@@ -545,6 +545,7 @@ def create_catalog_router(context: ApiContext) -> APIRouter:
                 user_id=principal.user_id,
                 tenant_id=principal.tenant_id,
                 account_scope=principal.account_scope,
+                provider_read_namespaces=principal.provider_read_namespaces,
                 granted_permissions=principal.permissions,
             )
         except KeyError as error:

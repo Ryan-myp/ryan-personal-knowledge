@@ -1968,27 +1968,56 @@ class MetaAPIClient(BasePlatformClient):
         if cta_type not in {"SIGN_UP", "LEARN_MORE", "CONTACT_US"}:
             raise ValueError("Unsupported Lead Ads CTA type")
 
-        link_data: dict[str, Any] = {
-            "message": ad.get("message", ""),
-            "name": ad.get("headline", ""),
-            "description": ad.get("description", ""),
-            "call_to_action": {
-                "type": cta_type,
-                "value": {"lead_gen_form_id": form_id},
-            },
-        }
-        if ad.get("link"):
-            link_data["link"] = ad["link"]
+        story_media = self._lead_story_media(ad, form_id, cta_type)
         return self.create_ad(
             account_id,
             adset_id,
             {
                 "name": ad.get("name", "Untitled Lead Ad"),
                 "status": ad.get("status", "PAUSED"),
-                "object_story_spec": {"page_id": page_id, "link_data": link_data},
+                "object_story_spec": {"page_id": page_id, **story_media},
             },
             live=live,
         )
+
+    def _lead_story_media(self, ad: dict, form_id: str, cta_type: str) -> dict:
+        media_type = str(
+            ad.get("media_type") or ("VIDEO" if ad.get("video_id") else "IMAGE")
+        ).upper()
+        shared = {
+            "message": ad.get("message", ""),
+            "call_to_action": {
+                "type": cta_type,
+                "value": {"lead_gen_form_id": form_id},
+            },
+        }
+        if media_type == "VIDEO":
+            if not ad.get("video_id") or ad.get("image_hash"):
+                raise ValueError("VIDEO Lead 广告需要 video_id；缩略图请用 thumbnail_image_hash")
+            if ad.get("thumbnail_image_hash") and ad.get("thumbnail_url"):
+                raise ValueError("缩略图选择图片 Hash 或 HTTPS 地址中的一种")
+            video = {**shared, "video_id": str(ad["video_id"]),
+                     "title": ad.get("headline", ""), "link_description": ad.get("description", "")}
+            if ad.get("thumbnail_image_hash"):
+                video["image_hash"] = str(ad["thumbnail_image_hash"])
+            if ad.get("thumbnail_url"):
+                video["image_url"] = self._require_https_asset_url(
+                    ad["thumbnail_url"], "thumbnail_url"
+                )
+            return {"video_data": video}
+        if media_type != "IMAGE":
+            raise ValueError("media_type must be IMAGE or VIDEO")
+        if any(ad.get(key) for key in ("video_id", "thumbnail_image_hash", "thumbnail_url")):
+            raise ValueError("IMAGE Lead 广告不能绑定视频或视频缩略图")
+        # Legacy drafts without media_type retain their original story shape.
+        # Versioned creation blueprints require an explicit media selection.
+        if ad.get("media_type") and not ad.get("image_hash"):
+            raise ValueError("IMAGE Lead 广告需要 image_hash")
+        link = {**shared, "name": ad.get("headline", ""), "description": ad.get("description", "")}
+        for key in ("link", "image_hash"):
+            if ad.get(key):
+                link[key] = ad[key]
+        return {"link_data": link}
 
     def create_catalog_ad(self, account_id: str, adset_id: str, ad: dict, live: bool = False) -> str:
         """Create a Catalog/Dynamic Product Ad provider payload."""

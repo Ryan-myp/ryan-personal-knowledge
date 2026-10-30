@@ -31,6 +31,7 @@ from .keywords import GoogleListKeywordsHandler
 from ._utils import for_customer
 from .parameters import (
     google_campaign_schema, google_ad_group_schema, google_app_ad_group_schema,
+    google_demand_gen_ad_group_schema,
     google_app_ad_schema, google_shopping_product_ad_schema, google_ad_schema,
     google_asset_schema, google_asset_create_schema, google_campaign_asset_schema,
     google_asset_group_asset_schema, google_asset_group_schema, google_ad_format_catalog, google_keyword_schema,
@@ -59,6 +60,31 @@ from agents.tools.advertising.shared.domain.reporting import build_report_contex
 from ..update_contracts import google_updates
 
 logger = logging.getLogger(__name__)
+
+
+def _specialized_ad_group_args(_ctx, data):
+    channel = str(data.get("campaign_type") or "").upper()
+    if channel == "DEMAND_GEN":
+        return _demand_gen_ad_group_args(_ctx, data)
+    return ((data["campaign_id"], data["name"]), {
+        "cpc_bid_micros": data.get(
+            "cpc_bid_micros", int(float(data.get("cpc_bid", 0.5)) * 1_000_000)
+        ),
+        "type": {"HOTEL": "HOTEL_ADS", "LOCAL": "SMART_CAMPAIGN_ADS",
+                 "SMART": "SMART_CAMPAIGN_ADS", "TRAVEL": "TRAVEL_ADS"}.get(
+                     channel, data.get("type", "SEARCH_STANDARD")),
+        "status": data.get("status"), "targeting": data.get("targeting"),
+    })
+
+
+def _demand_gen_ad_group_args(_ctx, data):
+    if any(data.get(key) is not None for key in ("cpc_bid", "cpc_bid_micros")):
+        raise ValueError("Demand Gen Ad Group 不接受手动 CPC，请在 Campaign 配置出价策略")
+    return ((data["campaign_id"], data["name"]), {
+        "type": None, "cpc_bid_micros": None,
+        "status": data.get("status"), "targeting": data.get("targeting"),
+        "demand_gen_ad_group_settings": data.get("demand_gen_ad_group_settings"),
+    })
 
 
 def _google_lookup(
@@ -319,7 +345,7 @@ class GoogleToolSource(BaseProviderToolSource):
         "pause_campaign": ["google_pause_campaign"], "resume_campaign": ["google_resume_campaign"],
         "create_ad_group": [
             "google_create_ad_group", "google_create_app_ad_group",
-            "google_create_specialized_ad_group",
+            "google_create_specialized_ad_group", "google_create_demand_gen_ad_group",
         ],
         "create_app_ad": ["google_create_app_ad"],
         "create_shopping_product_ad": ["google_create_shopping_product_ad"],
@@ -1925,6 +1951,27 @@ class GoogleToolSource(BaseProviderToolSource):
         # channel-specific formats.  They stay separate Tools so Skills can
         # compose an explicit creation chain and callers never have to pass a
         # provider-specific discriminator through an untyped payload object.
+        demand_group = google_demand_gen_ad_group_schema()
+        tools.append(method_tool(
+            namespace="google-ads", skill="google-ads-api-expert",
+            name="google_create_demand_gen_ad_group",
+            description=(
+                "创建 Google Demand Gen Ad Group，继承 Campaign 出价，"
+                "不发送 Display 类型或手动 CPC；支持频道控制，默认暂停。"
+            ),
+            method_name="create_ad_group", result_key="ad_group_id",
+            properties=demand_group["properties"], required=demand_group["required"],
+            conditional_rules=demand_group["conditional_rules"],
+            action="create", resource_type="ad_group", parent_resource_type="campaign",
+            resource_id_field="ad_group_id", parent_resource_id_field="campaign_id",
+            intent_types=["create_ad_group", "create_adgroup", "create_campaign"],
+            activation_rules=[{"field": "campaign_type", "aliases": ["advertising_channel_type"],
+                               "in": ["DEMAND_GEN"]}],
+            traits=["write", "ad_group", "demand_gen"], write=True, live_support=True,
+            readback_tool="google_get_ad_group", integration_api_version="v24",
+            contract_version="1.0.0", required_permissions=["ads.plan"],
+            argument_builder=_demand_gen_ad_group_args,
+        ))
         tools.append(method_tool(
             namespace="google-ads", skill="google-ads-api-expert",
             name="google_create_specialized_ad_group",
@@ -1933,30 +1980,19 @@ class GoogleToolSource(BaseProviderToolSource):
             properties=google_ad_group_schema()["properties"],
             required=google_ad_group_schema()["required"],
             requires=google_ad_group_schema()["requires"],
+            conditional_rules=demand_group["conditional_rules"],
             action="create", resource_type="ad_group", parent_resource_type="campaign",
             resource_id_field="ad_group_id",
             parent_resource_id_field="campaign_id",
-            intent_types=["create_ad_group", "create_campaign"],
+            intent_types=["create_ad_group", "create_adgroup", "create_campaign"],
             activation_rules=[{
                 "field": "campaign_type", "aliases": ["advertising_channel_type"],
-                "in": ["DEMAND_GEN", "HOTEL", "LOCAL", "SMART", "TRAVEL"],
+                "in": ["HOTEL", "LOCAL", "SMART", "TRAVEL"],
             }],
             traits=["write", "ad_group", "specialized_campaign"], write=True,
             live_support=True, readback_tool="google_get_ad_group",
             integration_api_version="v24", required_permissions=["ads.plan"],
-            argument_builder=lambda _ctx, data: ((data["campaign_id"], data["name"]), {
-                "cpc_bid_micros": data.get("cpc_bid_micros") or int(float(data.get("cpc_bid", 0.5)) * 1_000_000),
-                "type": ({
-                    "DEMAND_GEN": "DISPLAY_STANDARD",
-                    "HOTEL": "HOTEL_ADS",
-                    "LOCAL": "SMART_CAMPAIGN_ADS",
-                    "SMART": "SMART_CAMPAIGN_ADS",
-                    "TRAVEL": "TRAVEL_ADS",
-                }.get(str(data.get("campaign_type") or "").upper())
-                or data.get("type", "SEARCH_STANDARD")),
-                "status": data.get("status"), "targeting": data.get("targeting"),
-                "demand_gen_ad_group_settings": data.get("demand_gen_ad_group_settings"),
-            }),
+            argument_builder=_specialized_ad_group_args, contract_version="1.6.0",
         ))
 
         def _ad_tool(
@@ -2450,6 +2486,7 @@ class GoogleToolSource(BaseProviderToolSource):
         # Create Ad Group
         tools.append((ToolDefinition(
             name="google_create_ad_group",
+            contract_version="1.6.0",
             skill="google-ads-api-expert",
             namespace="google-ads",
             description="创建 Google Ads Ad Group。",

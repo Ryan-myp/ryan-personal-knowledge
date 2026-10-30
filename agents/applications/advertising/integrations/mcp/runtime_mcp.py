@@ -16,6 +16,7 @@ import threading
 import uuid
 from contextlib import AsyncExitStack, asynccontextmanager
 from datetime import datetime, timezone
+from types import SimpleNamespace
 from typing import Any, Callable, Mapping, Optional
 
 from fastmcp import FastMCP
@@ -26,6 +27,9 @@ from starlette.responses import JSONResponse
 from agents.agent_harness.core.interfaces import ToolContext, ToolResult
 from agents.agent_harness.core.tool_registry import validate_tool_input
 from agents.applications.advertising.persistence.models import ToolCallRecord
+from agents.applications.advertising.execution.ad_tool_policy_factory import (
+    AdvertisingToolPolicyFactory,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -244,16 +248,20 @@ class RuntimeMCPServers:
                 "当前为 live 模式；渠道写 Tool 不能在 MCP 管理台直接测试，"
                 "请通过 Agent 的确认、幂等和 live 执行链路调用"
             )
-        if account_id:
-            validator = getattr(runtime, "_validate_account_with_principal", None)
-            if callable(validator):
-                valid, reason = validator(
-                    str(definition.namespace), str(account_id),
-                    bool(definition.is_write_tool), principal.account_scope,
-                )
-                if not valid:
-                    raise PermissionError(reason)
         data = dict(input_data or {})
+        factory = AdvertisingToolPolicyFactory(runtime)
+        scope_context = {"account_id": account_id}
+        request_account, argument_account = factory._accounts_for_call(
+            definition, str(definition.namespace), data, scope_context,
+        )
+        if request_account or argument_account or definition.scope_required is True:
+            scope_error = factory._account_scope_error(
+                definition, SimpleNamespace(principal=principal),
+                data, str(definition.namespace), scope_context,
+            )
+            if scope_error:
+                raise PermissionError(scope_error[1])
+        resolved_account = request_account or argument_account
         schema_errors = validate_tool_input(definition.input_schema, data)
         if schema_errors:
             raise ValueError("Input validation failed: " + "; ".join(schema_errors))
@@ -262,12 +270,15 @@ class RuntimeMCPServers:
         ctx = ToolContext(
             session_id=session_id,
             user_id=str(principal.user_id),
-            scope={"account_id": account_id or ""},
+            scope={"account_id": resolved_account or ""},
             metadata={
                 "tenant_id": str(principal.tenant_id),
                 "mcp_source": source,
                 "mcp_tool_test": True,
                 "execution_mode": execution_mode,
+                "authorized_account_ids": runtime._read_accounts_for_request(
+                    str(definition.namespace), principal,
+                ),
             },
         )
         started_at = _now()
@@ -277,6 +288,12 @@ class RuntimeMCPServers:
             )
         else:
             result = runtime.tool_executor.execute(ctx, str(tool_name), data)
+            result = runtime.security.filter_account_discovery_result(
+                definition, result, principal.account_scope,
+                provider_read_namespaces=getattr(
+                    principal, "provider_read_namespaces", frozenset(),
+                ),
+            )
         ended_at = _now()
         self._persist_audit(
             runtime, ctx, turn_id, definition, data, result,

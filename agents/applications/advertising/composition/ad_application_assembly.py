@@ -650,6 +650,9 @@ class AdApplicationAssembly:
             if candidates.get(namespace) not in (None, "")
             and runtime._validate_account_with_principal(
                 namespace, str(candidates[namespace]), False, scope,
+                provider_read_namespaces=getattr(
+                    request.principal, "provider_read_namespaces", frozenset(),
+                ),
             )[0]
         ]
         return matches[0] if len(matches) == 1 else None
@@ -657,11 +660,14 @@ class AdApplicationAssembly:
     @staticmethod
     def _account_option_allowed(
         runtime: Any, tool: Any, account_id: str,
-        interaction: Any, scope: Any,
+        interaction: Any, scope: Any, principal: Any = None,
     ) -> bool:
         namespace = str(getattr(tool, "namespace", "") or "")
         if scope is None or not runtime._validate_account_with_principal(
             namespace, account_id, False, scope,
+            provider_read_namespaces=getattr(
+                principal, "provider_read_namespaces", frozenset(),
+            ),
         )[0]:
             return False
         if interaction is None:
@@ -722,6 +728,7 @@ class AdApplicationAssembly:
         scope = getattr(request.principal, "account_scope", None)
         if not AdApplicationAssembly._account_option_allowed(
             runtime, tool, account_id, pending.get("interaction"), scope,
+            request.principal,
         ):
             return None
         return tool

@@ -145,7 +145,14 @@ class AdvertisingRuntimePolicy:
         account_id: str,
         is_write: bool,
         account_scope: Optional[Mapping[str, Any]],
+        *,
+        provider_read_namespaces: frozenset[str] = frozenset(),
     ) -> tuple[bool, str]:
+        if not normalize_account_id(account_id):
+            return False, "缺少账户ID"
+        namespace = ProviderBindings.normalize_namespace(platform)
+        if not is_write and namespace in provider_read_namespaces:
+            return True, ""
         if account_scope is not None:
             principal_accounts = self.principal_accounts(platform, account_scope)
             if (
@@ -154,6 +161,17 @@ class AdvertisingRuntimePolicy:
             ):
                 return False, f"账户 {account_id or '<empty>'} 不在当前身份的授权范围内"
         return self.validate_account_for_tool(platform, account_id, is_write)
+
+    def read_accounts(
+        self, platform: str, principal: Any,
+    ) -> Optional[list[str]]:
+        """None means credential-bounded reads, not an unrestricted write scope."""
+        namespace = ProviderBindings.normalize_namespace(platform)
+        if namespace in getattr(principal, "provider_read_namespaces", ()):
+            return None
+        return self.available_accounts(
+            platform, getattr(principal, "account_scope", None),
+        )
 
     def available_accounts(
         self,

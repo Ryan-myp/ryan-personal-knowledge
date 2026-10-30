@@ -93,8 +93,10 @@ def test_every_three_channel_blueprint_has_a_template_without_leaking_account_va
         assert not item.get("account_id")
         assert item["verification_status"] == "dry_run_only"
         assert not any(path.endswith(("account_id", "customer_id", "image_hash", "video_id", "page_id")) for path in item["values"])
-        blueprint = runtime.creation_blueprints.get(item["blueprint_id"])
+        blueprint = runtime.creation_blueprints.get(item["blueprint_id"], item["blueprint_version"])
         assert blueprint.version == item["blueprint_version"]
+        if not item.get("catalog_hidden"):
+            assert runtime.creation_blueprints.get(item["blueprint_id"]).version == blueprint.version
     templates = runtime.list_creation_templates(provider="meta", account_scope={"meta": ["other-account"]})
     assert templates and all(not item["account_id"] for item in templates)
     assert runtime.list_creation_templates(provider="meta", account_scope={"tiktok": ["other-account"]}) == []

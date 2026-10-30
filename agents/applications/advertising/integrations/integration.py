@@ -639,10 +639,7 @@ class AdvertisingToolExecutor:
             )
             principal = getattr(request, "principal", None)
             metadata["authorized_account_ids"] = (
-                self.owner._available_accounts_for_request(
-                    platform,
-                    getattr(principal, "account_scope", None),
-                )
+                self.owner._read_accounts_for_request(platform, principal)
             )
         return metadata
 
@@ -801,6 +798,10 @@ class AdvertisingToolExecutor:
             self.definition,
             result,
             getattr(getattr(request, "principal", None), "account_scope", None),
+            provider_read_namespaces=getattr(
+                getattr(request, "principal", None),
+                "provider_read_namespaces", frozenset(),
+            ),
         )
         if self.definition.is_write_tool and result.success:
             result.data = {

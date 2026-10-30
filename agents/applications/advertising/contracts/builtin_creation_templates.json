@@ -1097,12 +1097,12 @@
       }
     },
     {
-      "key": "google-ads.demand_gen_carousel.starter",
+      "key": "google-ads.demand_gen_carousel.v1.1.starter",
       "name": "Google Demand Gen 轮播广告 · 起步模板",
       "description": "通用草稿预设，未进行真实创建验证。选择测试账号后补充预算、定向、素材和渠道资源，提交时沿用权限、确认与暂停保护。",
       "provider": "google-ads",
       "blueprint_id": "google-ads.demand_gen_carousel",
-      "blueprint_version": "1.0.0",
+      "blueprint_version": "1.1.0",
       "ad_format": "DEMAND_GEN_CAROUSEL",
       "scope_type": "general",
       "account_id": "",
@@ -1118,7 +1118,6 @@
         "campaign.daily_budget",
         "campaign.demand_gen_campaign_settings",
         "ad_group.name",
-        "ad_group.demand_gen_ad_group_settings",
         "ad.name",
         "ad.final_url",
         "ad.headline",
@@ -1133,17 +1132,16 @@
       ],
       "values": {
         "campaign.advertising_channel_type": "DEMAND_GEN",
-        "campaign.bidding_strategy": "MAXIMIZE_CONVERSIONS",
-        "ad_group.type": "SEARCH_STANDARD"
+        "campaign.bidding_strategy": "MAXIMIZE_CONVERSIONS"
       }
     },
     {
-      "key": "google-ads.demand_gen_multi_asset.starter",
+      "key": "google-ads.demand_gen_multi_asset.v1.1.starter",
       "name": "Google Demand Gen 多素材广告 · 起步模板",
       "description": "通用草稿预设，未进行真实创建验证。选择测试账号后补充预算、定向、素材和渠道资源，提交时沿用权限、确认与暂停保护。",
       "provider": "google-ads",
       "blueprint_id": "google-ads.demand_gen_multi_asset",
-      "blueprint_version": "1.0.0",
+      "blueprint_version": "1.1.0",
       "ad_format": "DEMAND_GEN_MULTI_ASSET",
       "scope_type": "general",
       "account_id": "",
@@ -1159,7 +1157,6 @@
         "campaign.daily_budget",
         "campaign.demand_gen_campaign_settings",
         "ad_group.name",
-        "ad_group.demand_gen_ad_group_settings",
         "ad.name",
         "ad.final_url",
         "ad.headlines",
@@ -1174,17 +1171,16 @@
       ],
       "values": {
         "campaign.advertising_channel_type": "DEMAND_GEN",
-        "campaign.bidding_strategy": "MAXIMIZE_CONVERSIONS",
-        "ad_group.type": "SEARCH_STANDARD"
+        "campaign.bidding_strategy": "MAXIMIZE_CONVERSIONS"
       }
     },
     {
-      "key": "google-ads.demand_gen_product.starter",
+      "key": "google-ads.demand_gen_product.v1.1.starter",
       "name": "Google Demand Gen 商品广告 · 起步模板",
       "description": "通用草稿预设，未进行真实创建验证。选择测试账号后补充预算、定向、素材和渠道资源，提交时沿用权限、确认与暂停保护。",
       "provider": "google-ads",
       "blueprint_id": "google-ads.demand_gen_product",
-      "blueprint_version": "1.0.0",
+      "blueprint_version": "1.1.0",
       "ad_format": "DEMAND_GEN_PRODUCT",
       "scope_type": "general",
       "account_id": "",
@@ -1200,7 +1196,6 @@
         "campaign.daily_budget",
         "campaign.demand_gen_campaign_settings",
         "ad_group.name",
-        "ad_group.demand_gen_ad_group_settings",
         "ad.name",
         "ad.headline",
         "ad.description",
@@ -1216,17 +1211,16 @@
       ],
       "values": {
         "campaign.advertising_channel_type": "DEMAND_GEN",
-        "campaign.bidding_strategy": "MAXIMIZE_CONVERSIONS",
-        "ad_group.type": "SEARCH_STANDARD"
+        "campaign.bidding_strategy": "MAXIMIZE_CONVERSIONS"
       }
     },
     {
-      "key": "google-ads.demand_gen_video_responsive.starter",
+      "key": "google-ads.demand_gen_video_responsive.v1.1.starter",
       "name": "Google Demand Gen 视频响应式广告 · 起步模板",
       "description": "通用草稿预设，未进行真实创建验证。选择测试账号后补充预算、定向、素材和渠道资源，提交时沿用权限、确认与暂停保护。",
       "provider": "google-ads",
       "blueprint_id": "google-ads.demand_gen_video_responsive",
-      "blueprint_version": "1.0.0",
+      "blueprint_version": "1.1.0",
       "ad_format": "DEMAND_GEN_VIDEO_RESPONSIVE",
       "scope_type": "general",
       "account_id": "",
@@ -1242,7 +1236,6 @@
         "campaign.daily_budget",
         "campaign.demand_gen_campaign_settings",
         "ad_group.name",
-        "ad_group.demand_gen_ad_group_settings",
         "ad.name",
         "ad.business_name",
         "ad.videos",
@@ -1257,8 +1250,7 @@
       ],
       "values": {
         "campaign.advertising_channel_type": "DEMAND_GEN",
-        "campaign.bidding_strategy": "MAXIMIZE_CONVERSIONS",
-        "ad_group.type": "SEARCH_STANDARD"
+        "campaign.bidding_strategy": "MAXIMIZE_CONVERSIONS"
       }
     },
     {
@@ -1609,12 +1601,12 @@
       }
     },
     {
-      "key": "meta.lead_generation.starter",
+      "key": "meta.lead_generation.v1.1.starter",
       "name": "Meta 潜在客户广告 · 起步模板",
       "description": "通用草稿预设，未进行真实创建验证。选择测试账号后补充预算、定向、素材和渠道资源，提交时沿用权限、确认与暂停保护。",
       "provider": "meta",
       "blueprint_id": "meta.lead_generation",
-      "blueprint_version": "1.0.0",
+      "blueprint_version": "1.1.0",
       "ad_format": "lead_generation",
       "scope_type": "general",
       "account_id": "",
@@ -1630,8 +1622,6 @@
         "campaign.buying_type",
         "campaign.daily_budget",
         "ad_set.name",
-        "ad_set.optimization_goal",
-        "ad_set.billing_event",
         "ad_set.targeting",
         "ad.name",
         "ad.page_id",
@@ -1646,7 +1636,10 @@
       "values": {
         "campaign.bid_strategy": "LOWEST_COST_WITHOUT_CAP",
         "ad.call_to_action_type": "SIGN_UP",
-        "campaign.objective": "OUTCOME_LEADS"
+        "campaign.objective": "OUTCOME_LEADS",
+        "ad.media_type": "IMAGE",
+        "ad_set.optimization_goal": "LEAD_GENERATION",
+        "ad_set.billing_event": "IMPRESSIONS"
       }
     },
     {
@@ -1885,6 +1878,431 @@
         "ad_group.billing_event": "OCPM",
         "ad.ad_format": "SINGLE_VIDEO"
       }
+    },
+    {
+      "key": "meta.lead_generation.image.starter",
+      "name": "Meta 图片线索广告 · 起步模板",
+      "description": "使用已发布 Instant Form，选择图片素材后补充预算、定向及文案。仅离线合同验证，默认暂停。",
+      "provider": "meta",
+      "blueprint_id": "meta.lead_generation",
+      "blueprint_version": "1.1.0",
+      "ad_format": "lead_generation",
+      "scope_type": "general",
+      "account_id": "",
+      "verification_status": "dry_run_only",
+      "verified_scope": "仅本地字段合同检查；未验证渠道账户资格或真实创建。",
+      "required_inputs": [
+        "测试账号",
+        "名称、预算、定向与渠道资源（按向导补齐）"
+      ],
+      "required_input_fields": [
+        "campaign.name",
+        "campaign.special_ad_categories",
+        "campaign.buying_type",
+        "campaign.daily_budget",
+        "ad_set.name",
+        "ad_set.targeting",
+        "ad.name",
+        "ad.page_id",
+        "ad.form_id",
+        "ad.media_type",
+        "ad.message",
+        "ad.headline",
+        "ad.image_hash"
+      ],
+      "tags": [
+        "内置",
+        "通用",
+        "起步模板",
+        "未实测"
+      ],
+      "values": {
+        "campaign.bid_strategy": "LOWEST_COST_WITHOUT_CAP",
+        "ad.call_to_action_type": "SIGN_UP",
+        "campaign.objective": "OUTCOME_LEADS",
+        "ad.media_type": "IMAGE",
+        "campaign.status": "PAUSED",
+        "ad_set.status": "PAUSED",
+        "ad.status": "PAUSED",
+        "ad_set.optimization_goal": "LEAD_GENERATION",
+        "ad_set.billing_event": "IMPRESSIONS"
+      }
+    },
+    {
+      "key": "meta.lead_generation.video.starter",
+      "name": "Meta 视频线索广告 · 起步模板",
+      "description": "使用已发布 Instant Form，选择视频素材后补充预算、定向及文案。仅离线合同验证，默认暂停。",
+      "provider": "meta",
+      "blueprint_id": "meta.lead_generation",
+      "blueprint_version": "1.1.0",
+      "ad_format": "lead_generation",
+      "scope_type": "general",
+      "account_id": "",
+      "verification_status": "dry_run_only",
+      "verified_scope": "仅本地字段合同检查；未验证渠道账户资格或真实创建。",
+      "required_inputs": [
+        "测试账号",
+        "名称、预算、定向与渠道资源（按向导补齐）"
+      ],
+      "required_input_fields": [
+        "campaign.name",
+        "campaign.special_ad_categories",
+        "campaign.buying_type",
+        "campaign.daily_budget",
+        "ad_set.name",
+        "ad_set.targeting",
+        "ad.name",
+        "ad.page_id",
+        "ad.form_id",
+        "ad.media_type",
+        "ad.message",
+        "ad.headline",
+        "ad.video_id"
+      ],
+      "tags": [
+        "内置",
+        "通用",
+        "起步模板",
+        "未实测"
+      ],
+      "values": {
+        "campaign.bid_strategy": "LOWEST_COST_WITHOUT_CAP",
+        "ad.call_to_action_type": "SIGN_UP",
+        "campaign.objective": "OUTCOME_LEADS",
+        "ad.media_type": "VIDEO",
+        "campaign.status": "PAUSED",
+        "ad_set.status": "PAUSED",
+        "ad.status": "PAUSED",
+        "ad_set.optimization_goal": "LEAD_GENERATION",
+        "ad_set.billing_event": "IMPRESSIONS"
+      }
+    },
+    {
+      "key": "tiktok.traffic.single_image.starter",
+      "name": "TikTok 流量图片广告 · 起步模板",
+      "description": "以图片素材创建 Smart+ 网站流量广告，选择账号、素材与身份，补齐预算、定向及落地页。仅离线合同验证，默认暂停。",
+      "provider": "tiktok",
+      "blueprint_id": "tiktok.traffic_video",
+      "blueprint_version": "3.4.0",
+      "ad_format": "SINGLE_VIDEO",
+      "scope_type": "general",
+      "account_id": "",
+      "verification_status": "dry_run_only",
+      "verified_scope": "仅本地字段合同检查；未验证渠道账户资格或真实创建。",
+      "required_inputs": [
+        "测试账号",
+        "名称、预算、定向与渠道资源（按向导补齐）"
+      ],
+      "required_input_fields": [
+        "campaign.campaign_name",
+        "campaign.objective_type",
+        "campaign.sales_destination",
+        "ad_group.location_ids",
+        "ad_group.promotion_type",
+        "ad_group.budget_mode",
+        "ad_group.budget",
+        "ad_group.schedule_type",
+        "ad_group.schedule_start_time",
+        "ad_group.schedule_end_time",
+        "ad_group.optimization_goal",
+        "ad_group.billing_event",
+        "ad_group.bid_type",
+        "ad.identity_type",
+        "ad.identity_id",
+        "ad.ad_format",
+        "ad.ad_text",
+        "ad.landing_page_url",
+        "ad.image_ids",
+        "ad.landing_page_url"
+      ],
+      "tags": [
+        "内置",
+        "通用",
+        "起步模板",
+        "未实测"
+      ],
+      "values": {
+        "campaign.objective_type": "TRAFFIC",
+        "campaign.operation_status": "DISABLE",
+        "campaign.campaign_type": "REGULAR_CAMPAIGN",
+        "campaign.sales_destination": "WEBSITE",
+        "ad_group.objective_type": "TRAFFIC",
+        "ad_group.optimization_goal": "CLICK",
+        "ad_group.promotion_type": "WEBSITE",
+        "ad_group.operation_status": "DISABLE",
+        "ad.objective_type": "TRAFFIC",
+        "ad.ad_format": "SINGLE_IMAGE",
+        "ad.operation_status": "DISABLE"
+      }
+    },
+    {
+      "key": "tiktok.traffic.carousel_ads.starter",
+      "name": "TikTok 流量轮播广告 · 起步模板",
+      "description": "以轮播素材创建 Smart+ 网站流量广告，选择账号、素材与身份，补齐预算、定向及落地页。仅离线合同验证，默认暂停。",
+      "provider": "tiktok",
+      "blueprint_id": "tiktok.traffic_video",
+      "blueprint_version": "3.4.0",
+      "ad_format": "SINGLE_VIDEO",
+      "scope_type": "general",
+      "account_id": "",
+      "verification_status": "dry_run_only",
+      "verified_scope": "仅本地字段合同检查；未验证渠道账户资格或真实创建。",
+      "required_inputs": [
+        "测试账号",
+        "名称、预算、定向与渠道资源（按向导补齐）"
+      ],
+      "required_input_fields": [
+        "campaign.campaign_name",
+        "campaign.objective_type",
+        "campaign.sales_destination",
+        "ad_group.location_ids",
+        "ad_group.promotion_type",
+        "ad_group.budget_mode",
+        "ad_group.budget",
+        "ad_group.schedule_type",
+        "ad_group.schedule_start_time",
+        "ad_group.schedule_end_time",
+        "ad_group.optimization_goal",
+        "ad_group.billing_event",
+        "ad_group.bid_type",
+        "ad.identity_type",
+        "ad.identity_id",
+        "ad.ad_format",
+        "ad.ad_text",
+        "ad.landing_page_url",
+        "ad.image_ids",
+        "ad.landing_page_url"
+      ],
+      "tags": [
+        "内置",
+        "通用",
+        "起步模板",
+        "未实测"
+      ],
+      "values": {
+        "campaign.objective_type": "TRAFFIC",
+        "campaign.operation_status": "DISABLE",
+        "campaign.campaign_type": "REGULAR_CAMPAIGN",
+        "campaign.sales_destination": "WEBSITE",
+        "ad_group.objective_type": "TRAFFIC",
+        "ad_group.optimization_goal": "CLICK",
+        "ad_group.promotion_type": "WEBSITE",
+        "ad_group.operation_status": "DISABLE",
+        "ad.objective_type": "TRAFFIC",
+        "ad.ad_format": "CAROUSEL_ADS",
+        "ad.operation_status": "DISABLE"
+      }
+    },
+    {
+      "key": "google-ads.demand_gen_carousel.starter",
+      "name": "Google Demand Gen 轮播广告 · 起步模板",
+      "description": "通用草稿预设，未进行真实创建验证。选择测试账号后补充预算、定向、素材和渠道资源，提交时沿用权限、确认与暂停保护。",
+      "provider": "google-ads",
+      "blueprint_id": "google-ads.demand_gen_carousel",
+      "blueprint_version": "1.0.0",
+      "ad_format": "DEMAND_GEN_CAROUSEL",
+      "scope_type": "general",
+      "account_id": "",
+      "verification_status": "dry_run_only",
+      "verified_scope": "仅本地字段合同检查；未验证渠道账户资格或真实创建。",
+      "required_inputs": [
+        "测试账号",
+        "名称、预算、定向与渠道资源（按向导补齐）"
+      ],
+      "required_input_fields": [
+        "campaign.campaign_name",
+        "campaign.contains_eu_political_advertising",
+        "campaign.daily_budget",
+        "campaign.demand_gen_campaign_settings",
+        "ad_group.name",
+        "ad_group.demand_gen_ad_group_settings",
+        "ad.name",
+        "ad.final_url",
+        "ad.headline",
+        "ad.description",
+        "ad.carousel_cards"
+      ],
+      "tags": [
+        "内置",
+        "通用",
+        "起步模板",
+        "未实测"
+      ],
+      "values": {
+        "campaign.advertising_channel_type": "DEMAND_GEN",
+        "campaign.bidding_strategy": "MAXIMIZE_CONVERSIONS",
+        "ad_group.type": "SEARCH_STANDARD"
+      },
+      "catalog_hidden": true
+    },
+    {
+      "key": "google-ads.demand_gen_multi_asset.starter",
+      "name": "Google Demand Gen 多素材广告 · 起步模板",
+      "description": "通用草稿预设，未进行真实创建验证。选择测试账号后补充预算、定向、素材和渠道资源，提交时沿用权限、确认与暂停保护。",
+      "provider": "google-ads",
+      "blueprint_id": "google-ads.demand_gen_multi_asset",
+      "blueprint_version": "1.0.0",
+      "ad_format": "DEMAND_GEN_MULTI_ASSET",
+      "scope_type": "general",
+      "account_id": "",
+      "verification_status": "dry_run_only",
+      "verified_scope": "仅本地字段合同检查；未验证渠道账户资格或真实创建。",
+      "required_inputs": [
+        "测试账号",
+        "名称、预算、定向与渠道资源（按向导补齐）"
+      ],
+      "required_input_fields": [
+        "campaign.campaign_name",
+        "campaign.contains_eu_political_advertising",
+        "campaign.daily_budget",
+        "campaign.demand_gen_campaign_settings",
+        "ad_group.name",
+        "ad_group.demand_gen_ad_group_settings",
+        "ad.name",
+        "ad.final_url",
+        "ad.headlines",
+        "ad.descriptions",
+        "ad.business_name"
+      ],
+      "tags": [
+        "内置",
+        "通用",
+        "起步模板",
+        "未实测"
+      ],
+      "values": {
+        "campaign.advertising_channel_type": "DEMAND_GEN",
+        "campaign.bidding_strategy": "MAXIMIZE_CONVERSIONS",
+        "ad_group.type": "SEARCH_STANDARD"
+      },
+      "catalog_hidden": true
+    },
+    {
+      "key": "google-ads.demand_gen_product.starter",
+      "name": "Google Demand Gen 商品广告 · 起步模板",
+      "description": "通用草稿预设，未进行真实创建验证。选择测试账号后补充预算、定向、素材和渠道资源，提交时沿用权限、确认与暂停保护。",
+      "provider": "google-ads",
+      "blueprint_id": "google-ads.demand_gen_product",
+      "blueprint_version": "1.0.0",
+      "ad_format": "DEMAND_GEN_PRODUCT",
+      "scope_type": "general",
+      "account_id": "",
+      "verification_status": "dry_run_only",
+      "verified_scope": "仅本地字段合同检查；未验证渠道账户资格或真实创建。",
+      "required_inputs": [
+        "测试账号",
+        "名称、预算、定向与渠道资源（按向导补齐）"
+      ],
+      "required_input_fields": [
+        "campaign.campaign_name",
+        "campaign.contains_eu_political_advertising",
+        "campaign.daily_budget",
+        "campaign.demand_gen_campaign_settings",
+        "ad_group.name",
+        "ad_group.demand_gen_ad_group_settings",
+        "ad.name",
+        "ad.headline",
+        "ad.description",
+        "ad.business_name",
+        "ad.logo_image",
+        "ad.call_to_action"
+      ],
+      "tags": [
+        "内置",
+        "通用",
+        "起步模板",
+        "未实测"
+      ],
+      "values": {
+        "campaign.advertising_channel_type": "DEMAND_GEN",
+        "campaign.bidding_strategy": "MAXIMIZE_CONVERSIONS",
+        "ad_group.type": "SEARCH_STANDARD"
+      },
+      "catalog_hidden": true
+    },
+    {
+      "key": "google-ads.demand_gen_video_responsive.starter",
+      "name": "Google Demand Gen 视频响应式广告 · 起步模板",
+      "description": "通用草稿预设，未进行真实创建验证。选择测试账号后补充预算、定向、素材和渠道资源，提交时沿用权限、确认与暂停保护。",
+      "provider": "google-ads",
+      "blueprint_id": "google-ads.demand_gen_video_responsive",
+      "blueprint_version": "1.0.0",
+      "ad_format": "DEMAND_GEN_VIDEO_RESPONSIVE",
+      "scope_type": "general",
+      "account_id": "",
+      "verification_status": "dry_run_only",
+      "verified_scope": "仅本地字段合同检查；未验证渠道账户资格或真实创建。",
+      "required_inputs": [
+        "测试账号",
+        "名称、预算、定向与渠道资源（按向导补齐）"
+      ],
+      "required_input_fields": [
+        "campaign.campaign_name",
+        "campaign.contains_eu_political_advertising",
+        "campaign.daily_budget",
+        "campaign.demand_gen_campaign_settings",
+        "ad_group.name",
+        "ad_group.demand_gen_ad_group_settings",
+        "ad.name",
+        "ad.business_name",
+        "ad.videos",
+        "ad.headlines",
+        "ad.descriptions"
+      ],
+      "tags": [
+        "内置",
+        "通用",
+        "起步模板",
+        "未实测"
+      ],
+      "values": {
+        "campaign.advertising_channel_type": "DEMAND_GEN",
+        "campaign.bidding_strategy": "MAXIMIZE_CONVERSIONS",
+        "ad_group.type": "SEARCH_STANDARD"
+      },
+      "catalog_hidden": true
+    },
+    {
+      "key": "meta.lead_generation.starter",
+      "name": "Meta 潜在客户广告 · 起步模板",
+      "description": "通用草稿预设，未进行真实创建验证。选择测试账号后补充预算、定向、素材和渠道资源，提交时沿用权限、确认与暂停保护。",
+      "provider": "meta",
+      "blueprint_id": "meta.lead_generation",
+      "blueprint_version": "1.0.0",
+      "ad_format": "lead_generation",
+      "scope_type": "general",
+      "account_id": "",
+      "verification_status": "dry_run_only",
+      "verified_scope": "仅本地字段合同检查；未验证渠道账户资格或真实创建。",
+      "required_inputs": [
+        "测试账号",
+        "名称、预算、定向与渠道资源（按向导补齐）"
+      ],
+      "required_input_fields": [
+        "campaign.name",
+        "campaign.special_ad_categories",
+        "campaign.buying_type",
+        "campaign.daily_budget",
+        "ad_set.name",
+        "ad_set.optimization_goal",
+        "ad_set.billing_event",
+        "ad_set.targeting",
+        "ad.name",
+        "ad.page_id",
+        "ad.form_id"
+      ],
+      "tags": [
+        "内置",
+        "通用",
+        "起步模板",
+        "未实测"
+      ],
+      "values": {
+        "campaign.bid_strategy": "LOWEST_COST_WITHOUT_CAP",
+        "ad.call_to_action_type": "SIGN_UP",
+        "campaign.objective": "OUTCOME_LEADS"
+      },
+      "catalog_hidden": true
     }
   ]
 }

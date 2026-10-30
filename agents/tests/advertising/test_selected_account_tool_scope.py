@@ -19,7 +19,7 @@ def _selection(
     ]
     runtime = SimpleNamespace(
         _canonical_platform=normalize_namespace,
-        _validate_account_with_principal=lambda namespace, value, _write, allowed: (
+        _validate_account_with_principal=lambda namespace, value, _write, allowed, **_kwargs: (
             value in allowed.get(namespace, ()), "not authorized",
         ),
     )

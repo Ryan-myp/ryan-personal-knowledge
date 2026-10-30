@@ -30,7 +30,7 @@ def test_provider_executor_receives_trusted_run_mode_and_identity():
         decorate_lookup_result=lambda _tool, result, *_args: result
     )
     security = SimpleNamespace(
-        filter_account_discovery_result=lambda _tool, result, _scope: result
+        filter_account_discovery_result=lambda _tool, result, _scope, **_kwargs: result
     )
     owner = SimpleNamespace(
         tool_executor=SimpleNamespace(execute=execute),
@@ -101,7 +101,7 @@ def test_provider_executor_resolves_creative_asset_only_for_trusted_identity():
         tool_executor=SimpleNamespace(execute=execute),
         write_guard=None,
         security=SimpleNamespace(
-            filter_account_discovery_result=lambda _tool, result, _scope: result,
+            filter_account_discovery_result=lambda _tool, result, _scope, **_kwargs: result,
         ),
         input_builder=SimpleNamespace(parameter_selection=SimpleNamespace(
             decorate_lookup_result=lambda _tool, result, *_args: result,
@@ -345,7 +345,7 @@ def test_account_authorized_on_another_channel_is_reported_as_channel_mismatch()
     owner = SimpleNamespace(
         _canonical_platform=lambda value: value,
         _resolve_platform_identifier=lambda value: value,
-        _validate_account_with_principal=lambda *_args: (
+        _validate_account_with_principal=lambda *_args, **_kwargs: (
             False, "账户不在当前身份的授权范围内",
         ),
     )

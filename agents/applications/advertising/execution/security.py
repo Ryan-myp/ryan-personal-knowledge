@@ -329,6 +329,8 @@ class RuntimeSecurity:
         tool_def: Any,
         result: ToolResult,
         account_scope: Optional[dict[str, Any]],
+        *,
+        provider_read_namespaces: frozenset[str] = frozenset(),
     ) -> ToolResult:
         """Expose only configured and principal-authorized account records."""
         if (
@@ -358,6 +360,8 @@ class RuntimeSecurity:
         platform = self.runtime._canonical_platform(
             str(getattr(tool_def, "namespace", "") or "")
         )
+        if platform in provider_read_namespaces:
+            return result
         validator = getattr(self.runtime, "whitelist_validator", None)
         get_allowed = getattr(validator, "get_allowed_accounts", None)
         allowed = {

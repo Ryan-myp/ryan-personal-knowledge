@@ -270,13 +270,21 @@ class AdApplicationHooksMixin:
         account_id: str,
         is_write: bool,
         account_scope: Optional[Mapping[str, Any]],
+        *,
+        provider_read_namespaces: frozenset[str] = frozenset(),
     ) -> tuple[bool, str]:
         return self._policy_service().validate_account_with_principal(
             platform,
             account_id,
             is_write,
             account_scope,
+            provider_read_namespaces=provider_read_namespaces,
         )
+
+    def _read_accounts_for_request(
+        self, platform: str, principal: Any,
+    ) -> Optional[list[str]]:
+        return self._policy_service().read_accounts(platform, principal)
 
     def _available_accounts_for_request(
         self,

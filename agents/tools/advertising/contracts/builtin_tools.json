@@ -1,5 +1,5 @@
 {
-  "digest": "761ebf5b2e5a2e3b6bcec3a593b319680ac0a103e93199bd870f23e3c7add601",
+  "digest": "8dd7ba6dd04dc314dbcf5749c2bcf3a70f07de6154d15e076e595ed61c509c9c",
   "format_version": 1,
   "platforms": {
     "advertising": {
@@ -4029,8 +4029,8 @@
       ]
     },
     "google-ads": {
-      "digest": "363ce418727d64ee38db4c22eca997d4e4267f9076f48a4a9d587fbfca583ff0",
-      "tool_count": 111,
+      "digest": "0410ba9460fc6294c5f5305bed84c6d80c0c8589d83624f3a285a9aa44b32295",
+      "tool_count": 112,
       "tools": [
         {
           "action": "get",
@@ -4541,8 +4541,8 @@
             }
           ],
           "cancellation_mode": "cooperative",
-          "contract_hash": "f1dac9b46370ee5da74e1c3855fc9ea3ddb17ca6275c69fd40f1abb5d083d25c",
-          "contract_version": "1.5.0",
+          "contract_hash": "271485adb3f9a6ce273eff274452825642a4a568adcab2a639b1056eeb8d9ed3",
+          "contract_version": "1.6.0",
           "description": "创建 Google Ads Ad Group。",
           "effect_class": "write",
           "idempotency_key_field": null,
@@ -4550,6 +4550,83 @@
             "additionalProperties": false,
             "additional_properties": false,
             "conditional_rules": [
+              {
+                "forbidden": [
+                  "demand_gen_ad_group_settings.channel_controls.channel_strategy"
+                ],
+                "if": {
+                  "demand_gen_ad_group_settings.channel_controls.channel_strategy": {
+                    "exists": true
+                  },
+                  "demand_gen_ad_group_settings.channel_controls.selected_channels": {
+                    "exists": true
+                  }
+                },
+                "message": "频道策略和逐项频道选择不能同时填写"
+              },
+              {
+                "forbidden": [
+                  "demand_gen_ad_group_settings.channel_controls"
+                ],
+                "if": {
+                  "demand_gen_ad_group_settings.channel_controls": {
+                    "exists": true
+                  },
+                  "demand_gen_ad_group_settings.channel_controls.channel_strategy": {
+                    "exists": false
+                  },
+                  "demand_gen_ad_group_settings.channel_controls.selected_channels": {
+                    "exists": false
+                  }
+                },
+                "message": "请指定频道策略或至少一个频道"
+              },
+              {
+                "forbidden": [
+                  "demand_gen_ad_group_settings.channel_controls.selected_channels"
+                ],
+                "if": {
+                  "demand_gen_ad_group_settings.channel_controls.selected_channels": {
+                    "exists": true
+                  },
+                  "demand_gen_ad_group_settings.channel_controls.selected_channels.discover": {
+                    "not_in": [
+                      true
+                    ]
+                  },
+                  "demand_gen_ad_group_settings.channel_controls.selected_channels.display": {
+                    "not_in": [
+                      true
+                    ]
+                  },
+                  "demand_gen_ad_group_settings.channel_controls.selected_channels.gmail": {
+                    "not_in": [
+                      true
+                    ]
+                  },
+                  "demand_gen_ad_group_settings.channel_controls.selected_channels.maps": {
+                    "not_in": [
+                      true
+                    ]
+                  },
+                  "demand_gen_ad_group_settings.channel_controls.selected_channels.youtube_in_feed": {
+                    "not_in": [
+                      true
+                    ]
+                  },
+                  "demand_gen_ad_group_settings.channel_controls.selected_channels.youtube_in_stream": {
+                    "not_in": [
+                      true
+                    ]
+                  },
+                  "demand_gen_ad_group_settings.channel_controls.selected_channels.youtube_shorts": {
+                    "not_in": [
+                      true
+                    ]
+                  }
+                },
+                "message": "selected_channels 必须至少启用一个频道"
+              },
               {
                 "id": "demand_gen_ad_group_setting_dependency",
                 "if": {
@@ -4634,14 +4711,6 @@
                     "additionalProperties": false,
                     "description": "Demand Gen channel controls",
                     "properties": {
-                      "channel_config": {
-                        "description": "Demand Gen channel configuration",
-                        "enum": [
-                          "CHANNEL_STRATEGY",
-                          "SELECTED_CHANNELS"
-                        ],
-                        "type": "string"
-                      },
                       "channel_strategy": {
                         "description": "Demand Gen channel strategy",
                         "enum": [
@@ -8263,6 +8332,300 @@
           "traits": [
             "write",
             "conversion"
+          ]
+        },
+        {
+          "action": "create",
+          "activation_rules": [
+            {
+              "aliases": [
+                "advertising_channel_type"
+              ],
+              "field": "campaign_type",
+              "in": [
+                "DEMAND_GEN"
+              ]
+            }
+          ],
+          "cancellation_mode": "cooperative",
+          "contract_hash": "43df8c5938927c7e8522834dda320b6e1a8892ca1184eb5a57e09d53ed25a6fa",
+          "contract_version": "1.0.0",
+          "description": "创建 Google Demand Gen Ad Group，继承 Campaign 出价，不发送 Display 类型或手动 CPC；支持频道控制，默认暂停。",
+          "effect_class": "write",
+          "idempotency_key_field": null,
+          "input_schema": {
+            "additionalProperties": false,
+            "additional_properties": false,
+            "conditional_rules": [
+              {
+                "forbidden": [
+                  "demand_gen_ad_group_settings.channel_controls.channel_strategy"
+                ],
+                "if": {
+                  "demand_gen_ad_group_settings.channel_controls.channel_strategy": {
+                    "exists": true
+                  },
+                  "demand_gen_ad_group_settings.channel_controls.selected_channels": {
+                    "exists": true
+                  }
+                },
+                "message": "频道策略和逐项频道选择不能同时填写"
+              },
+              {
+                "forbidden": [
+                  "demand_gen_ad_group_settings.channel_controls"
+                ],
+                "if": {
+                  "demand_gen_ad_group_settings.channel_controls": {
+                    "exists": true
+                  },
+                  "demand_gen_ad_group_settings.channel_controls.channel_strategy": {
+                    "exists": false
+                  },
+                  "demand_gen_ad_group_settings.channel_controls.selected_channels": {
+                    "exists": false
+                  }
+                },
+                "message": "请指定频道策略或至少一个频道"
+              },
+              {
+                "forbidden": [
+                  "demand_gen_ad_group_settings.channel_controls.selected_channels"
+                ],
+                "if": {
+                  "demand_gen_ad_group_settings.channel_controls.selected_channels": {
+                    "exists": true
+                  },
+                  "demand_gen_ad_group_settings.channel_controls.selected_channels.discover": {
+                    "not_in": [
+                      true
+                    ]
+                  },
+                  "demand_gen_ad_group_settings.channel_controls.selected_channels.display": {
+                    "not_in": [
+                      true
+                    ]
+                  },
+                  "demand_gen_ad_group_settings.channel_controls.selected_channels.gmail": {
+                    "not_in": [
+                      true
+                    ]
+                  },
+                  "demand_gen_ad_group_settings.channel_controls.selected_channels.maps": {
+                    "not_in": [
+                      true
+                    ]
+                  },
+                  "demand_gen_ad_group_settings.channel_controls.selected_channels.youtube_in_feed": {
+                    "not_in": [
+                      true
+                    ]
+                  },
+                  "demand_gen_ad_group_settings.channel_controls.selected_channels.youtube_in_stream": {
+                    "not_in": [
+                      true
+                    ]
+                  },
+                  "demand_gen_ad_group_settings.channel_controls.selected_channels.youtube_shorts": {
+                    "not_in": [
+                      true
+                    ]
+                  }
+                },
+                "message": "selected_channels 必须至少启用一个频道"
+              }
+            ],
+            "properties": {
+              "campaign_id": {
+                "description": "Parent Campaign ID",
+                "lookup_query_field": "campaign_id",
+                "lookup_result_key": "campaigns",
+                "lookup_tool": "google_list_campaigns",
+                "selection_label_fields": [
+                  "name",
+                  "campaign_name",
+                  "id"
+                ],
+                "selection_value_fields": [
+                  "id",
+                  "campaign_id",
+                  "resource_name"
+                ],
+                "type": "string"
+              },
+              "campaign_type": {
+                "default": "DEMAND_GEN",
+                "description": "父级 Campaign 类型",
+                "enum": [
+                  "DEMAND_GEN"
+                ],
+                "type": "string",
+                "ui_hidden": true
+              },
+              "demand_gen_ad_group_settings": {
+                "additionalProperties": false,
+                "description": "Demand Gen ad group settings",
+                "properties": {
+                  "channel_controls": {
+                    "additionalProperties": false,
+                    "description": "Demand Gen channel controls",
+                    "properties": {
+                      "channel_strategy": {
+                        "description": "Demand Gen channel strategy",
+                        "enum": [
+                          "ALL_CHANNELS",
+                          "ALL_OWNED_AND_OPERATED_CHANNELS"
+                        ],
+                        "type": "string"
+                      },
+                      "selected_channels": {
+                        "additionalProperties": false,
+                        "description": "Selected Demand Gen channels",
+                        "properties": {
+                          "discover": {
+                            "description": "Enable Demand Gen discover",
+                            "type": "boolean"
+                          },
+                          "display": {
+                            "description": "Enable Demand Gen display",
+                            "type": "boolean"
+                          },
+                          "gmail": {
+                            "description": "Enable Demand Gen gmail",
+                            "type": "boolean"
+                          },
+                          "maps": {
+                            "description": "Enable Demand Gen maps",
+                            "type": "boolean"
+                          },
+                          "youtube_in_feed": {
+                            "description": "Enable Demand Gen youtube_in_feed",
+                            "type": "boolean"
+                          },
+                          "youtube_in_stream": {
+                            "description": "Enable Demand Gen youtube_in_stream",
+                            "type": "boolean"
+                          },
+                          "youtube_shorts": {
+                            "description": "Enable Demand Gen youtube_shorts",
+                            "type": "boolean"
+                          }
+                        },
+                        "type": "object"
+                      }
+                    },
+                    "type": "object"
+                  }
+                },
+                "type": "object",
+                "ui_visible_when": {
+                  "equals": "DEMAND_GEN",
+                  "field": "campaign_type"
+                }
+              },
+              "name": {
+                "description": "Ad group name",
+                "maxLength": 255,
+                "type": "string"
+              },
+              "status": {
+                "description": "Ad group status",
+                "enum": [
+                  "ENABLED",
+                  "PAUSED",
+                  "REMOVED"
+                ],
+                "type": "string"
+              },
+              "targeting": {
+                "additionalProperties": false,
+                "description": "Google AdGroup targeting settings",
+                "properties": {
+                  "target_restrictions": {
+                    "description": "Ad group targeting restrictions",
+                    "items": {
+                      "additionalProperties": false,
+                      "description": "Targeting restriction",
+                      "properties": {
+                        "bid_only": {
+                          "description": "Bid only instead of restricting reach",
+                          "type": "boolean"
+                        },
+                        "targeting_dimension": {
+                          "description": "Dimension to restrict",
+                          "enum": [
+                            "AUDIENCE",
+                            "AGE_RANGE",
+                            "GENDER",
+                            "INCOME_RANGE",
+                            "PARENTAL_STATUS",
+                            "PLACEMENT",
+                            "TOPIC",
+                            "USER_INTEREST",
+                            "CUSTOM_AFFINITY",
+                            "CUSTOM_INTENT",
+                            "KEYWORD",
+                            "LOCATION"
+                          ],
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "targeting_dimension"
+                      ],
+                      "type": "object"
+                    },
+                    "minItems": 1,
+                    "type": "array"
+                  }
+                },
+                "type": "object"
+              }
+            },
+            "required": [
+              "campaign_id",
+              "name"
+            ],
+            "requires": [],
+            "requires_any_of": [],
+            "type": "object"
+          },
+          "integration_api_version": "v24",
+          "intent_aliases": [],
+          "intent_types": [
+            "create_ad_group",
+            "create_adgroup",
+            "create_campaign"
+          ],
+          "live_permission": null,
+          "live_support": true,
+          "max_output_bytes": 1000000,
+          "name": "google_create_demand_gen_ad_group",
+          "namespace": "google-ads",
+          "parent_resource_id_field": "campaign_id",
+          "parent_resource_type": "campaign",
+          "readback_tool": "google_get_ad_group",
+          "related_resource_id_fields": [],
+          "related_resource_type": null,
+          "replay_policy": "unsafe",
+          "required_permissions": [
+            "ads.plan"
+          ],
+          "resource_id_field": "ad_group_id",
+          "resource_type": "ad_group",
+          "result_id_fields": [],
+          "result_items_key": null,
+          "risk_level": "medium",
+          "scope_fields": [],
+          "scope_required": null,
+          "scope_type": null,
+          "skill": "google-ads-api-expert",
+          "skill_refs": [],
+          "timeout_seconds": 500.0,
+          "traits": [
+            "write",
+            "ad_group",
+            "demand_gen"
           ]
         },
         {
@@ -12089,7 +12452,6 @@
               ],
               "field": "campaign_type",
               "in": [
-                "DEMAND_GEN",
                 "HOTEL",
                 "LOCAL",
                 "SMART",
@@ -12098,15 +12460,93 @@
             }
           ],
           "cancellation_mode": "cooperative",
-          "contract_hash": "ee6adebf970f8942f47d451517d349e43592d022e1444afe060a6baabbf7d039",
-          "contract_version": "1.5.0",
+          "contract_hash": "7d0a0244df141bf89760101559ca644b79a07636048d63d048efb35f6a6c8a2b",
+          "contract_version": "1.6.0",
           "description": "创建 Google Demand Gen、Hotel、Local、Smart 或 Travel Ad Group；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "idempotency_key_field": null,
           "input_schema": {
             "additionalProperties": false,
             "additional_properties": false,
-            "conditional_rules": [],
+            "conditional_rules": [
+              {
+                "forbidden": [
+                  "demand_gen_ad_group_settings.channel_controls.channel_strategy"
+                ],
+                "if": {
+                  "demand_gen_ad_group_settings.channel_controls.channel_strategy": {
+                    "exists": true
+                  },
+                  "demand_gen_ad_group_settings.channel_controls.selected_channels": {
+                    "exists": true
+                  }
+                },
+                "message": "频道策略和逐项频道选择不能同时填写"
+              },
+              {
+                "forbidden": [
+                  "demand_gen_ad_group_settings.channel_controls"
+                ],
+                "if": {
+                  "demand_gen_ad_group_settings.channel_controls": {
+                    "exists": true
+                  },
+                  "demand_gen_ad_group_settings.channel_controls.channel_strategy": {
+                    "exists": false
+                  },
+                  "demand_gen_ad_group_settings.channel_controls.selected_channels": {
+                    "exists": false
+                  }
+                },
+                "message": "请指定频道策略或至少一个频道"
+              },
+              {
+                "forbidden": [
+                  "demand_gen_ad_group_settings.channel_controls.selected_channels"
+                ],
+                "if": {
+                  "demand_gen_ad_group_settings.channel_controls.selected_channels": {
+                    "exists": true
+                  },
+                  "demand_gen_ad_group_settings.channel_controls.selected_channels.discover": {
+                    "not_in": [
+                      true
+                    ]
+                  },
+                  "demand_gen_ad_group_settings.channel_controls.selected_channels.display": {
+                    "not_in": [
+                      true
+                    ]
+                  },
+                  "demand_gen_ad_group_settings.channel_controls.selected_channels.gmail": {
+                    "not_in": [
+                      true
+                    ]
+                  },
+                  "demand_gen_ad_group_settings.channel_controls.selected_channels.maps": {
+                    "not_in": [
+                      true
+                    ]
+                  },
+                  "demand_gen_ad_group_settings.channel_controls.selected_channels.youtube_in_feed": {
+                    "not_in": [
+                      true
+                    ]
+                  },
+                  "demand_gen_ad_group_settings.channel_controls.selected_channels.youtube_in_stream": {
+                    "not_in": [
+                      true
+                    ]
+                  },
+                  "demand_gen_ad_group_settings.channel_controls.selected_channels.youtube_shorts": {
+                    "not_in": [
+                      true
+                    ]
+                  }
+                },
+                "message": "selected_channels 必须至少启用一个频道"
+              }
+            ],
             "properties": {
               "campaign_id": {
                 "description": "Parent Campaign ID",
@@ -12180,14 +12620,6 @@
                     "additionalProperties": false,
                     "description": "Demand Gen channel controls",
                     "properties": {
-                      "channel_config": {
-                        "description": "Demand Gen channel configuration",
-                        "enum": [
-                          "CHANNEL_STRATEGY",
-                          "SELECTED_CHANNELS"
-                        ],
-                        "type": "string"
-                      },
                       "channel_strategy": {
                         "description": "Demand Gen channel strategy",
                         "enum": [
@@ -12335,6 +12767,7 @@
           "intent_aliases": [],
           "intent_types": [
             "create_ad_group",
+            "create_adgroup",
             "create_campaign"
           ],
           "live_permission": null,
@@ -20970,7 +21403,7 @@
       ]
     },
     "meta": {
-      "digest": "8136e21c13dc1e0f0ab6a0113de243c3efe98a937356ac98817888760e033f19",
+      "digest": "6f9becda803c7eea849cefa633698c1566908b397470c9ad9c707eee9d57c8de",
       "tool_count": 83,
       "tools": [
         {
@@ -25470,15 +25903,67 @@
             }
           ],
           "cancellation_mode": "cooperative",
-          "contract_hash": "80c50f3c523371e213003c399d972bd6e5c52d9cb36f33500cc82e4280255294",
-          "contract_version": "1.5.1",
-          "description": "创建 Meta Lead Ads Instant Form 广告；默认仅生成 dry-run 计划。",
+          "contract_hash": "faf7097728e7bde594af4f531f6e4a49552f1d7b696c59a3eff8f583b777f8ee",
+          "contract_version": "1.6.0",
+          "description": "创建 Meta Lead Ads Instant Form 图片或视频广告，支持图片 Hash、视频和缩略图；默认仅生成 dry-run 计划。",
           "effect_class": "write",
           "idempotency_key_field": null,
           "input_schema": {
             "additionalProperties": false,
             "additional_properties": false,
-            "conditional_rules": [],
+            "conditional_rules": [
+              {
+                "id": "image_link_requires_image_hash",
+                "if": {
+                  "media_type": "IMAGE"
+                },
+                "message": "IMAGE link creatives require image_hash",
+                "required": [
+                  "image_hash"
+                ]
+              },
+              {
+                "id": "video_link_requires_video_id",
+                "if": {
+                  "media_type": "VIDEO"
+                },
+                "message": "VIDEO link creatives require video_id",
+                "required": [
+                  "video_id"
+                ]
+              },
+              {
+                "forbidden": [
+                  "video_id",
+                  "thumbnail_image_hash",
+                  "thumbnail_url"
+                ],
+                "if": {
+                  "media_type": "IMAGE"
+                },
+                "message": "IMAGE Lead 广告不能同时绑定视频或视频缩略图"
+              },
+              {
+                "forbidden": [
+                  "image_hash"
+                ],
+                "if": {
+                  "media_type": "VIDEO"
+                },
+                "message": "VIDEO Lead 广告请使用 thumbnail_image_hash 指定缩略图"
+              },
+              {
+                "forbidden": [
+                  "thumbnail_url"
+                ],
+                "if": {
+                  "thumbnail_image_hash": {
+                    "exists": true
+                  }
+                },
+                "message": "缩略图选择图片 Hash 或 HTTPS 地址中的一种"
+              }
+            ],
             "properties": {
               "adset_id": {
                 "description": "Parent Meta Ad Set ID",
@@ -25551,8 +26036,43 @@
                 "description": "Headline",
                 "type": "string"
               },
+              "image_hash": {
+                "description": "Uploaded image hash",
+                "lookup_defaults": {
+                  "limit": 1000
+                },
+                "lookup_query_field": "hash",
+                "lookup_result_key": "image_assets",
+                "lookup_tool": "meta_list_image_assets",
+                "minLength": 1,
+                "selection_label_fields": [
+                  "name",
+                  "filename",
+                  "hash",
+                  "id"
+                ],
+                "selection_value_fields": [
+                  "hash",
+                  "id",
+                  "image_hash"
+                ],
+                "type": "string",
+                "ui_visible_when": {
+                  "equals": "IMAGE",
+                  "field": "media_type"
+                }
+              },
               "link": {
                 "description": "Optional destination URL",
+                "type": "string"
+              },
+              "media_type": {
+                "default": "IMAGE",
+                "description": "Link creative media type",
+                "enum": [
+                  "IMAGE",
+                  "VIDEO"
+                ],
                 "type": "string"
               },
               "message": {
@@ -25590,6 +26110,61 @@
                   "PAUSED"
                 ],
                 "type": "string"
+              },
+              "thumbnail_image_hash": {
+                "description": "视频缩略图图片 Hash",
+                "lookup_result_key": "image_assets",
+                "lookup_tool": "meta_list_image_assets",
+                "minLength": 1,
+                "selection_label_fields": [
+                  "name",
+                  "hash",
+                  "id"
+                ],
+                "selection_value_fields": [
+                  "hash",
+                  "image_hash",
+                  "id"
+                ],
+                "type": "string",
+                "ui_visible_when": {
+                  "equals": "VIDEO",
+                  "field": "media_type"
+                }
+              },
+              "thumbnail_url": {
+                "description": "视频缩略图 HTTPS 地址",
+                "minLength": 1,
+                "pattern": "^https://",
+                "type": "string",
+                "ui_visible_when": {
+                  "equals": "VIDEO",
+                  "field": "media_type"
+                }
+              },
+              "video_id": {
+                "description": "Uploaded video ID",
+                "lookup_defaults": {
+                  "limit": 1000
+                },
+                "lookup_result_key": "video_assets",
+                "lookup_tool": "meta_list_video_assets",
+                "minLength": 1,
+                "selection_label_fields": [
+                  "title",
+                  "name",
+                  "video_id",
+                  "id"
+                ],
+                "selection_value_fields": [
+                  "id",
+                  "video_id"
+                ],
+                "type": "string",
+                "ui_visible_when": {
+                  "equals": "VIDEO",
+                  "field": "media_type"
+                }
               }
             },
             "required": [
@@ -33235,7 +33810,7 @@
       ]
     },
     "tiktok": {
-      "digest": "9cbd5d43ff3ff086133533d446721cd9311565f060fc32d8b3b7c2b0e6b179e7",
+      "digest": "54f12831cc324ce0534b40d7d0a4a1e0abdc531da8ede75a261107bb716f67d7",
       "tool_count": 89,
       "tools": [
         {
@@ -47191,8 +47766,8 @@
             }
           ],
           "cancellation_mode": "cooperative",
-          "contract_hash": "0aace11d253df1fa9fabf3fc2f924fea3a73f45bda9d334e5ad71ef7283f6012",
-          "contract_version": "1.8.0",
+          "contract_hash": "15349276d6a053cab4fb1fe6dee610ead80e6c25f4f617860188a6115cd603f3",
+          "contract_version": "1.9.0",
           "description": "使用 TikTok Upgraded Smart+ Ad API 创建广告和素材；支持 Spark 帖子、视频、图片等渠道素材引用，live 仅允许创建暂停状态。",
           "effect_class": "write",
           "idempotency_key_field": null,
@@ -47200,6 +47775,20 @@
             "additionalProperties": false,
             "additional_properties": false,
             "conditional_rules": [
+              {
+                "forbidden": [
+                  "video_id"
+                ],
+                "if": {
+                  "ad_format": {
+                    "in": [
+                      "SINGLE_IMAGE",
+                      "CAROUSEL_ADS"
+                    ]
+                  }
+                },
+                "message": "图片或轮播广告不能同时绑定 video_id"
+              },
               {
                 "if": {
                   "objective_type": "LEAD_GENERATION",
@@ -47850,11 +48439,13 @@
               "image_ids": {
                 "description": "Uploaded TikTok image IDs",
                 "items": {
+                  "minLength": 1,
                   "type": "string"
                 },
                 "lookup_query_field": "image_id",
                 "lookup_result_key": "images",
                 "lookup_tool": "tiktok_list_images",
+                "minItems": 1,
                 "selection_label_fields": [
                   "file_name",
                   "image_name",
@@ -48097,7 +48688,9 @@
               [
                 "tiktok_item_id",
                 "video_id",
-                "image_ids"
+                "image_ids",
+                "image_web_uris",
+                "creative_list"
               ]
             ],
             "type": "object"
@@ -56367,5 +56960,5 @@
       "tool_source_api_version": "v1.3"
     }
   },
-  "tool_count": 328
+  "tool_count": 329
 }

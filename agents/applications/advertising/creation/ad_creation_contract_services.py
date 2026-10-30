@@ -149,6 +149,7 @@ class AdCreationContractServicesMixin:
         user_id: str = "parameter-options",
         tenant_id: str = "default",
         account_scope: Optional[Mapping[str, set[str]]] = None,
+        provider_read_namespaces: frozenset[str] = frozenset(),
         granted_permissions: Optional[set[str] | frozenset[str]] = None,
         lookup_context: Optional[Mapping[str, Any]] = None,
         query: Optional[str] = None,
@@ -181,7 +182,8 @@ class AdCreationContractServicesMixin:
             raise ValueError("该查询需要先提供广告账户 ID，才能加载可用选项")
         if account_value:
             allowed, account_error = self._validate_account_with_principal(
-                actual_platform, account_value, False, account_scope
+                actual_platform, account_value, False, account_scope,
+                provider_read_namespaces=provider_read_namespaces,
             )
             if not allowed:
                 raise PermissionError(account_error)

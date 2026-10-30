@@ -5,6 +5,9 @@ from __future__ import annotations
 from typing import Any
 
 from agents.tools.advertising.clients.google_creation_support import GOOGLE_CAMPAIGN_CREATION_LIMITS
+from agents.tools.advertising.clients.google_demand_gen_contract import (
+    CHANNEL_STRATEGIES, SELECTED_CHANNELS,
+)
 
 
 GOOGLE_CHANNEL_TYPES = [
@@ -101,10 +104,7 @@ GOOGLE_VIDEO_CAMPAIGN_FORMAT_PREFERENCES = [
 GOOGLE_LOCAL_LOCATION_SOURCE_TYPES = [
     "GOOGLE_MY_BUSINESS", "AFFILIATE",
 ]
-GOOGLE_DEMAND_GEN_CHANNEL_CONFIGS = ["CHANNEL_STRATEGY", "SELECTED_CHANNELS"]
-GOOGLE_DEMAND_GEN_CHANNEL_STRATEGIES = [
-    "ALL_CHANNELS", "ALL_OWNED_AND_OPERATED_CHANNELS",
-]
+GOOGLE_DEMAND_GEN_CHANNEL_STRATEGIES = list(CHANNEL_STRATEGIES)
 GOOGLE_TARGETING_DIMENSIONS = [
     "AUDIENCE", "AGE_RANGE", "GENDER", "INCOME_RANGE", "PARENTAL_STATUS",
     "PLACEMENT", "TOPIC", "USER_INTEREST", "CUSTOM_AFFINITY", "CUSTOM_INTENT",
@@ -1093,6 +1093,22 @@ def google_campaign_schema() -> dict[str, Any]:
     }
 
 
+def _demand_gen_channel_rules() -> list[dict[str, Any]]:
+    controls = "demand_gen_ad_group_settings.channel_controls"
+    selected = controls + ".selected_channels"
+    strategy = controls + ".channel_strategy"
+    return [
+        {"if": {strategy: {"exists": True}, selected: {"exists": True}},
+         "forbidden": [strategy], "message": "频道策略和逐项频道选择不能同时填写"},
+        {"if": {controls: {"exists": True}, strategy: {"exists": False},
+                selected: {"exists": False}},
+         "forbidden": [controls], "message": "请指定频道策略或至少一个频道"},
+        {"if": {selected: {"exists": True}, **{
+            selected + "." + channel: {"not_in": [True]} for channel in SELECTED_CHANNELS
+        }}, "forbidden": [selected], "message": "selected_channels 必须至少启用一个频道"},
+    ]
+
+
 def google_ad_group_schema() -> dict[str, Any]:
     return {
         "required": ["campaign_id", "name"],
@@ -1123,20 +1139,13 @@ def google_ad_group_schema() -> dict[str, Any]:
             "demand_gen_ad_group_settings": {
                 **_object({
                 "channel_controls": _object({
-                    "channel_config": _field(
-                        "string", "Demand Gen channel configuration",
-                        enum=GOOGLE_DEMAND_GEN_CHANNEL_CONFIGS,
-                    ),
                     "channel_strategy": _field(
                         "string", "Demand Gen channel strategy",
                         enum=GOOGLE_DEMAND_GEN_CHANNEL_STRATEGIES,
                     ),
                     "selected_channels": _object({
                         key: _field("boolean", f"Enable Demand Gen {key}")
-                        for key in (
-                            "youtube_shorts", "youtube_in_feed", "youtube_in_stream",
-                            "gmail", "maps", "discover", "display",
-                        )
+                        for key in SELECTED_CHANNELS
                     }, "Selected Demand Gen channels"),
                 }, "Demand Gen channel controls"),
                 }, "Demand Gen ad group settings"),
@@ -1144,11 +1153,31 @@ def google_ad_group_schema() -> dict[str, Any]:
             },
         },
         "conditional_rules": [
+            *_demand_gen_channel_rules(),
             {"id": "demand_gen_ad_group_setting_dependency",
              "if": {"campaign_type": "DEMAND_GEN"},
              "required": ["demand_gen_ad_group_settings"],
              "message": "DEMAND_GEN ad groups require demand_gen_ad_group_settings"},
         ],
+    }
+
+
+def google_demand_gen_ad_group_schema() -> dict[str, Any]:
+    """Demand Gen ad groups inherit bidding from Campaign, without a Display type."""
+    common = google_ad_group_schema()["properties"]
+    return {
+        "required": ["campaign_id", "name"],
+        "requires": [],
+        "conditional_rules": _demand_gen_channel_rules(),
+        "properties": {
+            **{key: common[key] for key in (
+                "campaign_id", "name", "status", "targeting", "demand_gen_ad_group_settings",
+            )},
+            "campaign_type": _field(
+                "string", "父级 Campaign 类型", enum=["DEMAND_GEN"],
+                default="DEMAND_GEN", ui_hidden=True,
+            ),
+        },
     }
 
 
@@ -2239,7 +2268,7 @@ def google_ad_format_catalog() -> list[dict[str, Any]]:
             "category": "demand_gen",
             "resource_type": "campaign",
             "coverage": "partial_dry_run",
-            "tool_names": ["google_create_campaign", "google_create_specialized_ad_group"],
+            "tool_names": ["google_create_campaign", "google_create_demand_gen_ad_group"],
             "dependencies": ["demand_gen_ad", "audiences", "assets"],
             "supported_fields": ["demand_gen_campaign_settings", "demand_gen_ad_group_settings"],
             "gaps": ["live mutation approval", "Demand Gen audience/asset reference validation"],

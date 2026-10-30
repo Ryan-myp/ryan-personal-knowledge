@@ -2199,8 +2199,15 @@ def tiktok_smart_plus_ad_schema() -> dict[str, Any]:
     return {
         "required": ["campaign_id", "adgroup_id", "ad_name"],
         "requires": ["campaign_id", "adgroup_id", "ad_name"],
-        "requires_any_of": [["tiktok_item_id", "video_id", "image_ids"]],
+        "requires_any_of": [[
+            "tiktok_item_id", "video_id", "image_ids", "image_web_uris", "creative_list",
+        ]],
         "conditional_rules": [
+            {
+                "if": {"ad_format": {"in": ["SINGLE_IMAGE", "CAROUSEL_ADS"]}},
+                "forbidden": ["video_id"],
+                "message": "图片或轮播广告不能同时绑定 video_id",
+            },
             {
                 "if": {
                     "objective_type": "LEAD_GENERATION",
@@ -2254,7 +2261,11 @@ def tiktok_smart_plus_ad_schema() -> dict[str, Any]:
             "tiktok_item_id": _field("string", "Authorized TikTok post ID", minLength=1),
             "video_id": _field("string", "Uploaded TikTok video ID", minLength=1, lookup_tool="tiktok_list_videos", lookup_result_key="videos"),
             "video_file_name": _field("string", "Optional uploaded video file name"),
-            "image_ids": _field("array", "Uploaded TikTok image IDs", items={"type": "string"}, lookup_tool="tiktok_list_images", lookup_result_key="images"),
+            "image_ids": _field(
+                "array", "Uploaded TikTok image IDs", minItems=1,
+                items={"type": "string", "minLength": 1},
+                lookup_tool="tiktok_list_images", lookup_result_key="images",
+            ),
             "image_web_uris": _field("array", "Stable image URI returned by the TikTok image library", minItems=1, items={"type": "string", "minLength": 1}, lookup_tool="tiktok_list_images", lookup_result_key="images", selection_value_fields=["web_uri", "image_id", "image_url"], selection_label_fields=["file_name", "image_name", "web_uri", "image_id"]),
             "product_set_id": _field(
                 "string", "Optional product subset in the selected catalog", minLength=1,
@@ -2419,7 +2430,7 @@ def tiktok_ad_format_catalog() -> list[dict[str, Any]]:
         "tiktok_smart_plus_create_ad",
     ]
     all_in_one_spark = ["tiktok_create_all_in_one_spark_ad"]
-    return [
+    entries = [
         {
             "format_id": "legacy_objectives", "blueprint_ids": [],
             "objective_values": ["APP_INSTALL", "CATALOG_SALES", "CONVERSIONS", "SHOP_PURCHASES"],
@@ -2634,4 +2645,17 @@ def tiktok_ad_format_catalog() -> list[dict[str, Any]]:
             "gaps": ["Brand Takeover-specific Tool and provider contract"],
             "source_document": source_document,
         },
+    ]
+    traffic = next(item for item in entries if item["format_id"] == "traffic")
+    return entries + [
+        {**traffic, "format_id": format_id, "resource_type": "ad",
+         "dependencies": ["TRAFFIC", "WEBSITE", media, "image_ids", "landing_page_url"],
+         "supported_fields": [
+             "ad_format", "image_ids", "identity_id", "ad_text", "landing_page_url",
+         ],
+         "gaps": ["素材、版位及账户资格需要渠道确认", "未实测"]}
+        for format_id, media in (
+            ("traffic.single_image", "SINGLE_IMAGE"),
+            ("traffic.carousel", "CAROUSEL_ADS"),
+        )
     ]

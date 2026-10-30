@@ -44,11 +44,12 @@ def test_test_live_profile_preserves_default_preview_and_test_account_scope():
     for name in approved:
         definition = definitions[name]
         assert definition.is_write_tool and definition.live_support
-        assert definition.action == "create"
+        assert definition.action in {"create", "update", "delete"}
         assert definition.namespace in profile["allowed_accounts"]
         assert definition.resource_type in {
             "campaign", "ad_group", "ad_set", "ad", "creative",
             "asset_group", "listing_group_filter", "product_group",
+            "creative_portfolio",
         }
 
 

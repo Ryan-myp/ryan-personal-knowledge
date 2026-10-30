@@ -67,18 +67,20 @@ class AdvertisingToolInteractionProvider:
     ) -> Mapping[str, Any]:
         namespace = str(getattr(definition, "namespace", "") or "")
         principal = getattr(context.request, "principal", None)
-        accounts = self.runtime._available_accounts_for_request(
-            namespace,
-            getattr(principal, "account_scope", None),
-        )
+        accounts = self.runtime._read_accounts_for_request(namespace, principal)
         options = [
             {"label": f"账户 {account}", "value": str(account)}
-            for account in accounts
+            for account in (accounts or ())
         ]
         prompt = (
             "请选择要查询的广告账户。"
             if options else "当前身份没有可用于此渠道的授权账户。"
         )
+        if accounts is None:
+            prompt = (
+                "请提供要查询的账户 ID，或先查询渠道账户列表。"
+                "查询范围由当前渠道凭证决定；不会自动切换为测试账户。"
+            )
         return {
             "type": "account_selection",
             "prompt": prompt,

@@ -1,0 +1,115 @@
+{
+  "date": "2026-10-30",
+  "scope": "Meta Lead 素材、Google Demand Gen 创建链路、TikTok 流量素材、模板历史兼容",
+  "new_tool": "google_create_demand_gen_ad_group",
+  "tool_contract_versions": {
+    "google_create_demand_gen_ad_group": "1.0.0",
+    "google_create_ad_group": "1.6.0",
+    "google_create_specialized_ad_group": "1.6.0",
+    "meta_create_lead_ad": "1.6.0",
+    "tiktok_smart_plus_create_ad": "1.9.0"
+  },
+  "checks": {
+    "command": "make ad-agent-check",
+    "exit_code": 0,
+    "python_passed": 3650,
+    "frontend_passed": 269,
+    "tool_contracts_validated": 329,
+    "latest_blueprints": 33,
+    "create_tools": 76,
+    "builtin_template_version_records": 45,
+    "current_builtin_records": 40,
+    "hidden_historical_builtin_records": 5,
+    "template_audit_issues": 0,
+    "contract_audit_issues": 0,
+    "knowledge_pages": 86,
+    "diff_check": "passed",
+    "log": "/tmp/advertising-expansion-verified-check.log",
+    "new_focused_tests_passed": 30,
+    "deployment_safety_recheck_passed": 1
+  },
+  "compatibility": {
+    "new_blueprint_versions": 6,
+    "previous_blueprint_files_preserved": true,
+    "account_builtin_templates_checked": 16,
+    "account_builtin_templates_changed": 0,
+    "historical_builtin_ids_readable": true,
+    "historical_http_samples": [
+      "meta.lead_generation.starter@1.0.0",
+      "google-ads.demand_gen_carousel.starter@1.0.0"
+    ],
+    "default_catalog_hides_historical_records": true,
+    "user_templates_migrated": false,
+    "storage_schema_changed": false
+  },
+  "provider_validation": {
+    "mode": "offline_contracts_and_replaced_transports",
+    "real_credentials_used": false,
+    "real_ad_mutations": 0,
+    "external_model_calls": 0,
+    "initial_red_run_dummy_credential_read": {
+      "provider": "tiktok",
+      "operation": "image lookup",
+      "outcome": "authentication error",
+      "real_credentials_used": false,
+      "write_performed": false
+    },
+    "final_new_tests_block_http_at_transport": true,
+    "live_provider_verification": "not_performed",
+    "existing_live_evidence_upgraded": false
+  },
+  "coverage": {
+    "scope": [
+      "agents.tools.advertising.clients.google_demand_gen_contract",
+      "scripts.advertising.audit_creation_templates"
+    ],
+    "statements": 50,
+    "covered": 44,
+    "percent": 88,
+    "whole_repository_coverage_claimed": false,
+    "log": "/tmp/advertising-expansion-coverage.log"
+  },
+  "quality": {
+    "delta_gate": "passed",
+    "new_findings": 0,
+    "repository_gate": "failed",
+    "repository_findings": 4994,
+    "threshold_lowered": false,
+    "delta_log": "/tmp/advertising-expansion-final-quality-delta.log",
+    "repository_log": "/tmp/advertising-expansion-final-qguard.log"
+  },
+  "browser": {
+    "mode": "runtime_generated_form_fixtures_all_api_requests_blocked",
+    "form_variants": 5,
+    "viewports": ["1440x1000", "390x844"],
+    "screenshots": 10,
+    "page_errors": 0,
+    "body_horizontal_overflow": false,
+    "provider_requests": 0,
+    "new_starter_initial_invalid_fields": 0,
+    "log": "/tmp/advertising-expansion-browser.log"
+  },
+  "deployment": {
+    "state": "ready",
+    "listen": "0.0.0.0:8766",
+    "database": "agents/ad_agent/ad_agent.db",
+    "configuration": "agents/ad_agent/config.test-live.yaml",
+    "dedicated_demand_group_approval_configured": true,
+    "runtime_tools": 355,
+    "new_starters_visible_via_http": 4,
+    "builtin_records_visible_to_service_principal": 38,
+    "data_preserved": {
+      "sessions": {"before": 515, "after": 515, "missing_ids": 0},
+      "user_templates": {"before": 14, "after": 14, "missing_ids": 0},
+      "schedules": {"before": 5, "after": 5, "missing_ids": 0}
+    },
+    "backup": "/tmp/pre-advertising-expansion-20261030-150926.db"
+  },
+  "limitations": [
+    "合同、模板与 UI 验证不等同于真实广告创建成功。",
+    "Meta Form、素材、Page 权限和渠道账户资格仍需受控真实验证。",
+    "Google 实际账户资源上限及支持范围不由离线测试证明。",
+    "TopView、Brand Takeover、Local Services 等保留原有缺口或限制。",
+    "全仓静态质量门禁仍未通过；增量门禁通过不能替代全仓治理。"
+  ]
+}

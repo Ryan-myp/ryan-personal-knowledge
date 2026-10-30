@@ -88,8 +88,9 @@ def _account_listing_arguments(context, data):
     requested = data["advertiser_ids"]
     if not isinstance(requested, list) or not requested:
         raise ValueError("advertiser_ids must be a non-empty list")
-    authorized = getattr(context, "metadata", {}).get("authorized_account_ids")
-    if authorized is None and getattr(context, "account_id", None):
+    metadata = getattr(context, "metadata", {})
+    authorized = metadata.get("authorized_account_ids")
+    if "authorized_account_ids" not in metadata and getattr(context, "account_id", None):
         authorized = [context.account_id]
     if authorized is not None:
         allowed = {str(value) for value in authorized}
@@ -1861,7 +1862,7 @@ class TikTokToolSource(BaseProviderToolSource):
                 "图片等渠道素材引用，live 仅允许创建暂停状态。"
             ),
             method_name="create_smart_plus_ad", result_key="ad",
-            contract_version="1.8.0",
+            contract_version="1.9.0",
             properties={"account_id": {"type": "string"}, **smart_plus_ad["properties"]},
             required=["account_id"] + smart_plus_ad["required"],
             requires=smart_plus_ad["requires"],

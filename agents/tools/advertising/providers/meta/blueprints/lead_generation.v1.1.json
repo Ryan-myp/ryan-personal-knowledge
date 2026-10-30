@@ -1,0 +1,357 @@
+{
+  "id": "meta.lead_generation",
+  "version": "1.1.0",
+  "provider": "meta",
+  "ad_format": "lead_generation",
+  "title": "Meta 潜在客户广告",
+  "description": "使用已发布 Instant Form 创建图片或视频 Lead 广告；按素材类型选择图片 Hash、视频及缩略图，默认暂停。",
+  "match_terms": [
+    "潜在客户",
+    "线索获客",
+    "lead generation",
+    "lead gen",
+    "线索图片广告",
+    "线索视频广告",
+    "lead video",
+    "lead image"
+  ],
+  "selector": {
+    "dimension": "objective",
+    "field": "campaign.objective",
+    "values": [
+      "OUTCOME_LEADS"
+    ],
+    "label": "Meta 推广目标",
+    "options": [
+      {
+        "value": "OUTCOME_LEADS",
+        "label": "潜在客户"
+      }
+    ]
+  },
+  "tools": [
+    "meta_create_campaign",
+    "meta_create_adset",
+    "meta_create_lead_ad"
+  ],
+  "resources": [
+    "campaign",
+    "ad_set",
+    "ad"
+  ],
+  "fields": [
+    {
+      "path": "campaign.name",
+      "tool_ref": "meta_create_campaign.name",
+      "label": "Campaign 名称",
+      "required": true
+    },
+    {
+      "path": "campaign.objective",
+      "tool_ref": "meta_create_campaign.objective",
+      "label": "推广目标（已根据入口匹配）",
+      "required": true,
+      "source": "enum",
+      "options": [
+        "OUTCOME_LEADS"
+      ],
+      "presentation": "derived_readonly"
+    },
+    {
+      "path": "campaign.special_ad_categories",
+      "tool_ref": "meta_create_campaign.special_ad_categories",
+      "label": "特殊广告类别",
+      "required": true,
+      "source": "enum"
+    },
+    {
+      "path": "campaign.buying_type",
+      "tool_ref": "meta_create_campaign.buying_type",
+      "label": "购买类型",
+      "required": true,
+      "source": "enum",
+      "options": [
+        "AUCTION",
+        "RESERVED"
+      ]
+    },
+    {
+      "path": "campaign.daily_budget",
+      "tool_ref": "meta_create_campaign.daily_budget",
+      "label": "日预算",
+      "required": true
+    },
+    {
+      "path": "ad_set.name",
+      "tool_ref": "meta_create_adset.name",
+      "label": "广告组名称",
+      "required": true
+    },
+    {
+      "path": "ad_set.optimization_goal",
+      "tool_ref": "meta_create_adset.optimization_goal",
+      "label": "优化目标",
+      "required": true,
+      "default": "LEAD_GENERATION",
+      "source": "enum",
+      "options_from": [
+        "campaign.objective"
+      ],
+      "option_rules": [
+        {
+          "when": {
+            "field": "campaign.objective",
+            "equals": "OUTCOME_LEADS"
+          },
+          "options": [
+            "LEAD_GENERATION",
+            "LEADS"
+          ]
+        }
+      ],
+      "option_labels": {
+        "LEAD_GENERATION": "潜在客户提交",
+        "LEADS": "潜在客户"
+      }
+    },
+    {
+      "path": "ad_set.billing_event",
+      "tool_ref": "meta_create_adset.billing_event",
+      "label": "计费事件",
+      "required": true,
+      "default": "IMPRESSIONS",
+      "source": "enum",
+      "options_from": [
+        "ad_set.optimization_goal"
+      ],
+      "option_rules": [
+        {
+          "when": {
+            "field": "ad_set.optimization_goal",
+            "in": [
+              "LEAD_GENERATION",
+              "LEADS"
+            ]
+          },
+          "options": [
+            "IMPRESSIONS"
+          ]
+        }
+      ],
+      "option_labels": {
+        "IMPRESSIONS": "展示（按展示计费）"
+      }
+    },
+    {
+      "path": "ad_set.targeting",
+      "tool_ref": "meta_create_adset.targeting",
+      "label": "定向",
+      "required": true
+    },
+    {
+      "path": "ad.name",
+      "tool_ref": "meta_create_lead_ad.name",
+      "label": "广告名称",
+      "required": true
+    },
+    {
+      "path": "ad.page_id",
+      "tool_ref": "meta_create_lead_ad.page_id",
+      "label": "Facebook Page",
+      "required": true,
+      "source": "lookup",
+      "lookup_tool": "meta_list_pages"
+    },
+    {
+      "path": "ad.form_id",
+      "tool_ref": "meta_create_lead_ad.form_id",
+      "label": "Instant Form",
+      "required": true,
+      "source": "lookup",
+      "lookup_tool": "meta_list_lead_forms",
+      "lookup_dependencies": [
+        {
+          "input_field": "page_id",
+          "value_path": "ad.page_id",
+          "required": true,
+          "label": "Facebook Page"
+        }
+      ]
+    },
+    {
+      "path": "ad.link",
+      "tool_ref": "meta_create_lead_ad.link",
+      "label": "备用落地页",
+      "required": false
+    },
+    {
+      "path": "ad.media_type",
+      "tool_ref": "meta_create_lead_ad.media_type",
+      "label": "素材类型",
+      "required": true,
+      "source": "enum",
+      "options": [
+        "IMAGE",
+        "VIDEO"
+      ],
+      "default": "IMAGE"
+    },
+    {
+      "path": "ad.image_hash",
+      "tool_ref": "meta_create_lead_ad.image_hash",
+      "label": "图片素材",
+      "source": "lookup",
+      "lookup_tool": "meta_list_image_assets",
+      "required_when": {
+        "field": "ad.media_type",
+        "equals": "IMAGE"
+      },
+      "visible_when": {
+        "field": "ad.media_type",
+        "equals": "IMAGE"
+      }
+    },
+    {
+      "path": "ad.video_id",
+      "tool_ref": "meta_create_lead_ad.video_id",
+      "label": "视频素材",
+      "source": "lookup",
+      "lookup_tool": "meta_list_video_assets",
+      "required_when": {
+        "field": "ad.media_type",
+        "equals": "VIDEO"
+      },
+      "visible_when": {
+        "field": "ad.media_type",
+        "equals": "VIDEO"
+      }
+    },
+    {
+      "path": "ad.thumbnail_image_hash",
+      "tool_ref": "meta_create_lead_ad.thumbnail_image_hash",
+      "label": "视频缩略图",
+      "source": "lookup",
+      "lookup_tool": "meta_list_image_assets",
+      "visible_when": {
+        "field": "ad.media_type",
+        "equals": "VIDEO"
+      }
+    },
+    {
+      "path": "ad.thumbnail_url",
+      "tool_ref": "meta_create_lead_ad.thumbnail_url",
+      "label": "视频缩略图 HTTPS 地址",
+      "visible_when": {
+        "all": [
+          {
+            "field": "ad.media_type",
+            "equals": "VIDEO"
+          },
+          {
+            "field": "ad.thumbnail_image_hash",
+            "exists": false
+          }
+        ]
+      }
+    },
+    {
+      "path": "ad.message",
+      "tool_ref": "meta_create_lead_ad.message",
+      "label": "广告正文",
+      "required": true
+    },
+    {
+      "path": "ad.headline",
+      "tool_ref": "meta_create_lead_ad.headline",
+      "label": "标题",
+      "required": true
+    },
+    {
+      "path": "ad.description",
+      "tool_ref": "meta_create_lead_ad.description",
+      "label": "补充描述"
+    },
+    {
+      "path": "ad.call_to_action_type",
+      "tool_ref": "meta_create_lead_ad.call_to_action_type",
+      "label": "行动号召",
+      "source": "enum",
+      "options": [
+        "SIGN_UP",
+        "LEARN_MORE",
+        "CONTACT_US"
+      ],
+      "default": "SIGN_UP"
+    },
+    {
+      "path": "ad.status",
+      "tool_ref": "meta_create_lead_ad.status",
+      "label": "Ad 状态",
+      "source": "enum",
+      "options": [
+        "PAUSED"
+      ],
+      "default": "PAUSED",
+      "presentation": "derived_readonly"
+    },
+    {
+      "path": "campaign.status",
+      "tool_ref": "meta_create_campaign.status",
+      "label": "campaign 状态",
+      "source": "enum",
+      "options": [
+        "PAUSED"
+      ],
+      "default": "PAUSED",
+      "presentation": "derived_readonly"
+    },
+    {
+      "path": "ad_set.status",
+      "tool_ref": "meta_create_adset.status",
+      "label": "ad_set 状态",
+      "source": "enum",
+      "options": [
+        "PAUSED"
+      ],
+      "default": "PAUSED",
+      "presentation": "derived_readonly"
+    }
+  ],
+  "rules": [
+    {
+      "id": "objective_changed",
+      "when": {
+        "field": "campaign.objective",
+        "changed": true
+      },
+      "reset": [
+        "ad_set.optimization_goal",
+        "ad_set.billing_event",
+        "ad.form_id"
+      ]
+    },
+    {
+      "id": "lead_media_changed",
+      "when": {
+        "field": "ad.media_type",
+        "changed": true
+      },
+      "reset": [
+        "ad.image_hash",
+        "ad.video_id",
+        "ad.thumbnail_image_hash",
+        "ad.thumbnail_url"
+      ]
+    },
+    {
+      "id": "lead_page_changed",
+      "when": {
+        "field": "ad.page_id",
+        "changed": true
+      },
+      "reset": [
+        "ad.form_id"
+      ]
+    }
+  ]
+}

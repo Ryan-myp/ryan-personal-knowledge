@@ -85,6 +85,8 @@ def load_builtin_template_definitions(path: Optional[Path] = None) -> list[dict[
             raise CreationTemplateError(f"内置模板 {key} 的 values 必须是对象")
         definition["key"] = key
         definition["values"] = dict(values)
+        if type(definition.get("catalog_hidden", False)) is not bool:
+            raise CreationTemplateError("内置模板 catalog_hidden 必须为布尔值")
         live_create_supported = definition.get("live_create_supported", True)
         if not isinstance(live_create_supported, bool):
             raise CreationTemplateError(
@@ -359,6 +361,8 @@ class CreationTemplateManager:
     ) -> list[dict[str, Any]]:
         records = []
         for definition in self.builtin_templates:
+            if definition.get("catalog_hidden", False):
+                continue
             if provider and definition.get("provider") != provider:
                 continue
             if blueprint_id and definition.get("blueprint_id") != blueprint_id:

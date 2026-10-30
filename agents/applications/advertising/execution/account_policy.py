@@ -10,21 +10,26 @@ import yaml
 
 from agents.tools.advertising.shared.domain.auth import normalize_account_id
 from agents.agent_harness.core.namespace import normalize_namespace as normalize_platform
+from agents.agent_platform.governance.identity.principal import (
+    normalize_provider_read_namespaces,
+)
 
 logger = logging.getLogger(__name__)
 
 
 class AccountWhitelistValidator:
-    """Allow only explicitly configured accounts, normally test accounts."""
+    """Own the test-account allowlist and opt-in credential-bounded read policy."""
 
     def __init__(self, config_path: Optional[str] = None):
         self.config_path = config_path
         self.allowed_accounts: dict[str, list[str]] = {}
+        self.provider_read_namespaces: frozenset[str] = frozenset()
         self._load_config()
 
     def _load_config(self):
+        self.allowed_accounts = {}
+        self.provider_read_namespaces = frozenset()
         if not self.config_path:
-            self.allowed_accounts = {}
             return
         try:
             if os.path.exists(self.config_path):
@@ -34,10 +39,15 @@ class AccountWhitelistValidator:
                     config.get("allowed_accounts", {})
                     if isinstance(config, dict) else {}
                 )
+                read_namespaces = normalize_provider_read_namespaces(
+                    config.get("provider_read_namespaces", ())
+                    if isinstance(config, dict) else ()
+                )
                 self.allowed_accounts = (
                     configured if isinstance(configured, dict) else {}
                 )
-        except (OSError, UnicodeError, yaml.YAMLError) as exc:
+                self.provider_read_namespaces = read_namespaces
+        except (OSError, UnicodeError, ValueError, yaml.YAMLError) as exc:
             logger.warning("加载账户白名单配置失败: %s", exc)
 
     def reload(self):

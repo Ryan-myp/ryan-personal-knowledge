@@ -184,8 +184,14 @@ class AdvertisingToolPolicyFactory:
         if account_scope is not None:
             allowed, message = runtime._validate_account_with_principal(
                 platform, str(account), is_write, account_scope,
+                provider_read_namespaces=getattr(
+                    principal, "provider_read_namespaces", frozenset(),
+                ),
             )
-            if not allowed:
+            if not allowed or (
+                not is_write
+                and platform in getattr(principal, "provider_read_namespaces", ())
+            ):
                 other_namespace = self._authorized_namespace_for_account(
                     account_scope, str(account), platform,
                 )
@@ -203,6 +209,11 @@ class AdvertisingToolPolicyFactory:
             )
         else:
             return None
+        if not allowed and is_write:
+            message = (
+                f"{message}；写操作仅限当前身份授权的测试白名单账户。"
+                "请保留当前目标账户，不要自动切换；查询仍需通过只读授权和渠道权限。"
+            )
         return None if allowed else ("scope_denied", str(message))
 
     def _authorized_namespace_for_account(
@@ -220,12 +231,12 @@ class AdvertisingToolPolicyFactory:
             if isinstance(accounts, (str, bytes)):
                 continue
             namespace = self.runtime._canonical_platform(str(raw_namespace))
-            if namespace == current_platform:
-                continue
             if any(
                 normalize_account_id(value) == normalized_account
                 for value in (accounts or ())
             ):
+                if namespace == current_platform:
+                    return ""
                 matches.add(namespace)
         return next(iter(matches)) if len(matches) == 1 else ""
 

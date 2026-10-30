@@ -20,7 +20,7 @@ def test_google_specialized_creation_chains_are_metadata_driven():
     runtime.register_tool_source(create_google_tool_source())
     expected = {
         "DEMAND_GEN": [
-            "google_create_campaign", "google_create_specialized_ad_group",
+            "google_create_campaign", "google_create_demand_gen_ad_group",
             "google_create_demand_gen_carousel_ad",
             "google_create_demand_gen_multi_asset_ad",
             "google_create_demand_gen_product_ad",
@@ -161,13 +161,13 @@ def test_google_demand_gen_ad_group_and_campaign_settings_map_to_wire_fields():
 
     operations.clear()
     client.create_ad_group(
-        "1", "Demand Gen group", type="SEARCH_STANDARD",
+        "1", "Demand Gen group", type=None, cpc_bid_micros=None,
         demand_gen_ad_group_settings={
-            "channel_controls": {"channel_config": "SELECTED_CHANNELS"}
+            "channel_controls": {"selected_channels": {"youtube_shorts": True}}
         },
         live=True,
     )
     ad_group = operations[0][1]["create"]
     assert ad_group["demandGenAdGroupSettings"] == {
-        "channelControls": {"channelConfig": "SELECTED_CHANNELS"}
+        "channelControls": {"selectedChannels": {"youtubeShorts": True}}
     }

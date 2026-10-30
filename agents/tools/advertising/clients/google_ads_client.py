@@ -11,6 +11,7 @@ Customer → Campaign → AdGroup → Ad
 from __future__ import annotations
 
 from .google_creation_support import GOOGLE_CAMPAIGN_CREATION_LIMITS
+from .google_demand_gen_contract import validate_group_settings
 
 import logging
 import time
@@ -4793,6 +4794,8 @@ class GoogleAdsAPIClient(BasePlatformClient):
     ) -> str:
         """创建 Ad Group"""
         campaign_id = self._numeric_id(campaign_id, "campaign_id")
+        if demand_gen_ad_group_settings is not None:
+            validate_group_settings(demand_gen_ad_group_settings)
         requested_status = str(status or 'PAUSED').upper()
         if requested_status not in {'PAUSED', 'ENABLED'}:
             raise ValueError("Google Ad Group status must be PAUSED or ENABLED")

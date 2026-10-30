@@ -5,34 +5,83 @@ execution_timeout_seconds: 500
 read_only_mode: false
 allow_live_writes: true
 
+# Shared identity may read accounts authorized by the connected credentials.
+# This does not grant writes; allowed_accounts remains the mutation allowlist.
+provider_read_namespaces: ["google-ads", "meta", "tiktok"]
+
 allowed_accounts:
   google-ads: ["9055507554", "7574609568"]
   meta: ["2806375919473667"]
   tiktok: ["7397068114548195329"]
 
-# Creation only: no activation, resume, deletion, or arbitrary update Tools.
-# Provider contracts enforce paused serving resources. Google App Ad requires
-# ENABLED beneath verified PAUSED parents; that exception does not enable delivery.
+# Supported campaign hierarchy writes only, always gated by the test allowlist,
+# explicit live opt-in, confirmation and idempotency. Other resources stay read-only.
+# Tools without a declared live adapter are intentionally not approved here.
 live_approved_tools:
+  - google_create_ad
   - google_create_campaign
   - google_create_ad_group
+  - google_create_demand_gen_ad_group
+  - google_create_demand_gen_carousel_ad
+  - google_create_demand_gen_multi_asset_ad
+  - google_create_demand_gen_product_ad
+  - google_create_demand_gen_video_responsive_ad
+  - google_create_asset_group
   - google_create_pmax_asset_group
   - google_create_asset_group_listing_group_filter
   - google_create_product_group
   - google_create_shopping_product_ad
   - google_create_app_ad_group
   - google_create_app_ad
+  - google_create_hotel_ad
+  - google_create_local_ad
+  - google_create_responsive_display_ad
+  - google_create_search_ad
+  - google_create_smart_campaign_ad
+  - google_create_specialized_ad_group
+  - google_create_travel_ad
+  - google_create_video_ad
+  - google_delete_asset_group_listing_group_filter
+  - google_update_ad
+  - google_update_ad_group
+  - google_update_asset_group
+  - google_update_asset_group_listing_group_filter
+  - google_update_campaign
+  - google_update_product_group
   - meta_create_campaign
   - meta_create_adset
   - meta_create_creative
   - meta_create_ad
+  - meta_create_awareness_ad
+  - meta_create_engagement_ad
+  - meta_create_lead_ad
+  - meta_create_messaging_ad
   - meta_create_traffic_ad
   - meta_create_conversion_ad
   - meta_create_catalog_ad
   - meta_create_app_promotion_ad
+  - meta_update_ad
+  - meta_update_adset
+  - meta_update_campaign
+  - meta_update_creative
+  - tiktok_create_ad
+  - tiktok_create_adgroup
+  - tiktok_create_all_in_one_spark_ad
+  - tiktok_create_app_ad
+  - tiktok_create_campaign
+  - tiktok_create_creative
+  - tiktok_create_creative_portfolio
+  - tiktok_create_single_video_ad
   - tiktok_smart_plus_create_campaign
   - tiktok_smart_plus_create_adgroup
   - tiktok_smart_plus_create_ad
+  - tiktok_smart_plus_update_ad
+  - tiktok_smart_plus_update_adgroup
+  - tiktok_smart_plus_update_campaign
+  - tiktok_update_ad
+  - tiktok_update_adgroup
+  - tiktok_update_campaign
+  - tiktok_update_creative
 
 granted_permissions:
   - ads.read
