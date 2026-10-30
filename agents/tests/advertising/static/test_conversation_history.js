@@ -276,3 +276,52 @@ test('empty stream replies explain that no operation ran instead of pointing to 
     assert.match(displayed[0][0], /没有执行工具操作/);
     assert.doesNotMatch(displayed[0][0], /右侧|执行轨迹/);
 });
+
+for (const invalid of ['network', 'json', 'shape']) {
+    test(`failed history refresh (${invalid}) preserves rows and cursor and permits retry`, async () => {
+        const {context, sessionPaginationButton} = environment([]);
+        context.conversationHistory = [{session_id:'saved',title:'Original'}];
+        const cursor={updated_at:'2026-10-29T00:00:00',session_id:'saved'};
+        context.conversationHistoryListPage={nextCursor:cursor,hasMore:true,loading:false,error:''};
+        context.serviceFetch=async()=>{
+            if (invalid==='network') throw new Error('offline');
+            return {ok:true,text:async()=>invalid==='json'?'broken json':JSON.stringify({unrelated:[]})};
+        };
+        await context.refreshConversationHistory({silent:true});
+        assert.equal(context.conversationHistory[0]?.session_id,'saved');
+        assert.equal(context.conversationHistoryListPage.nextCursor,cursor);
+        assert.equal(sessionPaginationButton.disabled,false);
+        assert.match(context.conversationHistoryListPage.error,/保留|重试/);
+        assert.equal(context.conversationHistoryListPage.loading,false);
+    });
+}
+
+test('initial history refresh failure offers retry even with no pagination cursor', async () => {
+    const {context,sessionPaginationButton}=environment([]);
+    context.serviceFetch=async()=>{throw new Error('offline');};
+    await context.refreshConversationHistory();
+    assert.equal(sessionPaginationButton.disabled,false);
+    assert.match(sessionPaginationButton.textContent,/重试/);
+});
+
+test('history retry refreshes the first page instead of appending to a stale cursor', async () => {
+    const {context,calls}=environment([],()=>({sessions:[{session_id:'fresh'}],has_more:false}));
+    context.conversationHistory=[{session_id:'old'}];
+    context.conversationHistoryListPage={nextCursor:{session_id:'old',updated_at:'old'},hasMore:true,refreshFailed:true};
+    await context.loadMoreConversationSessions();
+    assert.equal(calls[0],'/sessions?limit=50');
+    assert.equal(context.conversationHistory[0].session_id,'fresh');
+    assert.equal(context.conversationHistoryListPage.refreshFailed,false);
+});
+
+for(const status of [401,403]) {
+    test(`history authorization failure ${status} does not retain an inaccessible list`,async()=>{
+        const {context}=environment([]);
+        context.conversationHistory=[{session_id:'old'}];
+        context.serviceFetch=async()=>({ok:false,status,text:async()=>JSON.stringify({detail:'Not permitted'})});
+        await context.refreshConversationHistory();
+        assert.equal(context.conversationHistory.length,0);
+        assert.equal(context.conversationHistoryListPage.nextCursor,null);
+        assert.match(context.conversationHistoryListPage.error,/权限/);
+    });
+}

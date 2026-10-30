@@ -1,0 +1,144 @@
+{
+  "date": "2026-10-29",
+  "scope": "tool discovery, pagination integrity, atomic restoration and checkpoint failure",
+  "base_commit": "ff0cac9",
+  "committed": false,
+  "real_provider_or_model_calls": false,
+  "validation": {
+    "command": "make ad-agent-check",
+    "exit_code": 0,
+    "python_tests_passed": 3556,
+    "frontend_tests_passed": 266,
+    "tool_contracts": 328,
+    "knowledge_pages": 86,
+    "knowledge_errors": 0,
+    "retrieval_benchmark_passed": true,
+    "focused_coverage_tests": 174,
+    "changed_line_coverage": {
+      "scope": "iteration3_changed_executable_lines",
+      "files": {
+        "agents/agent_harness/agent.py": {
+          "statements": 0,
+          "covered": 0,
+          "missing": []
+        },
+        "agents/agent_harness/redaction.py": {
+          "statements": 1,
+          "covered": 1,
+          "missing": []
+        },
+        "agents/agent_harness/state_persistence.py": {
+          "statements": 41,
+          "covered": 41,
+          "missing": []
+        },
+        "agents/agent_harness/tool_discovery.py": {
+          "statements": 8,
+          "covered": 8,
+          "missing": []
+        },
+        "agents/agent_harness/tool_output.py": {
+          "statements": 4,
+          "covered": 4,
+          "missing": []
+        }
+      },
+      "statements": 54,
+      "covered": 54
+    },
+    "baseline_red_tests": 18,
+    "additional_red_tests": {
+      "pagination": 3,
+      "checkpoint_failure": 2
+    },
+    "warnings": [
+      "Starlette test dependency deprecation",
+      "Coverage used Python tracer because C tracer was unavailable"
+    ]
+  },
+  "restore_benchmark": {
+    "scope": "local_restore_2000_messages",
+    "samples": 7,
+    "max_messages": 200,
+    "before_median_ms": 56.556,
+    "before_retained_messages": 199,
+    "after_median_ms": 5.622,
+    "after_retained_messages": 199,
+    "speedup": 10.06
+  },
+  "quality": {
+    "delta": {
+      "scope": "changed_python_sources_vs_HEAD",
+      "files_scanned": 12,
+      "baseline_findings": 160,
+      "current_findings": 162,
+      "new_findings": [
+        {
+          "file": "agents/agent_platform/infrastructure/durable/ports.py",
+          "rule_id": "code_quality.too_many_parameters",
+          "severity": "warning",
+          "source_hash": "adfec136d7f8074dfaa9903a50472001bdd9578bb4521ca700e3fa72a095979b",
+          "line": 45
+        },
+        {
+          "file": "agents/agent_platform/infrastructure/durable/sqlite_store.py",
+          "rule_id": "code_quality.too_many_parameters",
+          "severity": "warning",
+          "source_hash": "adfec136d7f8074dfaa9903a50472001bdd9578bb4521ca700e3fa72a095979b",
+          "line": 274
+        },
+        {
+          "file": "agents/applications/advertising/persistence/interfaces.py",
+          "rule_id": "code_quality.too_many_parameters",
+          "severity": "warning",
+          "source_hash": "adfec136d7f8074dfaa9903a50472001bdd9578bb4521ca700e3fa72a095979b",
+          "line": 414
+        },
+        {
+          "file": "agents/applications/advertising/persistence/store.py",
+          "rule_id": "code_quality.too_many_parameters",
+          "severity": "warning",
+          "source_hash": "adfec136d7f8074dfaa9903a50472001bdd9578bb4521ca700e3fa72a095979b",
+          "line": 850
+        }
+      ],
+      "gate_passed": false,
+      "whole_repository_gate": "not_assessed_by_delta_gate"
+    },
+    "iteration3_new_findings": 0,
+    "remaining_new_findings_from_iteration2": 4,
+    "whole_repository_gate_passed": false,
+    "files_scanned": 785,
+    "findings": 4996,
+    "score": 0,
+    "threshold_changed": false
+  },
+  "deployment": {
+    "address": "0.0.0.0:8766",
+    "database": "agents/ad_agent/ad_agent.db",
+    "config": "agents/ad_agent/config.test-live.yaml",
+    "backup": "pre-global-iteration3-20261029-203310.db",
+    "active_leases_before_restart": 0,
+    "ready": "ready",
+    "tool_count": 354,
+    "session_count": 514,
+    "user_template_count": 14,
+    "schedule_count": 5,
+    "recent_session_ids_checked": 200,
+    "all_template_and_management_ids_preserved": true,
+    "schema_migration": false
+  },
+  "module_sha256": {
+    "agents/agent_harness/agent.py": "6540695bbcd123d0b6f0050030e6300b7605df11c0b91d4939edf170634abb3f",
+    "agents/agent_harness/redaction.py": "002688d7c7085ca9caee79214acf2b6544cdbb1c12f0d98ef73a6098b6d92216",
+    "agents/agent_harness/state_persistence.py": "72af0223d5964a195cc6ab547e923cf8a80039f4439b044ed19a70b73d2704d8",
+    "agents/agent_harness/tool_discovery.py": "d48e3f4d13d2df7ca794dbe71c24432b6b094a900217f36171cb992515ecbd80",
+    "agents/agent_harness/tool_output.py": "3f38cc35136d897a3cfe96e699925cef5451fc667ee90db12fc87f602ce68d89"
+  },
+  "limitations": [
+    "Offline regression does not establish real-model intent accuracy.",
+    "Restore microbenchmark is not end-to-end chat latency.",
+    "Changed-line coverage is not repository or branch coverage.",
+    "Strict quality gates still fail due to existing debt and iteration2 interface warnings."
+  ]
+}

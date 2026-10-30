@@ -267,6 +267,12 @@ class AdTurnContextService:
         # The Harness sends executable schemas through the model's tools
         # parameter. This unused textual copy must not evict user memory.
         skill_context.pop("tool_prompt", None)
+        app = getattr(runtime, "platform_application", None)
+        catalog = getattr(getattr(app, "agent", None), "skill_catalog", None)
+        if getattr(catalog, "handles_managed_guidance", False):
+            # The Harness supplies the selected Skill version separately.
+            # Remove the unused copy before it can trim conversation context.
+            skill_context["expert_knowledge"] = ""
         budget = cls._CONTEXT_LIMITS
         truncated: dict[str, bool] = {}
         for key in ("expert_knowledge", "publisher_context"):

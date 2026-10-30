@@ -242,6 +242,66 @@
             }));
         }
 
+        let monitoringRecoverySelection = 0;
+
+        function renderMonitoringExperience(experience = {}, recovery = {}) {
+            const formatValue = (value, duration) => {
+                if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) return '—';
+                if (!duration) return value.toLocaleString('zh-CN');
+                return value < 1000 ? `${Math.round(value)} ms` : `${(value / 1000).toFixed(1)} s`;
+            };
+            const rows = [
+                ['first_progress_ms', '首次工具进度或文字', true],
+                ['first_text_ms', '首次文字', true],
+                ['total_ms', '完整回合', true],
+                ['model_attempts', '模型调用次数', false],
+                ['prompt_chars_peak', '模型消息字符峰值', false],
+            ];
+            const target = document.getElementById('monitoringExperienceRows');
+            if (target) target.innerHTML = rows.map(([key, label, duration]) => {
+                const values = experience[key] || {};
+                return `<tr><td>${label}</td><td>${formatValue(values.p50, duration)}</td><td>${formatValue(values.p95, duration)}</td><td>${formatValue(values.samples, false)}</td></tr>`;
+            }).join('');
+            const items = Array.isArray(recovery.items) ? recovery.items.slice(0, 30) : [];
+            const list = document.getElementById('monitoringRecoveryRows');
+            if (list) {
+                list.innerHTML = items.length ? items.map(item => `<tr>
+                    <td>${item.kind === 'task' ? '任务' : '回合'}</td>
+                    <td title="${escapeHtml(item.id || '')}">${escapeHtml(String(item.id || '—').slice(0, 8))}</td>
+                    <td>${escapeHtml(item.reason || '执行结果待核验')}</td>
+                    <td><div class="template-row-actions"><button type="button" data-recovery-kind="${escapeHtml(item.kind || '')}" data-recovery-id="${escapeHtml(item.id || '')}">查看记录</button></div></td>
+                </tr>`).join('') : '<tr><td colspan="4" class="monitoring-empty">暂无待核验记录</td></tr>';
+                list.onclick = event => {
+                    const button = event.target.closest('[data-recovery-id]');
+                    if (button && list.contains(button)) {
+                        inspectMonitoringRecovery(button.dataset.recoveryKind, button.dataset.recoveryId);
+                    }
+                };
+            }
+            const total = document.getElementById('monitoringRecoveryTotal');
+            if (total) total.textContent = `共 ${Number(recovery.total || 0)} 条${recovery.has_more ? ' · 显示最早 30 条' : ''}`;
+        }
+
+        async function inspectMonitoringRecovery(kind, id) {
+            if (!['run', 'task'].includes(kind) || typeof id !== 'string' || !id) return;
+            const target = document.getElementById('monitoringRecoveryDetail');
+            if (!target) return;
+            const selection = ++monitoringRecoverySelection;
+            target.hidden = false;
+            target.textContent = '正在读取执行记录…';
+            const endpoint = kind === 'run'
+                ? `/runs/${encodeURIComponent(id)}/events?limit=100` : `/tasks/${encodeURIComponent(id)}`;
+            try {
+                const detail = await apiFetch(endpoint);
+                if (selection !== monitoringRecoverySelection) return;
+                target.textContent = JSON.stringify(detail, null, 2);
+            } catch (error) {
+                if (selection === monitoringRecoverySelection) {
+                    target.textContent = `记录读取失败：${error.message || '请重试'}`;
+                }
+            }
+        }
+
         function renderMonitoring(snapshot) {
             const tasks = snapshot.tasks || {};
             const runs = snapshot.runs || {};
@@ -251,6 +311,7 @@
             const tools = snapshot.tools || {};
             const alerts = snapshot.alerts || {};
             const instance = snapshot.instance || {};
+            renderMonitoringExperience(instance.experience_metrics, snapshot.recovery);
             const taskStatuses = tasks.by_status || {};
             const recovery = Number(alerts.recovery_required || 0);
             const expired = Number(alerts.expired_leases || 0);
@@ -391,6 +452,7 @@
 
         function closeMonitoring() {
             monitoringRequestToken++;
+            monitoringRecoverySelection++;
             document.getElementById('monitoringOverlay')?.classList.remove('active');
             document.getElementById('monitoringOverlay')?.setAttribute('aria-hidden', 'true');
             if (monitoringRefreshTimer) window.clearTimeout(monitoringRefreshTimer);

@@ -103,6 +103,10 @@ class RunToolDiscovery:
         }
         return available
 
+    def _business_slots(self, available: Mapping[str, Any]) -> int:
+        control_count = sum(is_discovery_tool(tool) for tool in available.values())
+        return max(0, self.max_tools - control_count)
+
     def search(
         self, query: str, *, namespace: str = "", resource_type: str = "",
         effect: str = "read", limit: int = 4,
@@ -127,7 +131,7 @@ class RunToolDiscovery:
             ranked = [tool for score, tool in sorted(
                 scored, key=lambda pair: (-pair[0], str(tool_value(pair[1], "name"))),
             ) if score > 0]
-            capacity = min(self.max_loaded, max(0, self.max_tools - 1))
+            capacity = min(self.max_loaded, self._business_slots(available))
             matches = []
             for tool in ranked[:max(0, min(limit, 4, capacity))]:
                 name = str(tool_value(tool, "name"))
@@ -159,9 +163,13 @@ class RunToolDiscovery:
             available = self._prune(catalog)
             discoveries = [tool for tool in available.values() if is_discovery_tool(tool)]
             loaded = [available[name] for name in reversed(self._loaded)]
-            combined = {str(tool_value(t, "name")): t for t in (*loaded, *selected)}
-            slots = max(0, self.max_tools - len(discoveries))
-            return [*list(combined.values())[:slots], *discoveries][:self.max_tools]
+            # Selection chooses names, never a stale definition or a second
+            # copy of a discovery capability. The current catalog owns schema.
+            names = dict.fromkeys(str(tool_value(t, "name")) for t in (*loaded, *selected))
+            combined = [available[name] for name in names
+                        if name in available and not is_discovery_tool(available[name])]
+            slots = self._business_slots(available)
+            return [*combined[:slots], *discoveries][:self.max_tools]
 
     def close(self) -> None:
         with self._lock:

@@ -275,13 +275,16 @@ class SQLiteTaskQueueStore:
         self, task_id: str, status: str, *, result: Optional[dict] = None,
         error: Optional[str] = None, metadata: Optional[dict] = None,
         workflow_id: Optional[str] = None, expected_statuses: Optional[list[str]] = None,
+        lease_owner: Optional[str] = None,
     ) -> bool:
         with self._write_transaction() as connection:
             row = connection.execute(
-                "SELECT status, metadata FROM agent_tasks WHERE task_id = ?",
+                "SELECT status, metadata, lease_owner FROM agent_tasks WHERE task_id = ?",
                 (str(task_id),),
             ).fetchone()
             if row is None or (expected_statuses and row["status"] not in expected_statuses):
+                return False
+            if lease_owner is not None and row["lease_owner"] != str(lease_owner):
                 return False
             if status not in _TASK_TRANSITIONS.get(row["status"], set()):
                 return False
@@ -295,11 +298,13 @@ class SQLiteTaskQueueStore:
                    finished_at = CASE WHEN ? THEN COALESCE(finished_at, ?) ELSE finished_at END,
                    lease_owner = CASE WHEN ? THEN NULL ELSE lease_owner END,
                    lease_expires_at = CASE WHEN ? THEN NULL ELSE lease_expires_at END
-                   WHERE task_id = ?""",
+                   WHERE task_id = ? AND status = ?
+                     AND (? IS NULL OR lease_owner = ?)""",
                 (status, error, _json(merged), now,
                  _json(result) if result is not None else None,
                  str(workflow_id) if workflow_id is not None else None,
-                 terminal, now, terminal, terminal, str(task_id)),
+                 terminal, now, terminal, terminal, str(task_id), row["status"],
+                 lease_owner, str(lease_owner)),
             )
             return cursor.rowcount == 1
 

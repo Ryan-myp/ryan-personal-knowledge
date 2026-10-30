@@ -1,5 +1,5 @@
 {
-  "digest": "1911be0f52da5bf6f8861a620668a85a611e22e48843b4b5fd5d0dffa6f0e236",
+  "digest": "761ebf5b2e5a2e3b6bcec3a593b319680ac0a103e93199bd870f23e3c7add601",
   "format_version": 1,
   "platforms": {
     "advertising": {
@@ -226,16 +226,16 @@
       ]
     },
     "agent-platform": {
-      "digest": "00f9f8c74c48ee107a84fc2dd8b5b58623e52384d3d5b9aa898700aab2afd0d3",
+      "digest": "f878d63a82f11b3bade48693959785d08839a66429af10e74875eef48d98c501",
       "tool_count": 11,
       "tools": [
         {
           "action": "record",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
-          "contract_hash": "d4db82b3e6614336d4dbfa368f7bd831a13daab23df57ef272329b033c72c700",
-          "contract_version": "1.0.0",
-          "description": "登记广告优化建议与成熟基线，跨轮次去重；不会调整广告。需明确目标资源、变更字段、预期值、观察窗口。",
+          "contract_hash": "5a6094e7ac5b63632b2667a545d8daac6a2d9a03beb3a69b3b3d1ce29a5e6ec8",
+          "contract_version": "1.1.0",
+          "description": "登记广告优化建议与成熟基线，跨轮次去重；不会调整广告。可附 baseline_evidence 核验既有报表审计；metric 使用该报表实际字段路径，数值、资源和日期必须一致；未知币种、时区、归因口径保留缺口。",
           "effect_class": "internal_write",
           "idempotency_key_field": null,
           "input_schema": {
@@ -308,6 +308,38 @@
                   "attribution_days",
                   "start_date",
                   "end_date"
+                ],
+                "type": "object"
+              },
+              "baseline_evidence": {
+                "additionalProperties": false,
+                "properties": {
+                  "row_index": {
+                    "maximum": 999,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "session_id": {
+                    "maxLength": 200,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "tool_name": {
+                    "maxLength": 200,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "turn_id": {
+                    "maxLength": 200,
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "session_id",
+                  "turn_id",
+                  "tool_name",
+                  "row_index"
                 ],
                 "type": "object"
               },
@@ -1168,9 +1200,9 @@
           "action": "update",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
-          "contract_hash": "e4f52f92f8c2f5fc974dfc07cf4ae82cd0e72911a57311e3a222268a449e9c9c",
-          "contract_version": "1.0.0",
-          "description": "推进优化复盘：link_execution 验证既有 live 审计，verify_readback 核验预期字段，review 比较成熟同口径数据，reopen 在冷却结束后开启下一轮。执行和回读传 evidence，回读再传 readback_path，复盘传 outcome，新一轮传 outcome 作为基线以及 proposal/expected_value。不能以模型声明替代证据；不调用渠道 API。",
+          "contract_hash": "3ea0b4029769a3996ebb6e08445c07ea98608ccbc372a439b2a00e8686dfc11c",
+          "contract_version": "1.1.0",
+          "description": "推进优化复盘：link_execution 验证既有 live 审计，verify_readback 核验预期字段，review 比较成熟同口径数据，reopen 在冷却结束后开启下一轮。执行和回读传 evidence，回读再传 readback_path，复盘传 outcome，新一轮传 outcome 作为基线以及 proposal/expected_value。可传 outcome_evidence 核验报表审计行，outcome.metric 使用报表实际字段路径。不能以模型声明替代证据；不调用渠道 API。",
           "effect_class": "internal_write",
           "idempotency_key_field": null,
           "input_schema": {
@@ -1285,6 +1317,38 @@
                   "attribution_days",
                   "start_date",
                   "end_date"
+                ],
+                "type": "object"
+              },
+              "outcome_evidence": {
+                "additionalProperties": false,
+                "properties": {
+                  "row_index": {
+                    "maximum": 999,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "session_id": {
+                    "maxLength": 200,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "tool_name": {
+                    "maxLength": 200,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "turn_id": {
+                    "maxLength": 200,
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "session_id",
+                  "turn_id",
+                  "tool_name",
+                  "row_index"
                 ],
                 "type": "object"
               },

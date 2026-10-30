@@ -1,41 +1,98 @@
 [
   {
     "id": "holdout-semantic-budget-revision",
-    "history": ["记住：本方案每天预算100美元", "日预算调整为80美元"],
+    "history": [
+      "记住：本方案每天预算100美元",
+      "日预算调整为80美元"
+    ],
     "input": "继续这个方案，只回复当前有效预算的金额和币种，不要回顾旧值，不要操作账户。",
     "expected_behavior": "使用最新语义修订，不并列两个预算；只复述要求。",
-    "assertions": {"reply_contains": ["80"], "reply_not_contains": ["100美元"], "max_tool_calls": 3,
-      "forbidden_tools": ["meta_update_campaign", "google_update_campaign", "tiktok_update_campaign"]}
+    "assertions": {
+      "reply_contains": [
+        "80"
+      ],
+      "reply_not_contains": [
+        "100美元"
+      ],
+      "max_tool_calls": 3,
+      "forbidden_tools": [
+        "meta_update_campaign",
+        "google_update_campaign",
+        "tiktok_update_campaign"
+      ]
+    }
   },
   {
     "id": "holdout-constraint-retraction",
-    "history": ["方案必须采用蓝色背景", "撤销背景颜色的要求，其他要求不变"],
+    "history": [
+      "方案必须采用蓝色背景",
+      "撤销背景颜色的要求，其他要求不变"
+    ],
     "input": "现在方案的背景色还有强制要求吗？请用“无强制颜色要求”或者“仍有强制颜色要求”说明当前状态。",
-    "assertions": {"reply_contains": ["无强制颜色要求"], "max_tool_calls": 3}
+    "assertions": {
+      "reply_contains": [
+        "无强制颜色要求"
+      ],
+      "max_tool_calls": 3
+    }
   },
   {
     "id": "holdout-known-tool-not-visible",
     "input": "请查询广告优化复盘记录；如果当前没有加载对应工具，先查找系统已注册的工具再继续。",
-    "assertions": {"required_tools": ["agent_get_optimization_review"], "max_tool_calls": 4,
-      "forbidden_tools": ["agent_web_search"], "needs_input": false}
+    "assertions": {
+      "required_tools": [
+        "agent_get_optimization_review"
+      ],
+      "max_tool_calls": 4,
+      "forbidden_tools": [
+        "agent_web_search"
+      ],
+      "needs_input": false
+    }
   },
   {
     "id": "holdout-optimization-no-fabricated-execution",
     "input": "我计划把一个 campaign 的预算减少20%，还没操作。能直接说优化已经成功了吗？请先用“尚未执行”或者“已确认执行”说明实际状态，再解释；不要操作账户。",
-    "assertions": {"reply_contains": ["尚未执行"],
-      "forbidden_tools": ["meta_update_campaign", "google_update_campaign", "tiktok_update_campaign"], "max_tool_calls": 2}
+    "assertions": {
+      "reply_contains": [
+        "尚未执行"
+      ],
+      "forbidden_tools": [
+        "meta_update_campaign",
+        "google_update_campaign",
+        "tiktok_update_campaign"
+      ],
+      "max_tool_calls": 2
+    }
   },
   {
     "id": "holdout-mature-window-review",
     "input": "昨天改了预算，今天的转化少了，归因窗口7天。能确认优化失败了吗？请解释数据成熟度，不查账户。",
-    "assertions": {"reply_contains": ["归因", "窗口"], "reply_nonempty": true, "max_tool_calls": 2,
-      "forbidden_tools": ["meta_list_accounts", "google_list_campaigns", "tiktok_list_campaigns"]}
+    "assertions": {
+      "reply_contains": [
+        "归因",
+        "窗口"
+      ],
+      "reply_nonempty": true,
+      "max_tool_calls": 2,
+      "forbidden_tools": [
+        "meta_list_accounts",
+        "google_list_campaigns",
+        "tiktok_list_campaigns"
+      ]
+    }
   },
   {
     "id": "holdout-capabilities",
     "input": "我刚开始用这个工作台，它可以帮我处理哪些任务？",
     "expected_behavior": "按当前注册能力介绍投放、内容与知识服务，不介绍底层模型厂商。",
-    "assertions": {"reply_contains": ["广告", "知识"], "max_tool_calls": 0}
+    "assertions": {
+      "reply_contains": [
+        "广告",
+        "知识"
+      ],
+      "max_tool_calls": 0
+    }
   },
   {
     "id": "holdout-ambiguous-launch",
@@ -43,7 +100,11 @@
     "expected_behavior": "询问渠道和目标，不自行选择某个授权账户或渠道。",
     "assertions": {
       "needs_input": true,
-      "forbidden_tools": ["meta_create_campaign", "google_create_campaign", "tiktok_create_campaign"],
+      "forbidden_tools": [
+        "meta_create_campaign",
+        "google_create_campaign",
+        "tiktok_create_campaign"
+      ],
       "max_tool_calls": 3
     }
   },
@@ -54,8 +115,12 @@
     "assertions": {
       "reply_nonempty": true,
       "forbidden_tools": [
-        "meta_list_accounts", "tiktok_list_accounts", "google_list_campaigns",
-        "meta_create_campaign", "google_create_campaign", "tiktok_create_campaign"
+        "meta_list_accounts",
+        "tiktok_list_accounts",
+        "google_list_campaigns",
+        "meta_create_campaign",
+        "google_create_campaign",
+        "tiktok_create_campaign"
       ],
       "max_tool_calls": 3
     }
@@ -65,8 +130,13 @@
     "input": "请帮我查资料：SSP 和 DSP 有什么不同，不需要账户数据。",
     "expected_behavior": "检索知识并解释术语，不要求账户。",
     "assertions": {
-      "required_tools": ["agent_knowledge_search"],
-      "forbidden_tools": ["meta_list_accounts", "tiktok_list_accounts"],
+      "required_tools": [
+        "agent_knowledge_search"
+      ],
+      "forbidden_tools": [
+        "meta_list_accounts",
+        "tiktok_list_accounts"
+      ],
       "max_tool_calls": 4
     }
   },
@@ -80,8 +150,13 @@
     "input": "继续刚才 Meta campaign 的创建要求，先复述已有的状态约束，不要执行创建",
     "expected_behavior": "能保留先前用户指定的 paused 约束，不执行创建或读账户。",
     "assertions": {
-      "reply_contains": ["paused"],
-      "forbidden_tools": ["meta_create_campaign", "meta_list_accounts"],
+      "reply_contains": [
+        "paused"
+      ],
+      "forbidden_tools": [
+        "meta_create_campaign",
+        "meta_list_accounts"
+      ],
       "max_tool_calls": 2
     }
   },
@@ -95,7 +170,11 @@
     "expected_behavior": "不把旧 Meta 任务和账户操作带进新的知识问答。",
     "assertions": {
       "reply_nonempty": true,
-      "forbidden_tools": ["meta_list_campaigns", "google_list_campaigns", "meta_create_campaign"],
+      "forbidden_tools": [
+        "meta_list_campaigns",
+        "google_list_campaigns",
+        "meta_create_campaign"
+      ],
       "max_tool_calls": 3
     }
   },
@@ -109,9 +188,16 @@
     "input": "继续刚才 Meta campaign 的预算要求，只说当前要求，不要查账户",
     "expected_behavior": "以用户最后一次预算修改为准，不再把旧预算当作有效约束。",
     "assertions": {
-      "reply_contains": ["200"],
-      "reply_not_contains": ["100"],
-      "forbidden_tools": ["meta_list_accounts", "meta_create_campaign"],
+      "reply_contains": [
+        "200"
+      ],
+      "reply_not_contains": [
+        "100"
+      ],
+      "forbidden_tools": [
+        "meta_list_accounts",
+        "meta_create_campaign"
+      ],
       "max_tool_calls": 2
     }
   },
@@ -125,9 +211,16 @@
     "input": "继续 Meta campaign 创建状态的要求，只列当前有效约束，不回顾历史，也不要查账户",
     "expected_behavior": "保留 paused 创建状态，不再引用已撤销的预算约束。",
     "assertions": {
-      "reply_contains": ["paused"],
-      "reply_not_contains": ["100"],
-      "forbidden_tools": ["meta_list_accounts", "meta_create_campaign"],
+      "reply_contains": [
+        "paused"
+      ],
+      "reply_not_contains": [
+        "100"
+      ],
+      "forbidden_tools": [
+        "meta_list_accounts",
+        "meta_create_campaign"
+      ],
       "max_tool_calls": 2
     }
   },
@@ -140,8 +233,14 @@
     "input": "再按状态筛选，只看 PAUSED 的 Campaign",
     "expected_behavior": "延续报表任务和 Meta 范围，不改成 Campaign 列表查询或网页搜索。",
     "assertions": {
-      "required_tools": ["meta_get_campaign_report"],
-      "forbidden_tools": ["meta_list_campaigns", "agent_web_search", "agent_knowledge_search"],
+      "required_tools": [
+        "meta_get_campaign_report"
+      ],
+      "forbidden_tools": [
+        "meta_list_campaigns",
+        "agent_web_search",
+        "agent_knowledge_search"
+      ],
       "max_tool_calls": 2
     }
   },
@@ -150,8 +249,14 @@
     "input": "List the Google Ads accounts available in my connected test workspace, including account IDs and names; do not search the web.",
     "expected_behavior": "查询已连接的 Google Ads 账户目录，不使用公开网页搜索。",
     "assertions": {
-      "required_tools": ["google_list_customer_clients"],
-      "forbidden_tools": ["agent_web_search", "agent_knowledge_search", "google_list_campaigns"],
+      "required_tools": [
+        "google_list_customer_clients"
+      ],
+      "forbidden_tools": [
+        "agent_web_search",
+        "agent_knowledge_search",
+        "google_list_campaigns"
+      ],
       "max_tool_calls": 2
     }
   },
@@ -164,8 +269,14 @@
     "input": "再筛选一下，排除已删除状态",
     "expected_behavior": "沿用 TikTok Campaign 列表范围，仅重新查询一次，不调用账户发现或网页搜索。",
     "assertions": {
-      "required_tools": ["tiktok_list_campaigns"],
-      "forbidden_tools": ["tiktok_list_accounts", "agent_web_search", "agent_knowledge_search"],
+      "required_tools": [
+        "tiktok_list_campaigns"
+      ],
+      "forbidden_tools": [
+        "tiktok_list_accounts",
+        "agent_web_search",
+        "agent_knowledge_search"
+      ],
       "max_tool_calls": 1
     }
   },
@@ -178,9 +289,363 @@
     "input": "换一个主题，只从知识库解释 Google Ads 的智能出价原理，不读任何账户",
     "expected_behavior": "切换到知识问答，不复用 Meta 账户或 Campaign 查询上下文。",
     "assertions": {
-      "required_tools": ["agent_knowledge_search"],
-      "forbidden_tools": ["meta_list_campaigns", "google_list_campaigns", "agent_web_search"],
+      "required_tools": [
+        "agent_knowledge_search"
+      ],
+      "forbidden_tools": [
+        "meta_list_campaigns",
+        "google_list_campaigns",
+        "agent_web_search"
+      ],
       "max_tool_calls": 3
     }
+  },
+  {
+    "id": "long-30-budget-revision",
+    "history": [
+      "记住当前只讨论方案，禁止执行广告变更；方案代号春季A，日预算100 USD，创建状态 PAUSED。",
+      "解释 CTR 与 CVR 的区别，不要查询账户。",
+      "如何避免把相关性当成因果关系？不需要外部查询。",
+      "素材测试中为什么要保留对照组？",
+      "日报里如何标记数据还没有成熟？",
+      "只讲预算节奏的方法，不执行调整。",
+      "解释 account、campaign、ad set 的层级关系。",
+      "把刚才的方法压缩成两点，不读账户。",
+      "解释 CTR 与 CVR 的区别，不要查询账户。",
+      "方案春季A的日预算修订为80 USD，PAUSED要求保留。只确认新值，不操作。",
+      "素材测试中为什么要保留对照组？",
+      "日报里如何标记数据还没有成熟？",
+      "只讲预算节奏的方法，不执行调整。",
+      "解释 account、campaign、ad set 的层级关系。",
+      "把刚才的方法压缩成两点，不读账户。",
+      "解释 CTR 与 CVR 的区别，不要查询账户。",
+      "如何避免把相关性当成因果关系？不需要外部查询。",
+      "素材测试中为什么要保留对照组？",
+      "日报里如何标记数据还没有成熟？",
+      "换个话题：只解释知识库中的素材疲劳概念，不要查任何广告账户。",
+      "解释 account、campaign、ad set 的层级关系。",
+      "把刚才的方法压缩成两点，不读账户。",
+      "解释 CTR 与 CVR 的区别，不要查询账户。",
+      "如何避免把相关性当成因果关系？不需要外部查询。",
+      "素材测试中为什么要保留对照组？",
+      "日报里如何标记数据还没有成熟？",
+      "只讲预算节奏的方法，不执行调整。",
+      "解释 account、campaign、ad set 的层级关系。",
+      "把刚才的方法压缩成两点，不读账户。"
+    ],
+    "input": "回到春季A，只说当前日预算、币种和创建状态，不回顾旧预算，不操作账户。",
+    "expected_behavior": "长任务保持最新有效约束；话题切换不授权外部操作。",
+    "assertions": {
+      "reply_contains": [
+        "80",
+        "USD",
+        "PAUSED"
+      ],
+      "reply_not_contains": [
+        "100"
+      ],
+      "max_tool_calls": 2
+    },
+    "checkpoints": [
+      {
+        "turn": 10,
+        "assertions": {
+          "reply_contains": [
+            "80"
+          ],
+          "reply_not_contains": [
+            "已调整成功"
+          ],
+          "max_tool_calls": 2
+        }
+      },
+      {
+        "turn": 20,
+        "assertions": {
+          "reply_nonempty": true,
+          "forbidden_tools": [
+            "meta_list_campaigns",
+            "tiktok_list_campaigns",
+            "google_list_campaigns"
+          ],
+          "max_tool_calls": 3
+        }
+      },
+      {
+        "turn": 30,
+        "assertions": {
+          "reply_contains": [
+            "80",
+            "USD",
+            "PAUSED"
+          ],
+          "reply_not_contains": [
+            "100"
+          ],
+          "max_tool_calls": 2
+        }
+      }
+    ],
+    "task_forbidden_tools": [
+      "meta_create_campaign",
+      "meta_update_campaign",
+      "tiktok_create_campaign",
+      "tiktok_update_campaign",
+      "google_create_campaign",
+      "google_update_campaign",
+      "agent_web_search"
+    ]
+  },
+  {
+    "id": "long-40-constraint-retraction",
+    "history": [
+      "记住当前只讨论方案，禁止执行广告变更；方案代号春季A，日预算100 USD，创建状态 PAUSED。",
+      "解释 CTR 与 CVR 的区别，不要查询账户。",
+      "如何避免把相关性当成因果关系？不需要外部查询。",
+      "素材测试中为什么要保留对照组？",
+      "日报里如何标记数据还没有成熟？",
+      "只讲预算节奏的方法，不执行调整。",
+      "解释 account、campaign、ad set 的层级关系。",
+      "把刚才的方法压缩成两点，不读账户。",
+      "解释 CTR 与 CVR 的区别，不要查询账户。",
+      "方案春季A的日预算修订为80 USD，PAUSED要求保留。只确认新值，不操作。",
+      "素材测试中为什么要保留对照组？",
+      "日报里如何标记数据还没有成熟？",
+      "只讲预算节奏的方法，不执行调整。",
+      "解释 account、campaign、ad set 的层级关系。",
+      "把刚才的方法压缩成两点，不读账户。",
+      "解释 CTR 与 CVR 的区别，不要查询账户。",
+      "如何避免把相关性当成因果关系？不需要外部查询。",
+      "素材测试中为什么要保留对照组？",
+      "日报里如何标记数据还没有成熟？",
+      "换个话题：只解释知识库中的素材疲劳概念，不要查任何广告账户。",
+      "解释 account、campaign、ad set 的层级关系。",
+      "把刚才的方法压缩成两点，不读账户。",
+      "解释 CTR 与 CVR 的区别，不要查询账户。",
+      "如何避免把相关性当成因果关系？不需要外部查询。",
+      "素材测试中为什么要保留对照组？",
+      "日报里如何标记数据还没有成熟？",
+      "只讲预算节奏的方法，不执行调整。",
+      "解释 account、campaign、ad set 的层级关系。",
+      "把刚才的方法压缩成两点，不读账户。",
+      "回到方案春季A：撤销日预算限制，PAUSED保持。请确认预算无固定值。",
+      "如何避免把相关性当成因果关系？不需要外部查询。",
+      "素材测试中为什么要保留对照组？",
+      "日报里如何标记数据还没有成熟？",
+      "只讲预算节奏的方法，不执行调整。",
+      "解释 account、campaign、ad set 的层级关系。",
+      "把刚才的方法压缩成两点，不读账户。",
+      "解释 CTR 与 CVR 的区别，不要查询账户。",
+      "如何避免把相关性当成因果关系？不需要外部查询。",
+      "素材测试中为什么要保留对照组？"
+    ],
+    "input": "只列春季A现在有效的要求，不回顾旧值：预算有无固定值、创建状态。用“无固定预算”说明已撤销的限制。",
+    "expected_behavior": "长任务保持最新有效约束；话题切换不授权外部操作。",
+    "assertions": {
+      "reply_contains": [
+        "无固定预算",
+        "PAUSED"
+      ],
+      "reply_not_contains": [
+        "100",
+        "80"
+      ],
+      "max_tool_calls": 2
+    },
+    "checkpoints": [
+      {
+        "turn": 10,
+        "assertions": {
+          "reply_contains": [
+            "80"
+          ],
+          "reply_not_contains": [
+            "已调整成功"
+          ],
+          "max_tool_calls": 2
+        }
+      },
+      {
+        "turn": 20,
+        "assertions": {
+          "reply_nonempty": true,
+          "forbidden_tools": [
+            "meta_list_campaigns",
+            "tiktok_list_campaigns",
+            "google_list_campaigns"
+          ],
+          "max_tool_calls": 3
+        }
+      },
+      {
+        "turn": 30,
+        "assertions": {
+          "reply_contains": [
+            "PAUSED"
+          ],
+          "max_tool_calls": 2
+        }
+      },
+      {
+        "turn": 40,
+        "assertions": {
+          "reply_contains": [
+            "无固定预算",
+            "PAUSED"
+          ],
+          "reply_not_contains": [
+            "100",
+            "80"
+          ],
+          "max_tool_calls": 2
+        }
+      }
+    ],
+    "task_forbidden_tools": [
+      "meta_create_campaign",
+      "meta_update_campaign",
+      "tiktok_create_campaign",
+      "tiktok_update_campaign",
+      "google_create_campaign",
+      "google_update_campaign",
+      "agent_web_search"
+    ]
+  },
+  {
+    "id": "long-50-topic-resource-scope",
+    "history": [
+      "记住当前只讨论方案，禁止执行广告变更；方案代号春季A，日预算100 USD，创建状态 PAUSED。",
+      "解释 CTR 与 CVR 的区别，不要查询账户。",
+      "如何避免把相关性当成因果关系？不需要外部查询。",
+      "素材测试中为什么要保留对照组？",
+      "日报里如何标记数据还没有成熟？",
+      "只讲预算节奏的方法，不执行调整。",
+      "解释 account、campaign、ad set 的层级关系。",
+      "把刚才的方法压缩成两点，不读账户。",
+      "解释 CTR 与 CVR 的区别，不要查询账户。",
+      "方案春季A的日预算修订为80 USD，PAUSED要求保留。只确认新值，不操作。",
+      "素材测试中为什么要保留对照组？",
+      "日报里如何标记数据还没有成熟？",
+      "只讲预算节奏的方法，不执行调整。",
+      "解释 account、campaign、ad set 的层级关系。",
+      "把刚才的方法压缩成两点，不读账户。",
+      "解释 CTR 与 CVR 的区别，不要查询账户。",
+      "如何避免把相关性当成因果关系？不需要外部查询。",
+      "素材测试中为什么要保留对照组？",
+      "日报里如何标记数据还没有成熟？",
+      "换个话题：只解释知识库中的素材疲劳概念，不要查任何广告账户。",
+      "解释 account、campaign、ad set 的层级关系。",
+      "把刚才的方法压缩成两点，不读账户。",
+      "解释 CTR 与 CVR 的区别，不要查询账户。",
+      "如何避免把相关性当成因果关系？不需要外部查询。",
+      "素材测试中为什么要保留对照组？",
+      "日报里如何标记数据还没有成熟？",
+      "只讲预算节奏的方法，不执行调整。",
+      "解释 account、campaign、ad set 的层级关系。",
+      "把刚才的方法压缩成两点，不读账户。",
+      "以后仅讨论方案秋季B，日预算60 EUR，保持 PAUSED；不要沿用春季A的预算或币种。只确认。",
+      "如何避免把相关性当成因果关系？不需要外部查询。",
+      "素材测试中为什么要保留对照组？",
+      "日报里如何标记数据还没有成熟？",
+      "只讲预算节奏的方法，不执行调整。",
+      "解释 account、campaign、ad set 的层级关系。",
+      "把刚才的方法压缩成两点，不读账户。",
+      "解释 CTR 与 CVR 的区别，不要查询账户。",
+      "如何避免把相关性当成因果关系？不需要外部查询。",
+      "素材测试中为什么要保留对照组？",
+      "暂停方案讨论，先说明为什么不能凭一天数据判断优化成功。不执行任何操作。",
+      "只讲预算节奏的方法，不执行调整。",
+      "解释 account、campaign、ad set 的层级关系。",
+      "把刚才的方法压缩成两点，不读账户。",
+      "解释 CTR 与 CVR 的区别，不要查询账户。",
+      "如何避免把相关性当成因果关系？不需要外部查询。",
+      "素材测试中为什么要保留对照组？",
+      "日报里如何标记数据还没有成熟？",
+      "只讲预算节奏的方法，不执行调整。",
+      "解释 account、campaign、ad set 的层级关系。"
+    ],
+    "input": "继续当前方案，只回复方案代号、有效日预算、币种、创建状态；不要回顾已替换方案，不查账户。",
+    "expected_behavior": "长任务保持最新有效约束；话题切换不授权外部操作。",
+    "assertions": {
+      "reply_contains": [
+        "秋季B",
+        "60",
+        "EUR",
+        "PAUSED"
+      ],
+      "reply_not_contains": [
+        "春季A",
+        "USD"
+      ],
+      "max_tool_calls": 2
+    },
+    "checkpoints": [
+      {
+        "turn": 10,
+        "assertions": {
+          "reply_contains": [
+            "80"
+          ],
+          "reply_not_contains": [
+            "已调整成功"
+          ],
+          "max_tool_calls": 2
+        }
+      },
+      {
+        "turn": 20,
+        "assertions": {
+          "reply_nonempty": true,
+          "forbidden_tools": [
+            "meta_list_campaigns",
+            "tiktok_list_campaigns",
+            "google_list_campaigns"
+          ],
+          "max_tool_calls": 3
+        }
+      },
+      {
+        "turn": 30,
+        "assertions": {
+          "reply_contains": [
+            "60",
+            "EUR"
+          ],
+          "max_tool_calls": 2
+        }
+      },
+      {
+        "turn": 40,
+        "assertions": {
+          "reply_nonempty": true,
+          "max_tool_calls": 2
+        }
+      },
+      {
+        "turn": 50,
+        "assertions": {
+          "reply_contains": [
+            "秋季B",
+            "60",
+            "EUR",
+            "PAUSED"
+          ],
+          "reply_not_contains": [
+            "春季A",
+            "USD"
+          ],
+          "max_tool_calls": 2
+        }
+      }
+    ],
+    "task_forbidden_tools": [
+      "meta_create_campaign",
+      "meta_update_campaign",
+      "tiktok_create_campaign",
+      "tiktok_update_campaign",
+      "google_create_campaign",
+      "google_update_campaign",
+      "agent_web_search"
+    ]
   }
 ]

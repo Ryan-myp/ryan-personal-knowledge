@@ -14,6 +14,15 @@ _PRIORITY = {
     "success": 0, "error": 1, "data_status": 2, "execution_status": 3, "effect_state": 4,
     "requires_reconciliation": 5, "query_summary": 6, "total_count": 6,
     "total": 7, "count": 8, "has_more": 9, "next_page": 10, "page_info": 11, "data": 12,
+    "next_cursor": 10, "next_page_token": 10, "nextpagetoken": 10,
+    "paging": 11, "pagination": 11,
+}
+
+# Continuation values are opaque API input. A shortened token is a different
+# token, so omit it explicitly when it cannot fit instead of inventing a value.
+_PAGINATION_FIELDS = {
+    "next_cursor", "next_page_token", "nextpagetoken", "next_page",
+    "page_info", "paging", "pagination",
 }
 
 
@@ -56,6 +65,10 @@ def _compact_mapping(value: Mapping, budget: int, path: str) -> tuple[dict, list
         overhead = len(serialize_tool_value(field)) + 2 + (2 if result else 0)
         remaining = budget - size - overhead
         if remaining < 2:
+            paths.append(child_path)
+            continue
+        if (field.lower() in _PAGINATION_FIELDS
+                and len(serialize_tool_value(value[key])) > remaining):
             paths.append(child_path)
             continue
         child, truncated = compact_tool_value(value[key], remaining, child_path)

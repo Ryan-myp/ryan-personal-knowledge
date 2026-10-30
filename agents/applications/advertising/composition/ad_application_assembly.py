@@ -520,6 +520,7 @@ class AdApplicationAssembly:
             outbox_max_attempts=options.outbox_max_attempts,
             start_background_workers=False,
             create_background_workers=options.start_background_workers,
+            run_stale_after_seconds=runtime.workflow_stale_after_seconds,
         )
 
     @staticmethod
@@ -582,6 +583,9 @@ class AdApplicationAssembly:
     ) -> dict[str, Any]:
         return {
             "ports": ports,
+            "engine": runtime.execution_engine,
+            "engine_plugins": runtime.plugin_registry,
+            "engine_timeout_seconds": runtime.turn_timeout_seconds,
             "tool_catalog": AdvertisingToolCatalog(runtime),
             "tool_selector": AdApplicationAssembly._tool_selector(
                 runtime,

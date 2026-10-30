@@ -416,6 +416,7 @@ class PersistenceBackend(KnowledgeStorePort, Protocol):
         error: Optional[str] = None, metadata: Optional[dict] = None,
         workflow_id: Optional[str] = None,
         expected_statuses: Optional[list[str]] = None,
+        lease_owner: Optional[str] = None,
     ) -> bool: ...
     def pause_task(
         self, task_id: str, tenant_id: Optional[str] = None,

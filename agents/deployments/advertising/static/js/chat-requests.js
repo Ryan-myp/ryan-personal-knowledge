@@ -636,10 +636,32 @@
             }
         }
 
+        async function readConversationListResponse(response) {
+            const text = await response.text();
+            let data;
+            try { data = JSON.parse(text); }
+            catch (_) {
+                if (response.ok) throw new Error('历史对话返回格式异常，请重试。');
+                data = {};
+            }
+            if (!response.ok) {
+                const error = new Error(data?.detail || data?.error || `历史对话加载失败（${response.status}）`);
+                error.status = response.status;
+                throw error;
+            }
+            if (!data || !Array.isArray(data.sessions) || (data.has_more &&
+                (!data.next_cursor?.updated_at || !data.next_cursor?.session_id))) {
+                throw new Error('历史对话返回格式异常，请重试。');
+            }
+            return data;
+        }
+
         async function refreshConversationHistory({ silent = false } = {}) {
             const requestId = ++conversationHistoryRequest;
+            // A refresh is transactional: keep the last usable rows and cursor
+            // until a complete replacement has arrived.
             conversationHistoryListPage = {
-                nextCursor: null, hasMore: false, loading: false, error: '',
+                ...conversationHistoryListPage, loading: true, error: '', refreshFailed: false,
             };
             updateConversationListPagination();
             if (!silent) {
@@ -648,35 +670,33 @@
             }
             try {
                 const response = await serviceFetch('/sessions?limit=50');
-                const text = await response.text();
-                let data = {};
-                try { data = text ? JSON.parse(text) : {}; } catch (_) { data = {}; }
-                if (!response.ok) throw new Error(data.detail || data.error || `历史对话加载失败（${response.status}）`);
+                const data = await readConversationListResponse(response);
                 if (requestId !== conversationHistoryRequest) return;
-                conversationHistory = Array.isArray(data.sessions) ? data.sessions : [];
+                conversationHistory = data.sessions;
                 conversationHistoryListPage.nextCursor = data.next_cursor || null;
-                conversationHistoryListPage.hasMore = Boolean(
-                    data.has_more && conversationHistoryListPage.nextCursor,
-                );
+                conversationHistoryListPage.hasMore = Boolean(data.has_more && data.next_cursor);
                 renderConversationHistory();
-                updateConversationListPagination();
             } catch (error) {
                 if (requestId !== conversationHistoryRequest) return;
-                conversationHistory = [];
-                conversationHistoryListPage.error = '历史对话暂时不可用，请稍后重试。';
-                const message = error?.message || '';
-                const status = /401|403|授权/i.test(message)
-                    ? '历史对话暂不可用，请检查当前共享服务身份的访问权限。'
-                    : '历史对话暂时不可用，请稍后重试。';
-                const container = document.getElementById('chatHistory');
-                if (container) {
-                    container.replaceChildren();
-                    const errorNode = document.createElement('div');
-                    errorNode.className = 'chat-history-status error';
-                    errorNode.textContent = status;
-                    container.appendChild(errorNode);
+                const denied = error?.status === 401 || error?.status === 403;
+                if (denied) {
+                    conversationHistory = [];
+                    conversationHistoryListPage.nextCursor = null;
+                    conversationHistoryListPage.hasMore = false;
+                    renderConversationHistory();
                 }
-                updateConversationListPagination(conversationHistoryListPage.error);
+                const status = denied
+                    ? '历史对话暂不可用，请检查当前共享服务身份的访问权限后重试。'
+                    : '历史对话刷新失败，已保留现有列表，请重试。';
+                conversationHistoryListPage.error = status;
+                conversationHistoryListPage.refreshFailed = true;
+                const node = document.getElementById('chatHistoryStatus');
+                if (node) node.textContent = status;
+            } finally {
+                if (requestId === conversationHistoryRequest) {
+                    conversationHistoryListPage.loading = false;
+                    updateConversationListPagination(conversationHistoryListPage.error);
+                }
             }
         }
 
@@ -687,13 +707,14 @@
             const status = document.getElementById('conversationListPaginationStatus');
             if (!panel || !button || !status) return;
             panel.hidden = !page.hasMore && !page.loading && !errorMessage;
-            button.disabled = page.loading || !page.hasMore;
-            button.textContent = page.loading ? '正在加载…' : '加载更早的对话';
+            button.disabled = page.loading || (!page.hasMore && !page.refreshFailed);
+            button.textContent = page.loading ? '正在加载…' : page.refreshFailed ? '重试刷新' : '加载更早的对话';
             status.textContent = errorMessage || (page.loading ? '正在读取更早的对话…' : '');
         }
 
         async function loadMoreConversationSessions() {
             const page = conversationHistoryListPage;
+            if (page.refreshFailed && !page.loading) return refreshConversationHistory({silent: true});
             const cursor = page.nextCursor;
             if (page.loading || !page.hasMore || !cursor) return;
             const requestId = conversationHistoryRequest;
@@ -707,12 +728,7 @@
                     before_session_id: cursor.session_id,
                 });
                 const response = await serviceFetch(`/sessions?${query.toString()}`);
-                const text = await response.text();
-                let data = {};
-                try { data = text ? JSON.parse(text) : {}; } catch (_) { data = {}; }
-                if (!response.ok) {
-                    throw new Error(data.detail || data.error || `历史对话加载失败（${response.status}）`);
-                }
+                const data = await readConversationListResponse(response);
                 if (requestId !== conversationHistoryRequest || page !== conversationHistoryListPage) {
                     return;
                 }

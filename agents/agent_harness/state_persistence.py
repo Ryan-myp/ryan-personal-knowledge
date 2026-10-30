@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+import math
 import time
 from typing import Any, Callable, Mapping, Optional, Sequence, TYPE_CHECKING
 
@@ -46,21 +48,32 @@ class AgentStatePersistence:
             raise TranscriptPersistenceError(error_message) from error
 
     def _restore_messages(self, state: AgentState, payloads: Sequence[Any]) -> None:
-        state.messages = list(self._system_messages)
+        if not isinstance(payloads, Sequence) or isinstance(payloads, (str, bytes, bytearray)):
+            raise TranscriptPersistenceError("transcript messages must be a list")
+        messages = list(self._system_messages)
         for payload in payloads:
             message = self.message_from_payload(payload)
-            if message is not None and message.role != "system":
-                self.append_message(state, message, persist=False)
+            if message is None:
+                raise TranscriptPersistenceError("transcript contains an invalid message")
+            if message.role != "system":
+                messages.append(message)
+        staged = replace(state, messages=messages)
+        self._trim_completed_turns(staged)
+        state.messages = staged.messages
 
     @staticmethod
     def message_from_payload(value: Any) -> Optional[AgentMessage]:
         if isinstance(value, AgentMessage):
-            return value
+            value = vars(value)
         if not isinstance(value, Mapping):
             return None
         role = str(value.get("role") or "user")
         if role not in {"system", "user", "assistant", "tool"}:
             return None
+        metadata = value.get("metadata")
+        if metadata is not None and not isinstance(metadata, Mapping):
+            raise TranscriptPersistenceError("transcript message metadata must be an object")
+        timestamp = AgentStatePersistence._message_timestamp(value.get("timestamp"))
         return AgentMessage(
             role=role,
             content=value.get("content", ""),
@@ -69,9 +82,21 @@ class AgentStatePersistence:
             turn_id=str(value.get("turn_id") or ""),
             tool_call_id=value.get("tool_call_id"),
             name=value.get("name"),
-            metadata=dict(value.get("metadata") or {}),
-            timestamp=float(value.get("timestamp") or time.time()),
+            metadata=dict(metadata or {}),
+            timestamp=timestamp,
         )
+
+    @staticmethod
+    def _message_timestamp(value: Any) -> float:
+        if value is None:
+            return time.time()
+        try:
+            timestamp = float(value)
+        except (TypeError, ValueError, OverflowError) as error:
+            raise TranscriptPersistenceError("transcript timestamp is invalid") from error
+        if isinstance(value, bool) or not math.isfinite(timestamp) or timestamp < 0:
+            raise TranscriptPersistenceError("transcript timestamp must be finite and non-negative")
+        return timestamp
 
     def hydrate(
         self,
@@ -184,7 +209,7 @@ class AgentStatePersistence:
         if not callable(save):
             return True
         try:
-            self._store_operation(
+            saved = self._store_operation(
                 save,
                 "checkpoint save failed",
                 str(request.run_id or ""),
@@ -206,6 +231,8 @@ class AgentStatePersistence:
                     "saved_at": time.time(),
                 },
             )
+            if saved is False:
+                raise TranscriptPersistenceError("checkpoint save was not accepted")
             self._emit(
                 "checkpoint_saved",
                 request,
@@ -216,7 +243,7 @@ class AgentStatePersistence:
             self._emit(
                 "checkpoint_error",
                 request,
-                error_type=type(error.__cause__).__name__,
+                error_type=type(error.__cause__ or error).__name__,
             )
             return False
 
@@ -275,14 +302,9 @@ class AgentStatePersistence:
         if not isinstance(checkpoint, Mapping):
             raise TranscriptPersistenceError("checkpoint is missing or invalid")
         self._validate_checkpoint_scope(checkpoint, request)
-        self._restore_messages(state, checkpoint.get("messages") or ())
-        saved_usage = checkpoint.get("usage")
-        if isinstance(saved_usage, Mapping):
-            state.usage = {
-                str(key): max(0, int(value))
-                for key, value in saved_usage.items()
-                if isinstance(value, (int, float)) and not isinstance(value, bool)
-            }
+        saved_usage = self._checkpoint_usage(checkpoint.get("usage", state.usage))
+        self._restore_messages(state, checkpoint.get("messages", ()))
+        state.usage = saved_usage
         self._emit(
             "checkpoint_resumed",
             request,
@@ -290,6 +312,17 @@ class AgentStatePersistence:
             turn_index=checkpoint.get("turn_index"),
         )
         return checkpoint_id
+
+    @staticmethod
+    def _checkpoint_usage(value: Any) -> dict[str, int]:
+        if not isinstance(value, Mapping):
+            raise TranscriptPersistenceError("checkpoint usage must be an object")
+        if any(isinstance(item, float) and not math.isfinite(item) for item in value.values()):
+            raise TranscriptPersistenceError("checkpoint usage must be finite")
+        return {
+            str(key): max(0, int(item)) for key, item in value.items()
+            if isinstance(item, (int, float)) and not isinstance(item, bool)
+        }
 
     @staticmethod
     def _validate_checkpoint_scope(

@@ -1,0 +1,93 @@
+{
+  "date": "2026-10-30",
+  "scope": "任务质量、长对话、异常恢复、广告复盘证据及体验指标",
+  "provider_api_calls": 0,
+  "external_model_calls": 0,
+  "checks": {
+    "command": "make ad-agent-check",
+    "exit_code": 0,
+    "python_passed": 3620,
+    "frontend_passed": 269,
+    "tool_contracts_validated": 328,
+    "builtin_knowledge_pages": 86,
+    "knowledge_benchmark_passed": true,
+    "diff_check": "passed",
+    "log": "/tmp/agent-improvement-final-check.log",
+    "frontend_recheck_log": "/tmp/agent-improvement-final-frontend.log",
+    "local_readiness": "passed",
+    "real_model_task_quality": "not_verified"
+  },
+  "task_evaluation": {
+    "cases": 20,
+    "long_task_turns": [30, 40, 50],
+    "intermediate_assertions": true,
+    "forbidden_tools_checked_across_turns": true,
+    "repeat_requirement": 3,
+    "source_and_dataset_fingerprints_required": true,
+    "complete_current_model_suite_executed": false,
+    "suite_is_unseen_holdout": false,
+    "latency_unit": "complete_task_including_history",
+    "per_turn_latency_reported_separately": true
+  },
+  "integration_evidence": {
+    "registered_provider_contracts": ["meta", "google-ads", "tiktok"],
+    "provider_results_were_offline_fixtures": true,
+    "native_resolved_account_audit_persistence": "passed",
+    "audit_failure_is_visible": "passed",
+    "fifty_turn_compaction_and_restore": "passed",
+    "proposal_execution_readback_outcome_cycle": "passed_with_offline_audit_fixtures",
+    "causal_lift_claimed": false
+  },
+  "coverage": {
+    "scope": [
+      "agents.agent_harness.run_experience",
+      "agents.agent_platform.evals.task_quality",
+      "agents.agent_platform.evals.task_release",
+      "agents.applications.advertising.persistence.run_recovery",
+      "agents.applications.advertising.operations.optimization_report_evidence"
+    ],
+    "statements": 305,
+    "covered": 277,
+    "percent": 90.81967213114754,
+    "whole_repository_coverage_claimed": false,
+    "log": "/tmp/agent-improvement-final-coverage.log"
+  },
+  "quality": {
+    "new_core_modules": 5,
+    "new_core_module_gates": "passed",
+    "repository_gate": "failed",
+    "threshold_lowered": false,
+    "repository_gate_log": "/tmp/agent-improvement-final-qguard.log",
+    "delta_gate_log": "/tmp/agent-improvement-final-quality-delta.log"
+  },
+  "browser": {
+    "viewports": ["1440x1000", "390x844"],
+    "page_errors": 0,
+    "body_horizontal_overflow": false,
+    "recovery_details_are_read_only": true,
+    "log": "/tmp/agent-monitoring-browser-final.log"
+  },
+  "deployment": {
+    "listen": "0.0.0.0:8766",
+    "state": "ready",
+    "database": "agents/ad_agent/ad_agent.db",
+    "configuration": "agents/ad_agent/config.test-live.yaml",
+    "sessions_preserved": 515,
+    "templates_preserved": 14,
+    "schedules_preserved": 5,
+    "runtime_tools": 354,
+    "stale_running_after_restart": 0,
+    "expired_session_leases_after_restart": 0,
+    "pending_recovery_records_retained": 12,
+    "monitoring_status": "critical_due_to_unverified_historical_effects",
+    "backup": "/tmp/pre-task-reliability-20261030-133254.db",
+    "storage_schema_changed": false
+  },
+  "limitations": [
+    "未执行真实模型完整三次任务评测，不能用离线测试声称语义准确率已提高。",
+    "历史未知外部副作用仍需受控 Provider 回查，没有自动重跑或标记成功。",
+    "尚无真实投放成熟观察窗中的收益或因果增量验证。",
+    "全仓静态质量门禁未通过，新增核心模块独立通过不替代全仓治理。",
+    "体验指标为当前进程有界窗口，不含排队，不代表长期生产 SLO。"
+  ]
+}

@@ -272,12 +272,13 @@ class AdvertisingRuntimeControls:
             raise TypeError(
                 "LLM adapter must expose complete()/stream() or be callable"
             )
+        runtime.platform_application.configure_model(llm_client)
         runtime._llm = llm_client
-        runtime.platform_application.agent.model = llm_client
 
     def assert_llm_ready(self) -> None:
         runtime = self.runtime
-        if runtime.require_llm and runtime._llm is None:
+        engine = getattr(runtime, "execution_engine", None)
+        if runtime.require_llm and runtime._llm is None and engine is None:
             raise RuntimeError(
                 "LLM client is required; configure the model before starting the Agent"
             )

@@ -524,6 +524,26 @@ body.workspace-refresh [data-monitoring-view="health"] .monitoring-console-body 
 body.workspace-refresh [data-monitoring-view="health"] .monitoring-health-panel { display: block; }
 body.workspace-refresh [data-monitoring-view="events"] .monitoring-console-body > :not(.monitoring-status-banner, .monitoring-events-panel) { display: none; }
 body.workspace-refresh [data-monitoring-view="events"] .monitoring-events-panel { grid-template-columns: minmax(0, 1fr); }
+.monitoring-recovery-detail {
+    max-height: 320px;
+    overflow: auto;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    font: 12px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace;
+    color: inherit;
+}
+.monitoring-tool-table :is(td, th) { font-variant-numeric: tabular-nums; }
+.monitoring-recovery-table th,
+.monitoring-recovery-table td:first-child,
+.monitoring-recovery-table td:nth-child(2) { white-space: nowrap; }
+.monitoring-recovery-total { color: var(--manage-muted); font-size: 12px; white-space: nowrap; }
+@media (max-width: 640px) {
+    .monitoring-recovery-table { table-layout: fixed; }
+    .monitoring-recovery-table th:first-child { width: 44px; }
+    .monitoring-recovery-table th:nth-child(2) { width: 80px; }
+    .monitoring-recovery-table th:last-child { width: 76px; }
+    .monitoring-recovery-table td:nth-child(3) { overflow-wrap: anywhere; }
+}
 body.workspace-refresh .service-health-row { display: flex; justify-content: space-between; gap: 24px; padding: 18px 0; border-bottom: 1px solid var(--manage-line); }
 body.workspace-refresh .service-health-row .ready { color: var(--manage-accent); }
 body.workspace-refresh .service-health-row .not-ready { color: #c27630; }

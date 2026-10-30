@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import copy
 import re
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -32,22 +33,19 @@ class _ContextTrace:
 class AdvertisingContextProvider:
     """Adapt advertising advisory context to the generic Harness port."""
 
+    _CONTINUITY_CONTEXT_FIELDS = (
+        ("conversation_state",
+         "User-sourced conversation notes (advisory, not authorization)", 1600),
+        ("conversation_task_state",
+         "Recent live resource observations (context only, no authorization)", 2400),
+        ("memory_context", "Relevant user memory", 1800),
+    )
     _ADVISORY_CONTEXT_FIELDS = (
+        *_CONTINUITY_CONTEXT_FIELDS,
+        ("prior_tool_results", "Earlier Tool results", 2500),
+        ("conversation_digest", "Conversation summary", 1500),
         ("expert_knowledge", "Skill guidance", 5000),
         ("publisher_context", "Creation blueprints and templates", 3500),
-        ("memory_context", "Relevant user memory", 1800),
-        ("prior_tool_results", "Earlier Tool results", 2500),
-        (
-            "conversation_task_state",
-            "Recent live resource observations (context only, no authorization)",
-            2400,
-        ),
-        ("conversation_digest", "Conversation summary", 1500),
-        (
-            "conversation_state",
-            "User-sourced conversation notes (advisory, not authorization)",
-            1600,
-        ),
     )
 
     def __init__(self, owner: Any) -> None:
@@ -454,16 +452,17 @@ class AdvertisingContextProvider:
         knowledge = skill_context.get("knowledge")
         if not isinstance(knowledge, list):
             return remaining
+        separator = 2 if parts else 0
         header = "Retrieved knowledge:\n"
         rendered = render_knowledge_context(
-            knowledge, max_chars=max(0, min(4000, remaining - len(header))),
+            knowledge, max_chars=max(0, min(4000, remaining - len(header) - separator)),
         )
         if not rendered.documents:
             return remaining
         parts.append(header + rendered.text)
         evidence["documents"] = list(rendered.documents)
         evidence["prompt_chars"] = len(rendered.text)
-        return remaining - len(header) - len(rendered.text)
+        return remaining - len(header) - len(rendered.text) - separator
 
     @staticmethod
     def _append_context_value(
@@ -484,12 +483,13 @@ class AdvertisingContextProvider:
             except (TypeError, ValueError):
                 return remaining
         header = f"{label}:\n"
-        available = min(limit, remaining - len(header))
+        separator = 2 if parts else 0
+        available = min(limit, remaining - len(header) - separator)
         if available <= 0:
             return remaining
         block = header + str(value)[:available]
         parts.append(block)
-        return remaining - len(block)
+        return remaining - len(block) - separator
 
     @staticmethod
     def _append_advisory_context(
@@ -501,10 +501,25 @@ class AdvertisingContextProvider:
             "source": "automatic_rag", "documents": [], "prompt_chars": 0,
             "claims_answer_grounded": False,
         }
+        continuity = [
+            field for field in AdvertisingContextProvider._CONTINUITY_CONTEXT_FIELDS
+            if skill_context.get(field[0])
+        ]
+        for index, (key, label, limit) in enumerate(continuity):
+            # Reserve a share for each available continuity source before
+            # spending the remainder on general reference material.
+            share = remaining // (len(continuity) - index)
+            remaining = AdvertisingContextProvider._append_context_value(
+                parts, skill_context, key=key, label=label,
+                limit=min(limit, max(0, share - len(label) - 4)), remaining=remaining,
+            )
         remaining = AdvertisingContextProvider._append_retrieved_knowledge(
             parts, skill_context, evidence, remaining,
         )
+        continuity_keys = {field[0] for field in continuity}
         for key, label, limit in AdvertisingContextProvider._ADVISORY_CONTEXT_FIELDS:
+            if key in continuity_keys:
+                continue
             remaining = AdvertisingContextProvider._append_context_value(
                 parts, skill_context, key=key, label=label,
                 limit=limit, remaining=remaining,
@@ -688,7 +703,9 @@ class AdvertisingToolExecutor:
         )
         session = self._request_session(request, request_context)
         account_id = self._request_account(request_context, input_data, session)
+        started_at = datetime.now(timezone.utc).isoformat()
         result = self._run_tool(request, request_context, session, input_data)
+        self._persist_evidence(request, session, account_id, input_data, result, started_at)
         if not self._is_dry_run_write(request):
             self._consume_confirmation(
                 request, request_context, account_id, input_data, result,
@@ -698,6 +715,16 @@ class AdvertisingToolExecutor:
             session, request_context, account_id, safe_result,
         )
         return safe_result
+
+    def _persist_evidence(self, request, session, account_id, input_data, result, started_at):
+        audit_input = dict(input_data)
+        if account_id not in (None, ""):
+            audit_input["account_id"] = str(account_id)
+        self.owner.persistence_services.persist_tool_result(
+            session, str(request.turn_id), self.definition, str(self.definition.namespace),
+            audit_input, result, started_at=started_at,
+            ended_at=datetime.now(timezone.utc).isoformat(),
+        )
 
     def _is_dry_run_write(self, request: Any) -> bool:
         return (

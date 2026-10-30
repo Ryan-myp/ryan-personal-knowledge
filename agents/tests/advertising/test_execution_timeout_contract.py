@@ -7,6 +7,7 @@ import pytest
 from pydantic import ValidationError
 
 from agents.agent_harness.agent import Agent
+from agents.agent_harness.core.plugins import PluginRegistry
 from agents.agent_harness.core.llm_client import LLMClient, create_llm_client
 from agents.agent_platform.governance.policy import GovernancePolicy
 from agents.applications.advertising.composition.ad_application import AdvertisingComposition
@@ -46,11 +47,15 @@ def test_advertising_composition_passes_the_budget_to_the_generic_harness():
         max_tool_calls=32, turn_timeout_seconds=500.0,
         max_parallel_tools=2, max_inflight_tool_invocations=8,
         registry=None, metrics=None, _redact_for_persistence=lambda value: value,
+        execution_engine=None, plugin_registry=PluginRegistry(),
     )
     services = SimpleNamespace(tool_policy=None, run_store=None, security=None)
     options = AdApplicationAssembly._platform_options(
         runtime, SimpleNamespace(persistence_store=None), services, None,
     )
+    assert options["engine_timeout_seconds"] == 500.0
+    assert options["engine"] is None
+    assert options["engine_plugins"] is runtime.plugin_registry
     assert options["model_timeout_seconds"] == 500.0
     assert options["tool_timeout_seconds"] == 500.0
     # Provider retries already consume one bounded request budget.

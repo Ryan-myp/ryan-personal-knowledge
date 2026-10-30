@@ -1,8 +1,8 @@
-"""Stateful, application-neutral Agent loop.
+"""Application-neutral Run host with a replaceable decision engine.
 
-The loop owns transcript state, model turns, Tool preflight/execution and
-event ordering. Applications inject a model adapter, Tool catalog and policy
-hooks; the loop never knows a provider, channel or business workflow.
+The host owns transcript state, Tool execution, checkpoints and event ordering.
+Exactly one engine drives decisions; the default engine uses a model adapter.
+Neither boundary knows a provider, channel or business workflow.
 """
 
 from __future__ import annotations
@@ -17,6 +17,12 @@ from dataclasses import replace
 import uuid
 from typing import Any, Callable, Mapping, Optional, Protocol, Sequence
 
+from .execution_engine import (
+    ExecutionEngine, EngineSnapshot, EngineSession, EngineStep,
+    NativeExecutionEngine, register_engine,
+    drive_engine, drive_external_engine, snapshot_from_inputs,
+)
+from .core.plugins import PluginRegistry
 from .context import ContextProvider, context_prompt
 from .evidence_compaction import compact_read_messages
 from .conversation_recall import (
@@ -134,6 +140,9 @@ class Agent:
         self,
         *,
         model: ModelAdapter | Callable[..., Any],
+        engine: ExecutionEngine | None = None,
+        engine_plugins: PluginRegistry | None = None,
+        engine_timeout_seconds: float = 300.0,
         tool_catalog: Optional[ToolCatalog] = None,
         skill_catalog: Optional[SkillCatalog] = None,
         system_prompt: str = "",
@@ -341,6 +350,30 @@ class Agent:
             max_tool_result_chars=self.max_tool_result_chars,
             max_interaction_chars=self.max_interaction_chars,
         )
+
+        self._engine = engine if engine is not None else NativeExecutionEngine()
+        self.engine_plugins = engine_plugins if engine_plugins is not None else PluginRegistry()
+        if engine is not None and not isinstance(engine, NativeExecutionEngine):
+            if not callable(before_tool_call) or not callable(after_tool_call):
+                raise ValueError("replacement engine requires a complete Tool policy")
+        if (
+            not isinstance(engine_timeout_seconds, (int, float))
+            or not 0 < engine_timeout_seconds <= 3600
+        ):
+            raise ValueError("engine_timeout_seconds must be in (0, 3600]")
+        self.engine_timeout_seconds = float(engine_timeout_seconds)
+        self._engine_slots = threading.BoundedSemaphore(max_inflight_model_invocations)
+        register_engine(self.engine, self.engine_plugins)
+
+    @property
+    def engine(self) -> ExecutionEngine:
+        return self._engine
+
+    def close(self) -> None:
+        with self._session_guard:
+            for event in self._abort_events.values():
+                event.set()
+        self.engine_plugins.unregister(self.engine.manifest.plugin_id)
 
     def _model_for_current_run(self) -> Any:
         snapshot = self._run_model_snapshot.get()
@@ -1272,6 +1305,74 @@ class Agent:
         )
 
     def run(self, request: TurnRequest) -> RunResult:
+        cancellation = threading.Event()
+        request = replace(request, cancellation_event=CancellationEventGroup(
+            request.cancellation_event, cancellation,
+        ))
+        record = self.engine_plugins.get(self.engine.manifest.plugin_id)
+        if record.state.value != "active":
+            raise RuntimeError("selected execution engine is not active")
+        session = EngineSession(self._execute_steps(request))
+        if isinstance(self.engine, NativeExecutionEngine):
+            result = drive_engine(self.engine, session)
+        else:
+            result = drive_external_engine(
+                self.engine, session, timeout=self.engine_timeout_seconds,
+                cancellation=cancellation, slots=self._engine_slots,
+            )
+        return replace(result, data={**result.data, "execution_engine": {
+            "plugin_id": record.manifest.plugin_id,
+            "version": record.manifest.version,
+        }})
+
+    def _engine_step(
+        self, request: TurnRequest, state: AgentState,
+        abort_event: threading.Event, tool_results: Sequence[Mapping[str, Any]],
+    ) -> EngineStep:
+        streamed_chars = 0
+        stream_chunks = 0
+
+        def validate(turn: ModelTurn) -> None:
+            from .model_limits import ModelOutputLimitError, model_output_chars
+            self._assert_not_interrupted(request, abort_event)
+            if model_output_chars(turn) > self.max_model_output_chars:
+                raise ModelOutputLimitError()
+            self._models.record_usage(request, state, turn)
+            self._emit("model_end", request, provider=self.engine.manifest.plugin_id,
+                       tool_call_count=len(turn.tool_calls), usage=dict(turn.usage))
+
+        def emit_text(delta: str) -> None:
+            nonlocal streamed_chars, stream_chunks
+            from .model_limits import ModelOutputLimitError
+            self._assert_not_interrupted(request, abort_event)
+            if not isinstance(delta, str):
+                raise TypeError("engine text delta must be a string")
+            streamed_chars += len(delta)
+            stream_chunks += 1
+            if (
+                streamed_chars > self.max_model_output_chars
+                or stream_chunks > self.max_stream_chunks
+            ):
+                raise ModelOutputLimitError()
+            self._emit("model_delta", request, delta=redact_for_persistence(delta))
+
+        def prepare() -> EngineSnapshot:
+            if request.input_media and not self.engine.manifest.metadata.get("input_media"):
+                raise ValueError("selected engine does not support input media")
+            snapshot = snapshot_from_inputs(self._model_inputs(request, state))
+            self._emit("model_start", request, provider=self.engine.manifest.plugin_id,
+                       tool_count=len(snapshot.tools))
+            return snapshot
+
+        return EngineStep(
+            prepare=prepare,
+            complete_native=lambda: self._models.complete(request, state, abort_event),
+            validate=validate, emit_text=emit_text,
+            check_interrupted=lambda: self._assert_not_interrupted(request, abort_event),
+            tool_results=tool_results,
+        )
+
+    def _execute_steps(self, request: TurnRequest):
         if not isinstance(request.context, Mapping):
             raise TypeError("TurnRequest.context must be a mapping")
         request = replace(
@@ -1409,14 +1510,15 @@ class Agent:
                     return result
                 if turn_index > 0:
                     self._emit("turn_start", request, turn_index=turn_index)
+                previous_tool_results = tool_results
                 tool_results = []
                 model_request = (
                     replace(request, initial_tool_choice=None)
                     if turn_index > 0 and request.initial_tool_choice
                     else request
                 )
-                model_turn = self._models.complete(
-                    model_request, state, abort_event,
+                model_turn = yield self._engine_step(
+                    model_request, state, abort_event, previous_tool_results,
                 )
                 if model_turn.context_updates and isinstance(request.context, dict):
                     request.context.update(dict(model_turn.context_updates))
@@ -1527,6 +1629,7 @@ class Agent:
                 )
                 if (
                     not model_turn.tool_calls
+                    or not checkpoint_ok
                     or any(
                         bool(item.get("needs_input") or item.get("needs_confirmation"))
                         for item in tool_results
@@ -1819,16 +1922,18 @@ class Agent:
         finally:
             state.historical_turn_id = ""
             state.historical_requests = ()
-            with session_lock:
-                with self._session_guard:
-                    state.is_running = False
-                    key = self._session_key(
-                        request.session_id,
-                        request.user_id,
-                        request.tenant_id,
-                    )
-                    if self._abort_events.get(key) is abort_event:
-                        self._abort_events.pop(key, None)
+            # The Kernel may hold the session lock on the caller thread while
+            # a reviewed engine returns through a worker callback. The host's
+            # serialized continuation and state guard own finalization here.
+            with self._session_guard:
+                state.is_running = False
+                key = self._session_key(
+                    request.session_id,
+                    request.user_id,
+                    request.tenant_id,
+                )
+                if self._abort_events.get(key) is abort_event:
+                    self._abort_events.pop(key, None)
             with self._event_guard:
                 self._event_sequences.pop(str(request.run_id or ""), None)
             self._notify_model_run_cleanup(request, state)

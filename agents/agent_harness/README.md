@@ -23,7 +23,13 @@ AgentRuntime
   -> RunStore              durable Run/events port
 ```
 
-The stateful `Agent` follows a small, Pi-style loop:
+`Agent` 作为运行宿主保留历史、上下文、工具门禁、检查点与结果；决策循环通过
+`ExecutionEngine.run(EngineSession)` 注入。默认 `NativeExecutionEngine` 使用已有
+模型适配器；替代引擎通过同一 session 调用工具，不能另起 Run Kernel。受审引擎
+复用 PluginManifest/PluginRegistry，不能从用户 Skill 加载可执行代码。
+详见 [引擎边界与接入契约](../docs/advertising/runtime-engine-boundary-20261029.md)。
+
+The default native engine follows this loop:
 
 ```text
 user message
@@ -35,8 +41,7 @@ user message
   -> agent end
 ```
 
-Tool planning and execution are separated inside the Harness. The Agent owns
-model turns and transcript state; `ToolExecutionCoordinator` owns dependency
+Tool planning and execution are separated inside the Harness. The selected engine owns model decisions; the Agent host owns transcript state; `ToolExecutionCoordinator` owns dependency
 topology, bounded parallelism, policy hooks, timeout/retry rules, circuit
 breaking, cancellation and output limits. This keeps the execution kernel
 reusable for non-advertising Agents.

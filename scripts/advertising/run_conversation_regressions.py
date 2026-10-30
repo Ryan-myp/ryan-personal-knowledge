@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 from itertools import product
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from functools import partial
 import json
 import math
@@ -19,8 +20,10 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from agents.agent_platform.evals.regression import RegressionAssertions, evaluate_regression
+from agents.agent_platform.evals.task_quality import TurnCheckpoint, evaluate_task
+from agents.agent_platform.evals.task_release import dataset_digest, source_digest
 from agents.agent_platform.evals.execution_evidence import regression_calls, run_status_evidence
 from agents.deployments.advertising.local_config import load_default_local_env
 from agents.evals.advertising.skill_up_engine import configured_model_adapter
@@ -31,11 +34,23 @@ class RegressionCase(BaseModel):
 
     id: str = Field(min_length=1, max_length=200, pattern=r"^[\w.:-]+$")
     input: str = Field(min_length=1, max_length=4000)
-    history: list[str] = Field(default_factory=list, max_length=11)
+    history: list[str] = Field(default_factory=list, max_length=49)
+    checkpoints: list[TurnCheckpoint] = Field(default_factory=list, max_length=50)
+    task_forbidden_tools: list[str] = Field(default_factory=list, max_length=64)
     expected_behavior: str = Field(default="", max_length=2000)
     previous_output: str = Field(default="", max_length=4000)
     assertions: RegressionAssertions = Field(default_factory=RegressionAssertions)
     runnable: bool | None = None
+
+    @model_validator(mode="after")
+    def validate_task(self):
+        turns = [item.turn for item in self.checkpoints]
+        if len(turns) != len(set(turns)) or any(t > len(self.history) + 1 for t in turns):
+            raise ValueError("checkpoints must reference unique existing user turns")
+        RegressionAssertions(forbidden_tools=self.task_forbidden_tools)
+        if sum(map(len, self.history)) + len(self.input) > 30_000:
+            raise ValueError("task exceeds the bounded input budget")
+        return self
 
     @field_validator("history")
     @classmethod
@@ -171,12 +186,16 @@ def run_suite(
         runtime_state: dict[str, Any] = {}
         execution_states: list[str] = []
         execution_evidence: list[dict[str, Any]] = []
-        if not case.assertions.executable:
+        turn_timings = []
+        task_checks = bool(case.checkpoints or case.task_forbidden_tools)
+        if not case.assertions.executable and not task_checks:
             result = {"status": "ungraded", "checks": 0, "failures": []}
         else:
             try:
                 response = execute(case)
                 phase_ms = _safe_phase_timings(response)
+                for turn in (response.get("turn_evidence") or [])[:50]:
+                    turn_timings.append(_safe_phase_timings(turn))
                 calls = regression_calls(response)
                 if "status" in response:
                     runtime_state["status"] = run_status_evidence(response["status"])
@@ -203,13 +222,23 @@ def run_suite(
                     for name in [str(call.get("tool") or "")]
                 ]
                 result = evaluate_regression(response, case.assertions)
+                if task_checks:
+                    task = evaluate_task(
+                        response, turns=len(case.history) + 1,
+                        checkpoints=case.checkpoints, forbidden_tools=case.task_forbidden_tools,
+                    )
+                    result["checks"] += task["checks"]
+                    result["failures"].extend(task["failures"])
+                    result["status"] = "failed" if result["failures"] else "passed"
             except (OSError, RuntimeError, ValueError, KeyError, TypeError) as error:
                 result = {"status": "error", "checks": 0, "failures": [type(error).__name__]}
         results.append({
             "id": case.id, "attempt": attempt, **result,
+            "user_turns": len(case.history) + 1,
             "tool_call_count": tool_call_count,
             "tool_names": tool_names,
             "phase_ms": phase_ms,
+            "turn_phase_ms": turn_timings,
             "runtime_state": runtime_state, "execution_states": execution_states,
             "tool_execution_evidence": execution_evidence,
             "duration_ms": round((time.perf_counter() - started) * 1000, 3),
@@ -238,6 +267,14 @@ def run_suite(
             blockers.append("latency_p95_exceeded")
     return {
         "schema_version": "agent-regression-report/v1", "mode": mode,
+        "latency_unit": "complete_task_including_history",
+        "turn_latency_p95_ms": (
+            sorted(turn_durations)[math.ceil(len(turn_durations) * 0.95) - 1]
+            if (turn_durations := [
+                timing["run_wall"] for row in results
+                for timing in row["turn_phase_ms"] if "run_wall" in timing
+            ]) else None
+        ),
         "unique_cases": len(cases), "repeats": repeats,
         "complete": True, "completed_cases": len(results),
         "provider_e2e": False, "total": len(results), **totals, "cases": results,
@@ -313,6 +350,7 @@ def main() -> int:
         if args.release_gate else None
     )
     cases = load_cases(args.cases)
+    source_before = source_digest(ROOT)
     progress = RegressionProgressWriter(
         args.output, total=len(cases) * args.repeats,
         mode="model_backed_offline_providers" if args.model_backed else "replay_assertions",
@@ -322,6 +360,14 @@ def main() -> int:
         mode="model_backed_offline_providers" if args.model_backed else "replay_assertions",
         release_gate=release_gate, on_case_complete=progress.record, repeats=args.repeats,
     )
+    report["identity"] = {
+        "source_sha256": source_before, "dataset_sha256": dataset_digest(cases),
+        "recorded_at": datetime.now(timezone.utc).isoformat(),
+        "source_unchanged": source_before == source_digest(ROOT),
+    }
+    if not report["identity"]["source_unchanged"]:
+        report["release_ready"] = False
+        report["release_blockers"].append("source_changed_during_evaluation")
     rendered = json.dumps(report, ensure_ascii=False, indent=2)
     if args.output:
         _write_report(args.output, rendered + "\n")

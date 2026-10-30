@@ -33,6 +33,9 @@ class AgentApplication:
         cls,
         *,
         model: Any,
+        engine: Any = None,
+        engine_plugins: Any = None,
+        engine_timeout_seconds: float = 300.0,
         system_prompt: str = "",
         max_turns: int = 12,
         tool_execution: str = "parallel",
@@ -98,6 +101,9 @@ class AgentApplication:
         tools = tool_catalog or InMemoryToolCatalog()
         agent = Agent(
             model=model,
+            engine=engine,
+            engine_plugins=engine_plugins,
+            engine_timeout_seconds=engine_timeout_seconds,
             tool_catalog=tools,
             skill_catalog=skills,
             system_prompt=system_prompt,
@@ -151,6 +157,24 @@ class AgentApplication:
             default_execution_mode=default_execution_mode,
         )
         return cls(runtime=runtime, agent=agent, skills=skills, tools=tools)
+
+    @property
+    def engine(self) -> Any:
+        return self.agent.engine
+
+    @property
+    def model(self) -> Any:
+        return self.agent.model
+
+    def configure_model(self, model: Any) -> None:
+        from .execution_engine import NativeExecutionEngine
+
+        if not isinstance(self.engine, NativeExecutionEngine):
+            raise ValueError("selected engine manages its own model configuration")
+        self.agent.model = model
+
+    def configure_tool_selector(self, selector: Any) -> None:
+        self.agent.tool_selector = selector
 
     def register_skill_source(self, source: SkillSource) -> list[str]:
         return self.skills.register_source(source)

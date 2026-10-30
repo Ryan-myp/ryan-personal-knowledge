@@ -9,6 +9,7 @@ from agents.agent_harness.core.namespace import normalize_namespace
 from agents.agent_harness.redaction import redact_for_persistence
 from .optimization_measurements import validate_measurement, compare_measurements
 from .optimization_evidence import load_evidence, utc_time, value_at, same_value
+from .optimization_report_evidence import measurement_provenance
 
 
 class OptimizationReviewService:
@@ -40,6 +41,10 @@ class OptimizationReviewService:
             if redact_for_persistence(arguments) != arguments:
                 raise ValueError("复盘记录不能包含凭证")
             validate_measurement(arguments["baseline"], self.now().date())
+            provenance = measurement_provenance(
+                self.store, self.registry, principal, arguments, arguments["baseline"],
+                arguments.get("baseline_evidence"),
+            )
             key = [principal.tenant_id, principal.user_id] + [
                 arguments[field]
                 for field in ("namespace", "account_id", "resource_type", "resource_id", "field")
@@ -60,6 +65,7 @@ class OptimizationReviewService:
                 "history": [{"status": "proposed", "at": self.now().isoformat()}],
                 "approval_status": "not_approved",
                 "external_write_performed": False,
+                "baseline_provenance": provenance,
             }
             return self._save(principal, row, 0)
         except (ValueError, KeyError, TypeError) as error:
@@ -142,9 +148,9 @@ class OptimizationReviewService:
                 raise ValueError("复盘记录不能包含凭证")
             action = arguments["action"]
             if action == "review":
-                self._review(row, arguments)
+                self._review(principal, row, arguments)
             elif action == "reopen":
-                self._reopen(row, arguments)
+                self._reopen(principal, row, arguments)
             elif action in {"link_execution", "verify_readback"}:
                 self._link(principal, row, arguments)
             else:
@@ -187,7 +193,7 @@ class OptimizationReviewService:
                 raise ValueError("回读结果未确认预期变更")
             row.update(status="verified", readback=arguments["evidence"])
 
-    def _review(self, row, arguments):
+    def _review(self, principal, row, arguments):
         if row["status"] != "verified":
             raise ValueError("尚未验证实际执行及回读，不能宣称优化效果")
         row["result"] = compare_measurements(
@@ -197,17 +203,32 @@ class OptimizationReviewService:
             observation_days=row["observation_days"],
             today=self.now().date(),
         )
+        provenance = measurement_provenance(
+            self.store, self.registry, principal, row, arguments["outcome"],
+            arguments.get("outcome_evidence"),
+        )
+        row["outcome_provenance"] = provenance
+        statuses = {row.get("baseline_provenance", {}).get("status"), provenance["status"]}
+        if statuses <= {"audited_report", "audited_value_declared_context"}:
+            row["result"]["evidence_status"] = "audited_values_with_context_gaps"
+        row["result"]["context_gaps"] = sorted(set(
+            row.get("baseline_provenance", {}).get("unverified_context_fields", [])
+            + provenance["unverified_context_fields"]
+        ))
         row.update(
             status="reviewed", outcome=arguments["outcome"], reviewed_at=self.now().isoformat()
         )
 
-    def _reopen(self, row, arguments):
+    def _reopen(self, principal, row, arguments):
         if row["status"] != "reviewed":
             raise ValueError("上一轮尚未完成复盘")
         if self.now() < utc_time(row["executed_at"]) + timedelta(days=row["cooldown_days"]):
             raise ValueError("仍在冷却期")
         baseline = arguments["outcome"]
         validate_measurement(baseline, self.now().date())
+        provenance = measurement_provenance(
+            self.store, self.registry, principal, row, baseline, arguments.get("outcome_evidence"),
+        )
         previous = {
             key: row.get(key)
             for key in (
@@ -218,11 +239,13 @@ class OptimizationReviewService:
                 "result",
                 "execution",
                 "readback",
+                "baseline_provenance", "outcome_provenance",
             )
         }
         row.update(
             previous_cycle=previous,
             baseline=baseline,
+            baseline_provenance=provenance,
             expected_value=arguments["expected_value"],
             proposal=arguments["proposal"],
             status="proposed",
@@ -237,5 +260,6 @@ class OptimizationReviewService:
             "readback",
             "reviewed_at",
             "readback_tool",
+            "outcome_provenance", "baseline_evidence",
         ):
             row.pop(key, None)

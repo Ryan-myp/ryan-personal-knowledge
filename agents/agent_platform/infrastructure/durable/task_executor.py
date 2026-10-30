@@ -451,6 +451,21 @@ class TaskExecutor:
         self._capacity.release()
         self._queue_poller_wakeup.set()
 
+    @staticmethod
+    def _invoke_handler(handler, context, timer, heartbeat_stop, heartbeat_thread):
+        """Settle watchdog signals before interpreting and persisting the outcome."""
+        try:
+            return handler(context)
+        finally:
+            timer.cancel()
+            heartbeat_stop.set()
+            heartbeat_thread.join(timeout=0.1)
+            if heartbeat_thread.is_alive():
+                # Ownership is unresolved; a late heartbeat cannot make this
+                # uncertain completion look successful.
+                context.lease_lost_event.set()
+                context.cancel_event.set()
+
     def _run(
         self, task_id: str, cancel_event: threading.Event,
         start_gate: Optional[threading.Event] = None,
@@ -466,7 +481,7 @@ class TaskExecutor:
             if handler is None:
                 self.store.update_task(
                     task_id, "failed", error="task handler is no longer registered",
-                    expected_statuses=["running"],
+                    expected_statuses=["running", "cancelling"], lease_owner=self._worker_id,
                 )
                 return
             deadline = datetime.now() + timedelta(seconds=self.task_timeout_seconds)
@@ -484,11 +499,13 @@ class TaskExecutor:
                     self.store.update_task(
                         task_id, "failed",
                         error=f"pre-execution hook failed: {type(exc).__name__}",
-                        expected_statuses=["running"],
+                        expected_statuses=["running", "cancelling"], lease_owner=self._worker_id,
                     )
                     return
             current_before_run = self.store.get_task(task_id)
-            if current_before_run and current_before_run.status == "cancelling":
+            if current_before_run is None or current_before_run.lease_owner != self._worker_id:
+                return
+            if current_before_run.status == "cancelling":
                 cancel_event.set()
             heartbeat_stop = threading.Event()
             deadline_event = threading.Event()
@@ -532,7 +549,9 @@ class TaskExecutor:
             )
             heartbeat_thread.start()
             try:
-                result = handler(context)
+                result = self._invoke_handler(
+                    handler, context, deadline_timer, heartbeat_stop, heartbeat_thread,
+                )
                 safe_result = self._safe_result(result)
                 outcome_status = task_outcome_status(safe_result)
                 current = self.store.get_task(task_id)
@@ -556,14 +575,14 @@ class TaskExecutor:
                         workflow_id=workflow_id,
                         error="任务执行租约丢失；外部副作用状态未知，请先核对后再处理",
                         metadata={"lease_lost": True, "effect_state": "unknown"},
-                        expected_statuses=["running", "cancelling"],
+                        expected_statuses=["running", "cancelling"], lease_owner=self._worker_id,
                     )
                 elif cancellation_requested and outcome_status != "recovery_required":
                     self.store.update_task(
                         task_id, "cancelled", result=safe_result,
                         workflow_id=workflow_id,
                         metadata={"completed_after_cancellation": True},
-                        expected_statuses=["running", "cancelling"],
+                        expected_statuses=["running", "cancelling"], lease_owner=self._worker_id,
                     )
                 elif deadline_exceeded:
                     # The handler may have completed an external write before
@@ -582,7 +601,7 @@ class TaskExecutor:
                             "deadline_exceeded": True,
                             "effect_state": "unknown",
                         },
-                        expected_statuses=["running"],
+                        expected_statuses=["running", "cancelling"], lease_owner=self._worker_id,
                     )
                 else:
                     outcome_error = None
@@ -598,7 +617,7 @@ class TaskExecutor:
                         task_id, outcome_status, result=safe_result,
                         error=outcome_error, metadata=outcome_metadata,
                         workflow_id=workflow_id,
-                        expected_statuses=["running"],
+                        expected_statuses=["running", "cancelling"], lease_owner=self._worker_id,
                     )
             except Exception as exc:
                 current = self.store.get_task(task_id)
@@ -617,12 +636,8 @@ class TaskExecutor:
                     task_id, status,
                     error=self._safe_error(exc),
                     metadata=self._failure_metadata(exc, deadline_exceeded),
-                    expected_statuses=["running", "cancelling"],
+                    expected_statuses=["running", "cancelling"], lease_owner=self._worker_id,
                 )
-            finally:
-                deadline_timer.cancel()
-                heartbeat_stop.set()
-                heartbeat_thread.join(timeout=0.1)
         finally:
             with self._lock:
                 self._handles.pop(task_id, None)

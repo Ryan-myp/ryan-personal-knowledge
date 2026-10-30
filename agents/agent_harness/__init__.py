@@ -6,6 +6,9 @@ Runtime contracts. Applications provide their own domain stages and executors.
 
 __version__ = "0.1.0"
 
+from .execution_engine import (
+    ExecutionEngine, EngineSession, EngineSnapshot, EngineStopped, NativeExecutionEngine,
+)
 from .application import AgentApplication
 from .agent import (
     Agent,
@@ -79,6 +82,8 @@ from .turn_pipeline import (
 )
 
 __all__ = [
+    "ExecutionEngine", "EngineSession", "EngineSnapshot", "EngineStopped",
+    "NativeExecutionEngine",
     "AgentRuntime",
     "AgentApplication",
     "Agent",

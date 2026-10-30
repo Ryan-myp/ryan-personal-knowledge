@@ -2,6 +2,7 @@
 
 from datetime import datetime, timezone
 from agents.agent_harness.core.namespace import normalize_namespace
+from agents.tools.advertising.shared.domain.account_scope import tool_account_fields
 
 _MAX_EVIDENCE_CALLS = 100
 
@@ -63,7 +64,8 @@ def _matches_target(data, definition, review):
     except ValueError:
         return False  # A call without an explicit target cannot establish evidence.
     return str(resource_id) == review["resource_id"] and any(
-        str(data.get(field, "")) == review["account_id"] for field in definition.scope_fields
+        str(data.get(field, "")) == review["account_id"]
+        for field in tool_account_fields(definition)
     )
 
 

@@ -8,6 +8,7 @@ from agents.applications.advertising.persistence.store import AdAgentStore
 from agents.applications.advertising.composition.ad_application import AdvertisingComposition
 import agents.deployments.advertising.api_server as api_server
 from agents.applications.advertising.persistence.models import ExecutionRunRecord, TaskRecord, ToolCallRecord
+from agents.agent_harness import InMemoryMetrics
 
 
 def test_monitoring_snapshot_reports_queue_lease_recovery_and_scope():
@@ -67,6 +68,7 @@ def test_monitoring_http_endpoint_is_authenticated_and_scoped(monkeypatch):
         require_llm=False,
         persistence_store=AdAgentStore(":memory:"),
         enforce_account_scope=False,
+        metrics=InMemoryMetrics(),
     )
     monkeypatch.setattr(api_server, "runtime", runtime)
     monkeypatch.setattr(api_server, "API_KEY", "monitor-key")
@@ -88,6 +90,8 @@ def test_monitoring_http_endpoint_is_authenticated_and_scoped(monkeypatch):
             assert "cache" in payload["instance"]
             assert "memory" in payload["instance"]["cache"]
             assert "knowledge" in payload["instance"]["cache"]
+            assert payload["instance"]["experience_metrics"]["scope"] == "process_recent_completed_runs"
+            assert "recovery" in payload
     finally:
         if api_server.runtime is runtime:
             runtime.close(wait=True)

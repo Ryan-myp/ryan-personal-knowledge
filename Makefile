@@ -84,7 +84,7 @@ ad-agent-knowledge-check:
 
 ad-agent-model-quality:
 	@test -n "$$AD_AGENT_EVAL_MAX_P95_MS" || (echo "Set AD_AGENT_EVAL_MAX_P95_MS to an approved latency threshold"; exit 2)
-	@$(AD_AGENT_PYTHON_WRAPPER) scripts/advertising/run_conversation_regressions.py --cases agents/evals/advertising/conversation_holdout_cases.json --model-backed --repeats 3 --release-gate --min-cases 8 --max-p95-ms "$$AD_AGENT_EVAL_MAX_P95_MS"
+	@$(AD_AGENT_PYTHON_WRAPPER) scripts/advertising/run_conversation_regressions.py --cases agents/evals/advertising/conversation_holdout_cases.json --model-backed --repeats 3 --release-gate --min-cases 8 --max-p95-ms "$$AD_AGENT_EVAL_MAX_P95_MS" --output outputs/conversation-model-quality.json
 
 ad-agent-reliability-evidence:
 	@$(AD_AGENT_PYTHON_WRAPPER) scripts/advertising/production_reliability_evidence.py

@@ -415,6 +415,15 @@
                         </div>
                     </section>
                 </div>
+                <section class="monitoring-panel">
+                    <div class="monitoring-panel-heading"><div><h2>响应耗时</h2><p>当前进程 · 最近 256 个已结束回合 · 不含排队</p></div></div>
+                    <div class="monitoring-tool-table-wrap"><table class="monitoring-tool-table"><thead><tr><th>指标</th><th>P50</th><th>P95</th><th>样本</th></tr></thead><tbody id="monitoringExperienceRows"><tr><td colspan="4" class="monitoring-empty">暂无样本</td></tr></tbody></table></div>
+                </section>
+                <section class="monitoring-panel">
+                    <div class="monitoring-panel-heading"><div><h2>待核验记录</h2></div><span class="monitoring-recovery-total" id="monitoringRecoveryTotal"></span></div>
+                    <div class="monitoring-tool-table-wrap"><table class="monitoring-tool-table monitoring-recovery-table"><thead><tr><th>类型</th><th>记录</th><th>原因</th><th>操作</th></tr></thead><tbody id="monitoringRecoveryRows"><tr><td colspan="4" class="monitoring-empty">暂无待核验记录</td></tr></tbody></table></div>
+                    <pre class="monitoring-recovery-detail" id="monitoringRecoveryDetail" role="status" hidden></pre>
+                </section>
                 <div class="monitoring-grid monitoring-grid-main">
                     <section class="monitoring-panel monitoring-queue-panel">
                         <div class="monitoring-panel-heading"><div><h2>任务流转</h2><p>Durable queue 状态与本机线程池占用</p></div><span class="monitoring-panel-mark">01</span></div>

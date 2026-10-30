@@ -31,6 +31,7 @@ EVIDENCE_STAGES = (
     "code_contract",
     "dry_run",
     "model_quality",
+    "task_quality",
     "security",
     "provider_scope",
     "provider_query_e2e",
@@ -178,6 +179,7 @@ def build_readiness_report(
     contract_gate_errors: list[str] | tuple[str, ...] = (),
     dry_run_report: Mapping[str, Any] | None = None,
     model_quality_report: Mapping[str, Any] | None = None,
+    task_quality_report: Mapping[str, Any] | None = None,
     security_report: Mapping[str, Any] | None = None,
     provider_evidence: Mapping[str, Any] | None = None,
     policy: ReadinessPolicy,
@@ -369,6 +371,9 @@ def build_readiness_report(
         )
 
     stage_results = {
+        "task_quality": dict(task_quality_report or {
+            "status": "not_verified", "errors": ["task_evidence_missing"],
+        }),
         "code_contract": {
             "status": "passed" if code_contract_ok else "failed",
             "evidence": "tool_source audit and executable Tool contract gate",

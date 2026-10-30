@@ -48,6 +48,7 @@ class PluginKind(str, Enum):
     RENDERER = "renderer"
     EVALUATOR = "evaluator"
     MEMORY = "memory"
+    ENGINE = "engine"
 
 
 class PluginState(str, Enum):

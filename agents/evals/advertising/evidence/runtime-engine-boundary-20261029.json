@@ -1,0 +1,62 @@
+{
+  "date": "2026-10-29",
+  "scope": "平台执行引擎边界改造",
+  "default_engine": "harness.native-engine",
+  "external_sdks": {
+    "hermes_agent": "not_integrated",
+    "claude_agent_sdk": "not_integrated"
+  },
+  "provider_api_calls": 0,
+  "external_model_calls": 0,
+  "focused_tests": {
+    "passed": 30,
+    "log": "/tmp/engine-coverage-tests.log"
+  },
+  "coverage": {
+    "scope": "agents.agent_harness.execution_engine",
+    "statements": 189,
+    "covered": 179,
+    "percent": 94.70899470899471,
+    "whole_repository_coverage_claimed": false
+  },
+  "quality": {
+    "new_engine_module_score": 83.0,
+    "new_engine_module_gate": "pass",
+    "new_module_reviewed_findings": "2 broad catches at the engine boundary; both pass errors to the host failure path",
+    "repository_score": 0.0,
+    "repository_gate": "fail",
+    "repository_issues": 4998,
+    "threshold_lowered": false
+  },
+  "storage_schema_changed": false,
+  "checks": {
+    "command": "make ad-agent-check",
+    "exit_code": 0,
+    "python_passed": 3586,
+    "frontend_passed": 266,
+    "tool_contracts_validated": 328,
+    "builtin_knowledge_pages": 86,
+    "knowledge_benchmark_passed": true,
+    "diff_check": "passed",
+    "log": "/tmp/execution-engine-verified-check.log",
+    "test_fixture_repair": "旧超时测试的最小 runtime fixture 已补充 engine/PluginRegistry 字段；最终整套复测通过"
+  },
+  "deployment": {
+    "status": "ready",
+    "listen": "0.0.0.0:8766",
+    "pid": 57350,
+    "engine": {
+      "plugin_id": "harness.native-engine",
+      "version": "1.0.0",
+      "state": "active"
+    },
+    "data_preserved": true,
+    "sessions": 514,
+    "user_templates": 14,
+    "schedules": 5,
+    "runtime_tools": 354,
+    "backup_created": true,
+    "backup_file": "pre-execution-engine-20261029-213736.db",
+    "launchagent": "bootstrap 首次 exit 5；确认未注册后重试成功。未切换到临时服务。"
+  }
+}

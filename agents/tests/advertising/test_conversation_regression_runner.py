@@ -271,7 +271,7 @@ def test_holdout_contains_multi_turn_cases_and_no_case_can_set_credentials():
 def test_history_is_bounded_and_cannot_override_the_current_turn():
     with pytest.raises(ValueError):
         RegressionCase(
-            id="bad", input="continue", history=["x"] * 12,
+            id="bad", input="continue", history=["x"] * 50,
         )
     with pytest.raises(ValueError):
         RegressionCase(

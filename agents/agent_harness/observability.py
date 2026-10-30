@@ -12,6 +12,7 @@ import threading
 import time
 from dataclasses import dataclass
 from typing import Any, Mapping, Protocol
+from .run_experience import RunExperienceMetrics
 
 
 class MetricsSink(Protocol):
@@ -120,11 +121,13 @@ class InMemoryMetrics:
         self._durations: dict[str, dict[str, float]] = {}
         self._samples: dict[str, deque[float]] = {}
         self._started: dict[tuple[str, str], float] = {}
+        self._experience = RunExperienceMetrics()
 
     def observe(self, event: Mapping[str, Any]) -> None:
         event_type = str(event.get("type") or event.get("event_type") or "").strip()
         if not event_type:
             return
+        self._experience.observe(event)
         run_id = str(event.get("run_id") or "")
         tool_name = str(event.get("tool_name") or "")
         tool_call_id = str(event.get("tool_call_id") or tool_name)
@@ -221,6 +224,7 @@ class InMemoryMetrics:
                 "counters": dict(sorted(self._counters.items())),
                 "durations": durations,
                 "in_flight": len(self._started),
+                "experience": self._experience.snapshot(),
             }
 
     def reset(self) -> None:
@@ -229,6 +233,7 @@ class InMemoryMetrics:
             self._durations.clear()
             self._samples.clear()
             self._started.clear()
+            self._experience.reset()
 
 
 __all__ = [

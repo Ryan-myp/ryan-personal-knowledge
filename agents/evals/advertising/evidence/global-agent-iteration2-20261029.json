@@ -1,0 +1,146 @@
+{
+  "date": "2026-10-29",
+  "previous_round_commit": "ff0cac9",
+  "previous_round_pushed": true,
+  "scope": [
+    "conversation_context_priority",
+    "task_lease_completion_fence",
+    "knowledge_save_races",
+    "history_refresh_recovery"
+  ],
+  "validation": {
+    "make_ad_agent_check": "passed",
+    "python_tests": 3514,
+    "frontend_tests": 266,
+    "focused_coverage_tests": 137,
+    "changed_python_line_coverage": {
+      "scope": "changed_executable_python_lines",
+      "covered": 36,
+      "executable": 36,
+      "percent": 100.0,
+      "files": {
+        "agents/agent_platform/infrastructure/durable/sqlite_store.py": {
+          "covered": 2,
+          "executable": 2,
+          "missing": []
+        },
+        "agents/agent_platform/infrastructure/durable/task_executor.py": {
+          "covered": 14,
+          "executable": 14,
+          "missing": []
+        },
+        "agents/applications/advertising/integrations/ad_turn_context.py": {
+          "covered": 4,
+          "executable": 4,
+          "missing": []
+        },
+        "agents/applications/advertising/integrations/integration.py": {
+          "covered": 14,
+          "executable": 14,
+          "missing": []
+        },
+        "agents/applications/advertising/persistence/store.py": {
+          "covered": 2,
+          "executable": 2,
+          "missing": []
+        }
+      }
+    },
+    "browser": {
+      "historyFailurePreservedRows": true,
+      "historyRetryWorked": true,
+      "knowledgeUnsavedEditsPreserved": true,
+      "manualVersionPreserved": true,
+      "subsequentSavePersisted": true,
+      "pageErrors": [],
+      "productionWrites": 0,
+      "providerCalls": 0
+    },
+    "provider_contracts": 328,
+    "knowledge_pages": 86,
+    "git_diff_check": "passed",
+    "qguard": {
+      "whole_repository_passed": false,
+      "files": 785,
+      "findings": 4996,
+      "score": 0
+    },
+    "quality_delta": {
+      "scope": "changed_python_sources_vs_HEAD",
+      "files_scanned": 7,
+      "baseline_findings": 138,
+      "current_findings": 140,
+      "new_findings": [
+        {
+          "file": "agents/agent_platform/infrastructure/durable/ports.py",
+          "rule_id": "code_quality.too_many_parameters",
+          "severity": "warning",
+          "source_hash": "adfec136d7f8074dfaa9903a50472001bdd9578bb4521ca700e3fa72a095979b",
+          "line": 45
+        },
+        {
+          "file": "agents/agent_platform/infrastructure/durable/sqlite_store.py",
+          "rule_id": "code_quality.too_many_parameters",
+          "severity": "warning",
+          "source_hash": "adfec136d7f8074dfaa9903a50472001bdd9578bb4521ca700e3fa72a095979b",
+          "line": 274
+        },
+        {
+          "file": "agents/applications/advertising/persistence/interfaces.py",
+          "rule_id": "code_quality.too_many_parameters",
+          "severity": "warning",
+          "source_hash": "adfec136d7f8074dfaa9903a50472001bdd9578bb4521ca700e3fa72a095979b",
+          "line": 414
+        },
+        {
+          "file": "agents/applications/advertising/persistence/store.py",
+          "rule_id": "code_quality.too_many_parameters",
+          "severity": "warning",
+          "source_hash": "adfec136d7f8074dfaa9903a50472001bdd9578bb4521ca700e3fa72a095979b",
+          "line": 850
+        }
+      ],
+      "gate_passed": false,
+      "whole_repository_gate": "not_assessed_by_delta_gate"
+    },
+    "quality_review": "新增四处参数数量提醒来自同一 update_task 契约的两份 Protocol 与两份实现；可选 lease_owner 保持调用兼容。无忽略规则或阈值变更。"
+  },
+  "service": {
+    "ready": "ready",
+    "listen": "0.0.0.0:8766",
+    "backup_created": true,
+    "sessions": 514,
+    "templates": 14,
+    "tools": 354,
+    "recent_session_ids_preserved": true,
+    "template_ids_preserved": true,
+    "management_counts": {
+      "knowledge_documents": 0,
+      "skill_versions": 0,
+      "skill_releases": 0,
+      "scheduled_tasks": 5,
+      "mcp_servers": 0,
+      "raw_knowledge_sources": 0
+    },
+    "management_ids_preserved": true,
+    "static_revision": "5dcdaef2b2856f3101edb828",
+    "static_checks": {
+      "chat-knowledge.js": true,
+      "chat-requests.js": true
+    },
+    "temporary_server_closed": true
+  },
+  "boundaries": {
+    "production_test_writes": false,
+    "schema_migration": false,
+    "provider_api_calls_for_validation": 0,
+    "real_model_evaluation": false,
+    "credentials_changed": false,
+    "new_round_committed": false
+  },
+  "limitations": [
+    "未重新测量真实模型的意图识别与多轮回答质量。",
+    "外部副作用未知仍须核对；取消不等于回滚。",
+    "严格全仓和增量质量门禁未全部通过。"
+  ]
+}

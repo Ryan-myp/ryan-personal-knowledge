@@ -696,6 +696,21 @@
             return loadManagedKnowledgeDocuments();
         }
 
+        function knowledgeEditorSnapshot() {
+            return Object.fromEntries([
+                'knowledgeTitle', 'knowledgeContent', 'knowledgeWritePlatform', 'knowledgeWriteType',
+                'knowledgeTags', 'knowledgeSource', 'knowledgeVersion',
+            ].map(id => [id, document.getElementById(id)?.value || '']));
+        }
+
+        function preservePendingKnowledgeEdits(snapshot) {
+            if (JSON.stringify(knowledgeEditorSnapshot()) === JSON.stringify(snapshot)) return false;
+            resourceCatalogs.knowledge.hasDraft = true;
+            resourceCatalogs.knowledge.draft = null;
+            setKnowledgeWriteStatus('提交时的内容已保存；新增编辑仍未保存，请再次保存。');
+            return true;
+        }
+
         async function saveKnowledgeDocument(publishNow = false) {
             if (knowledgeSavePending) return;
             const title = document.getElementById('knowledgeTitle')?.value.trim() || '';
@@ -707,6 +722,8 @@
             setKnowledgeWriteStatus('正在保存知识文档…');
             knowledgeSavePending = true;
             const sequence = knowledgeEditSequence;
+            const snapshot = knowledgeEditorSnapshot();
+            resourceCatalogs.knowledge.hasDraft = true;
             for (const id of ['knowledgeSaveDraftButton', 'knowledgeSavePublishButton']) {
                 const button = document.getElementById(id);
                 if (button) button.disabled = true;
@@ -732,7 +749,11 @@
                 if (sequence !== knowledgeEditSequence) return;
                 setKnowledgeEditorMode(created.document_id, Object.fromEntries(
                     Object.keys(knowledgeState.editorMetadata || {}).map(key => [key, created[key] ?? payload[key]])));
-                document.getElementById('knowledgeVersion').value = created.version || payload.version;
+                const versionInput = document.getElementById('knowledgeVersion');
+                if (versionInput.value === snapshot.knowledgeVersion) {
+                    versionInput.value = created.version || payload.version;
+                    snapshot.knowledgeVersion = versionInput.value;
+                }
                 if (publishNow) {
                     await apiFetch(`/knowledge/documents/${encodeURIComponent(created.document_id)}/publish`, { method: 'POST' });
                     if (sequence !== knowledgeEditSequence) return;
@@ -740,9 +761,10 @@
                 } else {
                     setKnowledgeWriteStatus(created.version_mode === 'new_draft' ? '已生成新版本草稿；发布后才会进入检索和 Agent 上下文。' : '已保存为草稿；发布后才会进入检索和 Agent 上下文。');
                 }
-                resourceCatalogs.knowledge.hasDraft = false;
+                if (preservePendingKnowledgeEdits(snapshot)) return;
                 await loadManagedKnowledgeDocuments();
-                if (sequence !== knowledgeEditSequence) return;
+                if (sequence !== knowledgeEditSequence || preservePendingKnowledgeEdits(snapshot)) return;
+                resourceCatalogs.knowledge.hasDraft = false;
                 showResourceList('knowledge');
             } catch (error) {
                 if (sequence !== knowledgeEditSequence) return;

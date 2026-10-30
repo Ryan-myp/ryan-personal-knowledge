@@ -111,6 +111,7 @@ class AdvertisingComposition(
         alert_sink: Optional[AlertSink] = None,
         credential_provider: Optional[CredentialProvider] = None,
         quota_provider: Optional[QuotaProvider] = None,
+        execution_engine: Any = None,
     ):
         from .ad_application_bootstrap import AdApplicationBootstrap
 

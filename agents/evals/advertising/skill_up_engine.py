@@ -90,8 +90,8 @@ def _messages(session_input: Mapping[str, Any]) -> List[Dict[str, str]]:
         if not isinstance(prompt, str) or not prompt.strip():
             raise ValueError("SessionInput.messages or SessionInput.prompt is required")
         return [{"role": "user", "content": prompt}]
-    if len(raw_messages) > 24:
-        raise ValueError("SessionInput.messages exceeds the 24-message limit")
+    if len(raw_messages) > 50:
+        raise ValueError("SessionInput.messages exceeds the 50-message limit")
 
     result: List[Dict[str, str]] = []
     total_chars = 0
@@ -122,8 +122,8 @@ def _user_turns(messages: List[Dict[str, str]]) -> List[str]:
     ]
     if not turns:
         raise ValueError("SessionInput must contain a non-empty user message")
-    if len(turns) > 12:
-        raise ValueError("SessionInput exceeds the 12-user-turn limit")
+    if len(turns) > 50:
+        raise ValueError("SessionInput exceeds the 50-user-turn limit")
     return turns
 
 
@@ -175,6 +175,7 @@ def _structured_evidence(runtime_result: Mapping[str, Any]) -> dict[str, Any]:
         "usage": runtime_result.get("usage") or {},
         "model_metrics": runtime_result.get("model_metrics") or {},
         "phase_metrics": runtime_result.get("phase_metrics") or {},
+        "experience_metrics": runtime_result.get("experience_metrics") or {},
     }
     for key in ("needs_input", "needs_confirmation"):
         if key in runtime_result:
@@ -236,7 +237,10 @@ def _session_result(
             # Structured evidence is platform-generated Runtime output. It is
             # retained for the local judge and is already subject to Runtime
             # result redaction; it is not model/tool execution tool_source.
-            "runtime_result": _structured_evidence(runtime_result),
+            "runtime_result": {
+                **_structured_evidence(runtime_result),
+                "turn_evidence": runtime_result.get("turn_evidence", []),
+            },
         },
     })
 
@@ -353,21 +357,32 @@ def run(
     started = time.monotonic()
     from agents.agent_platform.evals.model_metrics import ModelMetrics
     from agents.agent_platform.evals.phase_metrics import PhaseMetrics
+    from agents.agent_harness.run_experience import RunExperienceMetrics
 
     model_metrics = ModelMetrics()
     phase_metrics = PhaseMetrics()
+    turn_model_metrics = ModelMetrics()
+    turn_phase_metrics = PhaseMetrics()
+    turn_experience = RunExperienceMetrics()
     from agents.agent_platform.evals.execution_evidence import ToolArgumentEvidence
     argument_evidence = ToolArgumentEvidence()
     def record_metrics(event: Mapping[str, Any]) -> None:
         model_metrics(event)
         phase_metrics(event)
+        turn_model_metrics(event)
+        turn_phase_metrics(event)
+        turn_experience.observe(event)
         argument_evidence(event)
 
     try:
         runtime_result = {}
+        turn_evidence = []
         session_id = "skill-up:" + str(session_input.get("case_id") or "case")
         for user_input in user_turns:
             argument_evidence.clear()
+            turn_model_metrics = ModelMetrics()
+            turn_phase_metrics = PhaseMetrics()
+            turn_experience = RunExperienceMetrics()
             transcript.append({"role": "user", "content": user_input})
             runtime_result = runtime.run(
                 user_input=user_input,
@@ -377,12 +392,22 @@ def run(
                 principal=principal,
                 event_callback=record_metrics,
             )
+            if "tool_results" in runtime_result:
+                runtime_result["tool_results"] = argument_evidence.enrich(
+                    runtime_result["tool_results"],
+                )
+            turn_evidence.append(_structured_evidence({
+                **runtime_result, "model_metrics": turn_model_metrics.snapshot(),
+                "phase_metrics": turn_phase_metrics.snapshot(),
+                "experience_metrics": turn_experience.snapshot(),
+            }))
             reply = str(runtime_result.get("reply") or "")
             if reply:
                 transcript.append({"role": "assistant", "content": reply})
         duration_ms = max(int((time.monotonic() - started) * 1000), 0)
         runtime_result["model_metrics"] = model_metrics.snapshot()
         runtime_result["phase_metrics"] = phase_metrics.snapshot()
+        runtime_result["turn_evidence"] = turn_evidence
         if "tool_results" in runtime_result:
             runtime_result["tool_results"] = argument_evidence.enrich(
                 runtime_result["tool_results"],

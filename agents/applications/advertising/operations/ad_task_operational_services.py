@@ -68,6 +68,11 @@ class AdTaskOperationalServicesMixin:
                 else {"state": "unavailable"}
             ),
         }
+        metrics = getattr(self.runtime, "metrics", None)
+        read_metrics = getattr(metrics, "snapshot", None)
+        snapshot["instance"]["experience_metrics"] = (
+            read_metrics().get("experience", {}) if callable(read_metrics) else {}
+        )
         return snapshot
 
     def pause_task(

@@ -439,12 +439,19 @@ class AgentRuntime:
             "status": status,
             "closed": closed,
             "pipeline": type(self.pipeline).__name__,
+            "engine": self._engine_health(),
             "tools": tool_count,
             "skills": skill_count,
             "run_store": self.run_store is not None,
             "tool_catalog": self._catalog_health(self.tool_registry),
             "skill_catalog": self._catalog_health(self.skill_catalog),
         }
+
+    def _engine_health(self) -> dict[str, Any]:
+        engine = getattr(self.pipeline, "engine", None)
+        manifest = getattr(engine, "manifest", None)
+        return ({"plugin_id": manifest.plugin_id, "version": manifest.version}
+                if manifest is not None else {})
 
     @staticmethod
     def _catalog_health(catalog: Any) -> dict[str, Any]:

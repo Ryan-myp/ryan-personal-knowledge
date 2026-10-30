@@ -126,6 +126,8 @@ class AdApplicationBootstrap:
         runtime.skill_loader = SkillLoader(skill_roots)
         runtime.skill_loader.load_all()
         runtime._llm = options.get("llm_client")
+        # Deployment-reviewed object only; never resolved from request/Skill text.
+        runtime.execution_engine = options.get("execution_engine")
         runtime.conversation_title_generator = ConversationTitleGenerator()
         runtime.conversation_title_use_llm = bool(
             options.get("conversation_title_use_llm", False)

@@ -126,7 +126,7 @@ class AgentPlatform:
         with self._lock:
             existing = self._application
         if existing is not None:
-            if model is not getattr(existing.agent, "model", None):
+            if model is not existing.model:
                 raise ValueError(
                     "AgentPlatform already has a Runtime; model is immutable"
                 )
@@ -285,7 +285,7 @@ class AgentPlatform:
                 )) in allowed
             ]
 
-        application.agent.tool_selector = select_tools
+        application.configure_tool_selector(select_tools)
         platform_application = PlatformApplication(
             definition=definition,
             scenario=scenario,

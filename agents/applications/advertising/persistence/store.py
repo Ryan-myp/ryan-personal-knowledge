@@ -45,6 +45,7 @@ from .session_store import SessionRepository
 from .knowledge_store import KnowledgeRepository
 from .workflow_store import WorkflowRepository
 from .optimization_store import OptimizationReviewRepository
+from .run_recovery import RunRecoveryRepository
 from .errors import PersistenceConflictError
 from .schedule_pages import SchedulePageQuery, read_schedule_page
 from agents.agent_harness.core.memory import MemoryRecord
@@ -94,6 +95,7 @@ class AdAgentStore:
         self._knowledge = KnowledgeRepository(self._get_conn, self._lock)
         self._workflows = WorkflowRepository(self._get_conn, self._lock)
         self._optimization_reviews = OptimizationReviewRepository(self._get_conn, self._lock)
+        self._run_recovery = RunRecoveryRepository(self._get_conn, self._lock)
 
     def get_optimization_review(self, review_id, tenant_id, user_id):
         return self._optimization_reviews.get(review_id, tenant_id, user_id)
@@ -782,6 +784,7 @@ class AdAgentStore:
             },
             "backend_health": backend_health,
             "schedules": schedule_metrics,
+            "recovery": self._run_recovery.inbox(tenant_id=tenant_id, user_id=user_id),
             "tools": {
                 "window_seconds": tool_window,
                 "total": tool_total,
@@ -852,14 +855,17 @@ class AdAgentStore:
         error: Optional[str] = None, metadata: Optional[dict] = None,
         workflow_id: Optional[str] = None,
         expected_statuses: Optional[list[str]] = None,
+        lease_owner: Optional[str] = None,
     ) -> bool:
         status = str(status)
         with self._lock:
             conn = self._get_conn()
             row = conn.execute(
-                "SELECT status, metadata FROM tasks WHERE task_id = ?", (str(task_id),)
+                "SELECT status, metadata, lease_owner FROM tasks WHERE task_id = ?", (str(task_id),)
             ).fetchone()
             if not row:
+                return False
+            if lease_owner is not None and row["lease_owner"] != str(lease_owner):
                 return False
             current = str(row["status"])
             if expected_statuses and current not in {str(item) for item in expected_statuses}:
@@ -881,23 +887,19 @@ class AdAgentStore:
                 "succeeded", "failed", "partially_failed", "awaiting_input",
                 "cancelled", "recovery_required",
             }
-            assignments = [
-                "status = ?", "error = ?", "metadata = ?", "updated_at = ?",
-            ]
-            values: list[Any] = [status, error, json.dumps(merged_metadata), now]
-            if result is not None:
-                assignments.append("result = ?")
-                values.append(json.dumps(result))
-            if workflow_id is not None:
-                assignments.append("workflow_id = ?")
-                values.append(str(workflow_id))
-            if terminal:
-                assignments.extend(["finished_at = COALESCE(finished_at, ?)", "lease_owner = NULL", "lease_expires_at = NULL"])
-                values.append(now)
-            values.append(str(task_id))
             cursor = conn.execute(
-                "UPDATE tasks SET " + ", ".join(assignments) + " WHERE task_id = ?",
-                values,
+                """UPDATE tasks SET status = ?, error = ?, metadata = ?, updated_at = ?,
+                   result = COALESCE(?, result), workflow_id = COALESCE(?, workflow_id),
+                   finished_at = CASE WHEN ? THEN COALESCE(finished_at, ?) ELSE finished_at END,
+                   lease_owner = CASE WHEN ? THEN NULL ELSE lease_owner END,
+                   lease_expires_at = CASE WHEN ? THEN NULL ELSE lease_expires_at END
+                   WHERE task_id = ? AND status = ?
+                     AND (? IS NULL OR lease_owner = ?)""",
+                (status, error, json.dumps(merged_metadata), now,
+                 json.dumps(result) if result is not None else None,
+                 str(workflow_id) if workflow_id is not None else None,
+                 terminal, now, terminal, terminal, str(task_id), current,
+                 lease_owner, str(lease_owner)),
             )
             conn.commit()
             return cursor.rowcount > 0
@@ -1955,61 +1957,7 @@ class AdAgentStore:
             return cursor.rowcount > 0
 
     def recover_stale_execution_runs(self, stale_after_seconds: float = 300.0) -> int:
-        if float(stale_after_seconds) <= 0:
-            return 0
-        cutoff = (datetime.now(timezone.utc) - timedelta(
-            seconds=float(stale_after_seconds)
-        )).isoformat()
-        now = datetime.now(timezone.utc).isoformat()
-        with self._lock:
-            conn = self._get_conn()
-            rows = conn.execute(
-                """SELECT run_id, metadata FROM execution_runs
-                   WHERE status = 'running' AND updated_at <= ?""",
-                (cutoff,),
-            ).fetchall()
-            recovered = 0
-            for row in rows:
-                try:
-                    metadata = json.loads(row["metadata"] or "{}") or {}
-                except (TypeError, ValueError):
-                    metadata = {}
-                metadata.update({
-                    "recovery_reason": "stale_execution_run",
-                    "effect_state": "unknown",
-                    "recovery_detected_at": now,
-                })
-                cursor = conn.execute(
-                    """UPDATE execution_runs SET status = 'recovery_required',
-                       metadata = ?, updated_at = ?
-                       WHERE run_id = ? AND status = 'running'""",
-                    (json.dumps(metadata, ensure_ascii=False, sort_keys=True), now,
-                     str(row["run_id"])),
-                )
-                if cursor.rowcount != 1:
-                    continue
-                next_seq = conn.execute(
-                    "SELECT COALESCE(MAX(seq), 0) + 1 FROM execution_run_events WHERE run_id = ?",
-                    (str(row["run_id"]),),
-                ).fetchone()[0]
-                event = {
-                    "type": "recovery_required",
-                    "event_type": "recovery_required",
-                    "seq": int(next_seq),
-                    "status": "recovery_required",
-                    "timestamp": now,
-                    "safe_metadata": metadata,
-                }
-                conn.execute(
-                    """INSERT OR IGNORE INTO execution_run_events
-                       (run_id, seq, event_type, payload, created_at)
-                       VALUES (?, ?, ?, ?, ?)""",
-                    (str(row["run_id"]), int(next_seq), "recovery_required",
-                     json.dumps(event, ensure_ascii=False, sort_keys=True), now),
-                )
-                recovered += 1
-            conn.commit()
-            return recovered
+        return self._run_recovery.recover_stale(stale_after_seconds)
 
     # -- Approval records --------------------------------------------------
 

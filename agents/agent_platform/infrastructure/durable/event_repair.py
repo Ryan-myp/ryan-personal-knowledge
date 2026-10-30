@@ -13,7 +13,10 @@ logger = logging.getLogger(__name__)
 class ExecutionEventRepairConsumer:
     """Retry observability writes without coupling them to Agent execution."""
 
-    def __init__(self, store: Any, *, poll_interval: float = 2.0):
+    def __init__(
+        self, store: Any, *, poll_interval: float = 2.0,
+        stale_after_seconds: float = 300.0,
+    ):
         self.store = store
         self.poll_interval = max(0.5, float(poll_interval))
         self.worker_id = f"event-repair:{uuid.uuid4().hex}"
@@ -21,6 +24,19 @@ class ExecutionEventRepairConsumer:
         self._thread: Optional[threading.Thread] = None
         self._last_error: Optional[str] = None
         self._repaired_total = 0
+        self._recovered_runs_total = 0
+        self.stale_after_seconds = stale_after_seconds
+        self._ticks = 0
+
+    def tick(self) -> None:
+        repair = getattr(self.store, "repair_execution_run_events", None)
+        if callable(repair):
+            self._repaired_total += int(repair(50) or 0)
+        # Sweep periodically; never execute a Provider or replay a task here.
+        recover = getattr(self.store, "recover_stale_execution_runs", None)
+        if self._ticks % 15 == 0 and callable(recover):
+            self._recovered_runs_total += int(recover(self.stale_after_seconds) or 0)
+        self._ticks += 1
 
     def start(self) -> None:
         if self._thread and self._thread.is_alive():
@@ -43,9 +59,7 @@ class ExecutionEventRepairConsumer:
             if getattr(self.store, "is_closed", False):
                 break
             try:
-                repair = getattr(self.store, "repair_execution_run_events", None)
-                if callable(repair):
-                    self._repaired_total += int(repair(50) or 0)
+                self.tick()
                 self._last_error = None
                 heartbeat = getattr(self.store, "heartbeat_worker", None)
                 if callable(heartbeat) and not heartbeat(self.worker_id, lease_seconds=30.0):
@@ -61,6 +75,7 @@ class ExecutionEventRepairConsumer:
             "worker_id": self.worker_id,
             "state": "running" if thread and thread.is_alive() else "stopped",
             "repaired_total": self._repaired_total,
+            "recovered_runs_total": self._recovered_runs_total,
             "last_error": self._last_error,
         }
 

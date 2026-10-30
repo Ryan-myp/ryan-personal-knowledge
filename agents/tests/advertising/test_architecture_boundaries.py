@@ -71,6 +71,7 @@ def test_advertising_application_modules_have_single_layer_ownership():
             "ad_persistence_services.py",
             "run_event_page.py", "semantic_constraints.py", "conversation_notes_service.py",
             "optimization_reviews.py", "optimization_evidence.py", "optimization_measurements.py",
+            "optimization_report_evidence.py",
             "ad_session_services.py", "ad_task_operational_services.py",
             "ad_task_services.py", "ad_workflow_provider_reconciliation.py",
             "ad_workflow_services.py", "reconciliation.py",

@@ -439,6 +439,17 @@ class PlatformApplication:
         return getattr(self.harness, "agent", None)
 
     @property
+    def engine(self) -> Any:
+        return self.harness.engine
+
+    @property
+    def model(self) -> Any:
+        return self.harness.model
+
+    def configure_model(self, model: Any) -> None:
+        self.harness.configure_model(model)
+
+    @property
     def skills(self) -> Any:
         catalog = getattr(self.harness, "skills", None)
         return _SkillCatalogView(catalog, self.skill_source_ids)

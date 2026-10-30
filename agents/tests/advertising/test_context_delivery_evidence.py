@@ -264,3 +264,43 @@ def test_context_build_failure_clears_previous_advisory_data():
     assert session.ctx.metadata["skill_context"] == {}
     assert events[-1][0][2] == "failed"
     assert "private upstream details" not in str(events)
+
+
+def test_conversation_constraints_and_resource_evidence_survive_dense_advisory_context():
+    context = {
+        **{key: 'x' * limit for key, _label, limit in AdvertisingContextProvider._ADVISORY_CONTEXT_FIELDS},
+        'knowledge': [{'document_id': 'guide', 'excerpt': 'knowledge ' * 500}],
+        'conversation_state': 'USER_CONSTRAINT: do not change budgets',
+        'conversation_task_state': 'EXACT_RESOURCE_ID: resource-42',
+        'memory_context': 'USER_PREFERENCE: Chinese',
+    }
+    parts = []
+    AdvertisingContextProvider._append_advisory_context(parts, context, 8000)
+    rendered = '\n\n'.join(parts)
+    assert 'USER_CONSTRAINT' in rendered
+    assert 'EXACT_RESOURCE_ID' in rendered
+    assert 'USER_PREFERENCE' in rendered
+    assert len(rendered) <= 8000
+
+
+def test_unused_skill_copy_cannot_evict_conversation_before_selected_context():
+    from agents.applications.advertising.integrations.ad_turn_context import AdTurnContext
+    runtime = SimpleNamespace(
+        platform_application=SimpleNamespace(agent=SimpleNamespace(skill_catalog=SimpleNamespace(
+            handles_managed_guidance=True))),
+        registry=SimpleNamespace(list_all=lambda: []),
+        _build_skill_context=lambda *_: {
+            'expert_knowledge': 'unused duplicate ' * 1000,
+            'publisher_context': 'p' * 3500,
+            'knowledge': [{'document_id': str(i), 'excerpt': 'k' * 900} for i in range(8)],
+        },
+        _build_prior_tool_results_context=lambda _: 'r' * 4000,
+    )
+    session = SimpleNamespace(ctx=SimpleNamespace(metadata={'conversation_digest': 'RECENT_REQUEST ' * 100}))
+    AdTurnContextService._store_skill_context(
+        runtime=runtime, session=session, safe_user_input='continue', tenant_id='t',
+        context=AdTurnContext(memory_context='m' * 2400),
+    )
+    context = session.ctx.metadata['skill_context']
+    assert not context['expert_knowledge']
+    assert 'RECENT_REQUEST' in context['conversation_digest']

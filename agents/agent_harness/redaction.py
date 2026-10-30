@@ -23,6 +23,10 @@ _PUBLIC_TOKEN_COUNTER_KEYS = frozenset({
     "max_input_tokens", "max_output_tokens", "max_total_tokens", "max_tokens",
 })
 
+# Only explicit next-page output fields are public continuation data. Keep
+# page_token protected: some providers use that name for a page access token.
+_PUBLIC_CONTINUATION_KEYS = frozenset({"next_page_token", "nextpagetoken"})
+
 _SENSITIVE_CANONICAL_PARTS = frozenset(
     part.replace("_", "").replace("-", "") for part in _SENSITIVE_KEY_PARTS
 )
@@ -58,6 +62,10 @@ def redact_for_persistence(value: Any) -> Any:
             key: (
                 redact_for_persistence(child)
                 if str(key).lower() in {"selection_token", "selection_tokens"}
+                or (
+                    str(key).lower() in _PUBLIC_CONTINUATION_KEYS
+                    and (child is None or isinstance(child, str))
+                )
                 or (
                     str(key).lower() in _PUBLIC_TOKEN_COUNTER_KEYS
                     and type(child) is int and child >= 0

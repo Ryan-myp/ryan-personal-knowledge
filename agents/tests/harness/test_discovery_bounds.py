@@ -83,3 +83,33 @@ def test_parallel_runs_do_not_share_loaded_definitions():
                    for resource in ("adset", "invoice_line")]
         assert [f.result().status.value for f in futures] == ["succeeded", "succeeded"]
     assert active_tool_discovery.get() is None
+
+
+def test_selection_resolves_names_against_current_catalog_and_deduplicates_control_tools():
+    _, catalog, _ = setup_agent(lambda *_: ModelTurn(content="done"))
+    current = catalog.list_tools()
+    parent = next(t for t in current if t.name == "get_parent")
+    stale = replace(parent, description="obsolete schema")
+    removed = definition("removed_tool", "removed")
+    discovery = next(t for t in current if t.name == "agent_discover_tools")
+    state = RunToolDiscovery(request(), catalog, max_tools=4)
+    selected = state.select([discovery, stale, removed, stale], current)
+    assert [t.name for t in selected] == ["get_parent", "agent_discover_tools"]
+    assert selected[0] is parent
+
+
+@pytest.mark.parametrize("max_tools,expected", [(1, 0), (2, 0), (3, 1), (4, 2)])
+def test_discovery_reserves_all_control_slots_before_reporting_loaded(max_tools, expected):
+    from agents.agent_harness import StaticToolSource, ToolBinding
+
+    _, catalog, _ = setup_agent(lambda *_: ModelTurn(content="done"))
+    original = catalog.get_binding("agent_discover_tools")
+    catalog.register_source(StaticToolSource("other-discovery", [ToolBinding(
+        replace(original.definition, name="other_discovery"), original.executor,
+    )]))
+    state = RunToolDiscovery(request(), catalog, max_tools=max_tools)
+    found = state.search("", namespace="demo", permitted=lambda _: True)
+    assert len(found["tools"]) == expected
+    visible = {t.name for t in state.select([], catalog.list_tools())}
+    assert {t["name"] for t in found["tools"]} <= visible
+    assert found["status"] == ("loaded" if expected else "capacity_limit")

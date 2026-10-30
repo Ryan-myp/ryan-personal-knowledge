@@ -30,6 +30,7 @@ class RuntimeSupervisor:
         outbox_max_attempts: int = 10,
         start_background_workers: bool = True,
         create_background_workers: Optional[bool] = None,
+        run_stale_after_seconds: float = 300.0,
     ) -> None:
         self.store = store
         self.outbox_consumer = None
@@ -62,7 +63,9 @@ class RuntimeSupervisor:
                     max_attempts=outbox_max_attempts,
                 )
             if callable(getattr(store, "enqueue_execution_event_repair", None)):
-                self.event_repair_consumer = ExecutionEventRepairConsumer(store)
+                self.event_repair_consumer = ExecutionEventRepairConsumer(
+                    store, stale_after_seconds=run_stale_after_seconds,
+                )
         self.task_executor = TaskExecutor(
             store,
             max_workers=max_task_workers,

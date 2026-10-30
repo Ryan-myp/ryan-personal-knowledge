@@ -482,7 +482,7 @@ class ModelExecutionCoordinator:
                 error, self._retryable_model_error(error)
                 and not invocation.stream_output_started,
             ) from error
-        self._record_usage(request, invocation.state, model_turn)
+        self.record_usage(request, invocation.state, model_turn)
         if invocation.lifecycle_events:
             self.emit(
                 "model_end",
@@ -633,7 +633,7 @@ class ModelExecutionCoordinator:
             ("adapter_turns", 1),
         )
 
-    def _record_usage(
+    def record_usage(
         self, request: TurnRequest, state: AgentState, model_turn: ModelTurn
     ) -> None:
         usage = model_turn.usage if isinstance(model_turn.usage, Mapping) else {}

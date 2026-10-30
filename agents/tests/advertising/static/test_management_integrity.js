@@ -460,3 +460,35 @@ test('closing health view before its response prevents rendering and polling', a
     assert.equal(rendered,0);
     assert.equal(polls,0);
 });
+
+for (const phase of ['save', 'publish', 'refresh']) {
+    test(`knowledge edits during ${phase} remain dirty and keep their document identity`, async () => {
+        const pending = deferred(), entered = deferred(), calls = [];
+        const {context} = environment('chat-knowledge.js', {apiFetch: async (url, options) => {
+            calls.push({url, options});
+            if ((phase === 'save' && !url.endsWith('/publish')) || (phase === 'publish' && url.endsWith('/publish'))) {
+                entered.resolve(); await pending.promise;
+            }
+            return {document_id:'saved',version:'1.0.1'};
+        }});
+        context.loadManagedKnowledgeDocuments = async () => {
+            if (phase === 'refresh') {entered.resolve();await pending.promise;}
+        };
+        let navigated = false;
+        context.showResourceList = () => {navigated = true;};
+        context.document.getElementById('knowledgeTitle').value = 'Title';
+        context.document.getElementById('knowledgeContent').value = 'Submitted';
+        context.document.getElementById('knowledgeVersion').value = '1.0.0';
+        const saving = context.saveKnowledgeDocument(phase === 'publish');
+        await entered.promise;
+        context.document.getElementById('knowledgeContent').value = 'New unsaved edits';
+        context.document.getElementById('knowledgeVersion').value = '2.0.0';
+        pending.resolve(); await saving;
+        assert.equal(context.document.getElementById('knowledgeContent').value, 'New unsaved edits');
+        assert.equal(context.document.getElementById('knowledgeVersion').value, '2.0.0');
+        assert.equal(context.knowledgeState.editingDocumentId, 'saved');
+        assert.equal(context.resourceCatalogs.knowledge.hasDraft, true);
+        assert.equal(navigated, false);
+        assert.match(context.document.getElementById('knowledgeWriteStatus').textContent, /未保存/);
+    });
+}

@@ -630,8 +630,16 @@ def build_report(
     provider_evidence_paths: list[Path] | None = None,
     *,
     run_model_eval: bool = False,
+    conversation_evidence_path: Path | None = None,
 ) -> dict[str, Any]:
     policy = ReadinessPolicy.from_dict(_load_json(policy_path))
+    from agents.agent_platform.evals.task_release import source_digest, verify_task_report
+    from scripts.advertising.run_conversation_regressions import load_cases
+    task_report = verify_task_report(
+        _load_json(conversation_evidence_path) if conversation_evidence_path else None,
+        load_cases(ROOT / "agents/evals/advertising/conversation_holdout_cases.json"),
+        source_sha256=source_digest(ROOT),
+    )
     resolved_provider_evidence_paths = (
         provider_evidence_paths or _default_provider_evidence_paths()
     )
@@ -679,6 +687,7 @@ def build_report(
         contract_gate_errors=contract_errors,
         dry_run_report=dry_run_report,
         model_quality_report=skill_report,
+        task_quality_report=task_report,
         security_report=security_report,
         provider_evidence=provider_evidence,
         policy=policy,
@@ -691,6 +700,7 @@ def build_report(
         "contract_snapshot_errors": contract_errors,
         "dry_run": dry_run_report,
         "model_quality": skill_report,
+        "task_quality": task_report,
         "security": security_report,
         "reliability": reliability_report,
         "provider_evidence_sources": provider_evidence_sources,
@@ -699,7 +709,7 @@ def build_report(
     return report
 
 
-def main(argv: list[str] | None = None) -> int:
+def _arguments(argv: list[str] | None = None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--profile", default="local")
     parser.add_argument(
@@ -708,6 +718,10 @@ def main(argv: list[str] | None = None) -> int:
         default=ROOT / "agents" / "tools" / "advertising" / "contracts" / "readiness_policy.json",
     )
     parser.add_argument("--output", type=Path)
+    parser.add_argument(
+        "--conversation-evidence", type=Path,
+        help="Current-source repeated task report; never starts a model call",
+    )
     parser.add_argument(
         "--with-model-eval",
         action="store_true",
@@ -725,13 +739,18 @@ def main(argv: list[str] | None = None) -> int:
             "loads both checked-in write and query evidence sources."
         ),
     )
-    args = parser.parse_args(argv)
+    return parser.parse_args(argv)
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = _arguments(argv)
     try:
         report = build_report(
             args.profile,
             args.policy,
             provider_evidence_paths=args.provider_evidence,
             run_model_eval=args.with_model_eval,
+            conversation_evidence_path=args.conversation_evidence,
         )
     except Exception as exc:
         report = {
