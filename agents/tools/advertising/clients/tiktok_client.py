@@ -18,6 +18,7 @@ import requests
 from .base import BasePlatformClient, APIError, AuthError, RateLimitError, TemporaryError, RetryConfig, RateLimiter
 
 from .tiktok_lead_contract import validate_lead_group, validate_lead_ad
+from .tiktok_smart_plus_contract import validate_optional_blocks
 
 logger = logging.getLogger(__name__)
 
@@ -1878,6 +1879,7 @@ class TikTokAPIClient(BasePlatformClient):
         """
         if not isinstance(ad, dict):
             raise ValueError("TikTok Smart+ ad payload must be an object")
+        validate_optional_blocks(ad)
         if self._contains_private_business_center_field(ad):
             raise ValueError(
                 "Provider authorization context is resolved privately by the client"
@@ -2070,12 +2072,6 @@ class TikTokAPIClient(BasePlatformClient):
                 tracking.setdefault(key, ad[key])
         if tracking:
             configuration["tracking_info"] = tracking
-        # TikTok accepts a few optional configuration blocks. Keep them
-        # explicit; arbitrary JSON must not become an undocumented escape hatch.
-        if ad.get("product_info") not in (None, ""):
-            configuration.setdefault("product_info", ad["product_info"])
-        if ad.get("catalog_creative_info") not in (None, ""):
-            configuration.setdefault("catalog_creative_info", ad["catalog_creative_info"])
         tracking = configuration.get("tracking_info")
         if tracking is not None:
             if not isinstance(tracking, dict) or any(

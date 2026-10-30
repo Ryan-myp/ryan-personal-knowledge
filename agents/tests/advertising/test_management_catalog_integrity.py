@@ -69,7 +69,9 @@ def test_exact_variant_wins_over_shared_selector_but_conflicts_are_rejected(runt
 
 def test_template_missing_inputs_respect_conditions_and_empty_values(runtime, monkeypatch):
     monkeypatch.setattr(runtime, "list_creation_templates", lambda **kw: [{
-        "blueprint_id": "meta.app_promotion", "values": {
+        "blueprint_id": "meta.app_promotion",
+        "blueprint_version": runtime.creation_blueprints.get("meta.app_promotion").version,
+        "values": {
             "ad.media_type": "IMAGE", "ad.image_hash": "", "ad.name": "   ",
         },
     }])

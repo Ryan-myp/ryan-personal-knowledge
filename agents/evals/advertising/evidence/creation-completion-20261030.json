@@ -1,0 +1,63 @@
+{
+  "schema_version": "1.0",
+  "date": "2026-10-30",
+  "scope": "three_channel_creation_catalog_contracts_versions_and_verification",
+  "evidence_type": "offline_regression_and_local_metadata_http",
+  "real_provider_calls": 0,
+  "real_model_calls": 0,
+  "live_campaign_mutations": 0,
+  "catalog": {
+    "google-ads": {"tools": 110, "blueprints": 14, "current_builtin_templates": 20, "general_starters": 14},
+    "meta": {"tools": 81, "blueprints": 8, "current_builtin_templates": 14, "general_starters": 10},
+    "tiktok": {"tools": 87, "blueprints": 9, "current_builtin_templates": 15, "general_starters": 11},
+    "all_provider_template_records": 56,
+    "hidden_historical_template_records": 5,
+    "three_channel_latest_blueprints_missing_general_starter": 0,
+    "structured_guidance_gaps": 0,
+    "intentional_advanced_payload_fields_all_providers": 11
+  },
+  "checks": {
+    "make_ad_agent_check": "passed",
+    "python_tests_passed": 3716,
+    "frontend_tests_passed": 278,
+    "focused_tests_passed": 34,
+    "new_core_module_statement_coverage": {"covered": 157, "total": 171, "percent": 92},
+    "contract_snapshot_tools": 329,
+    "contract_snapshot": "current",
+    "git_diff_check": "passed",
+    "browser": {
+      "viewport_widths": [1440, 390],
+      "screenshots": 6,
+      "api_mode": "offline_fixtures",
+      "script_errors": 0,
+      "horizontal_overflow": false,
+      "upgrade_preview_and_new_draft": "passed",
+      "verification_disclosure": "passed",
+      "music_field_input_and_readback": "passed"
+    },
+    "quality_delta": {"gate_passed": true, "new_findings": 0},
+    "whole_repository_qguard": {"gate_passed": false, "findings": 4988, "threshold_unchanged": true}
+  },
+  "service": {
+    "host": "0.0.0.0",
+    "port": 8766,
+    "healthy_after_restart": true,
+    "same_database": true,
+    "preserved_record_counts": {"sessions": 516, "user_templates": 14, "schedules": 5},
+    "record_id_sets_equal_before_after": true,
+    "registered_tools": 355,
+    "blueprints": 33,
+    "visible_builtin_templates": 49,
+    "general_starters": 35,
+    "smart_plus_ad_contract_version": "2.0.0",
+    "pinned_old_blueprint_read": "passed",
+    "upgrade_preview_http": "passed",
+    "template_writes_during_smoke_check": 0
+  },
+  "limitations": [
+    "This evidence does not establish live creation success for new presets or all provider variants.",
+    "Existing account resources, provider permissions and platform-specific creation restrictions remain prerequisites.",
+    "Existing live evidence files were not rewritten; historical and exact current-template evidence remain distinct.",
+    "All normal-account write restrictions and test-account live safety gates remain unchanged."
+  ]
+}

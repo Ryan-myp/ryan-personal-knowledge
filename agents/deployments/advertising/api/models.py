@@ -160,6 +160,11 @@ class CreationTemplateDuplicateRequest(BaseModel):
     name: Optional[str] = Field(default=None, min_length=1, max_length=120)
 
 
+class CreationTemplateUpgradeRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+    target_version: Optional[str] = Field(default=None, min_length=1, max_length=80)
+
+
 class PluginPackageRequest(BaseModel):
     manifest: dict[str, object]
     files: dict[str, object]

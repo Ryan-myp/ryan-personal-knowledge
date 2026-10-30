@@ -634,6 +634,12 @@ def main(argv: list[str] | None = None) -> int:
     if args.strict_guided and guided_gaps:
         print("缺少引导 Blueprint：" + ", ".join(guided_gaps))
         return 1
+    if args.strict_guided and (
+        report["structured_guidance_gaps"]
+        or report.get("builtin_templates", {}).get("missing_general_starters")
+    ):
+        print("结构化字段或最新蓝图的通用起步模板存在缺口")
+        return 1
     return 1 if report["issues"] else 0
 
 

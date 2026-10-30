@@ -95,7 +95,7 @@ class CreationTemplateToolService:
                 key: row[key] for key in (
                     "template_id", "catalog_key", "name", "description", "provider",
                     "account_id", "blueprint_id", "blueprint_version", "ad_format",
-                    "source", "verification_status", "verified_scope",
+                    "source", "verification_status", "verification", "verified_scope",
                     "live_create_supported", "live_create_block_reason",
                     "required_inputs", "required_input_fields",
                 ) if key in row

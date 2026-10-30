@@ -2082,7 +2082,7 @@ def test_google_builtin_templates_only_need_name_dates_and_daily_budget():
         selected = {
             item["blueprint_id"]: item
             for item in templates
-            if item["blueprint_id"] in expected_blueprints
+            if item["blueprint_id"] in expected_blueprints and item["account_id"] == account_id
         }
         assert set(selected) == expected_blueprints
 

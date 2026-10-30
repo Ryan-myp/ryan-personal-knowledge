@@ -70,6 +70,7 @@ function reconcileLookupSelection(selectedValue, options, multiple) {
 
         function closeBlueprintManager() {
             templateBrowser.navigationSequence++;
+            blueprintSelectionSequence++;
             document.getElementById('blueprintOverlay')?.classList.remove('active');
             document.getElementById('blueprintOverlay')?.setAttribute('aria-hidden', 'true');
             if (typeof clearCreationImport === 'function') clearCreationImport();

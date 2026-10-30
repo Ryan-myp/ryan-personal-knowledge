@@ -6,7 +6,6 @@ from typing import Any, Mapping, Optional
 
 from agents.tools.advertising.shared.domain.contracts import AdFormatCoverage
 from agents.tools.advertising.shared.domain.blueprint import (
-    AdCreationBlueprint,
     BlueprintCascadeEngine,
 )
 
@@ -113,18 +112,25 @@ class AdCreationCatalogServicesMixin:
             for template in templates_by_blueprint.get(blueprint_id, []):
                 values = template.get("values")
                 values = values if isinstance(values, Mapping) else {}
-                evaluated = BlueprintCascadeEngine().evaluate(
-                    AdCreationBlueprint.from_dict(blueprint), values,
+                pinned = self.creation_blueprints.get(
+                    blueprint_id, str(template.get("blueprint_version") or ""),
                 )
-                required_paths = {item["path"] for item in required_inputs}
+                if pinned is None:
+                    continue
+                pinned = self.creation_card_builder.expand_blueprint(pinned)
+                evaluated = BlueprintCascadeEngine().evaluate(pinned, values)
+                required_paths = {
+                    field["path"] for field in pinned.fields
+                    if field.get("required") or field.get("required_when")
+                }
                 missing = [path for path in evaluated["missing_fields"] if path in required_paths]
                 template_account = str(template.get("account_id") or "")
                 account_score = (
                     100 if account_id and template_account == str(account_id)
                     else 35 if not template_account else 0
                 )
-                covered = len(required_inputs) - len(missing)
-                coverage_score = int(20 * covered / max(len(required_inputs), 1))
+                covered = len(required_paths) - len(missing)
+                coverage_score = int(20 * covered / max(len(required_paths), 1))
                 verification_score = verification_weights.get(
                     str(template.get("verification_status") or ""), 0,
                 )
@@ -132,6 +138,8 @@ class AdCreationCatalogServicesMixin:
                     **template,
                     "missing_inputs": missing,
                     "missing_input_count": len(missing),
+                    "upgrade_available": pinned.version != blueprint["version"],
+                    "latest_blueprint_version": blueprint["version"],
                     "recommendation_score": (
                         account_score
                         + coverage_score

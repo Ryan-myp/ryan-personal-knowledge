@@ -337,7 +337,8 @@ def test_builtin_template_is_account_bound_read_only_and_duplicable():
     assert builtin["source"] == "builtin"
     assert builtin["editable"] is False
     assert builtin["account_id"] == "act_123"
-    assert builtin["verification_status"] == "live_verified"
+    assert builtin["verification_status"] == "pending_live_verification"
+    assert builtin["verification"]["match"] == "none"
     assert builtin["template_id"].startswith("builtin_")
     assert templates.apply("tenant-a", "user-a", builtin["template_id"])["usage_count"] == 0
 

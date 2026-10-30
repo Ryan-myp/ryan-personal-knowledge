@@ -1,5 +1,5 @@
 {
-  "digest": "8dd7ba6dd04dc314dbcf5749c2bcf3a70f07de6154d15e076e595ed61c509c9c",
+  "digest": "c8164448f1eb4a54f863cfe094de1c5542fcf1fc0ab5db78b1d7e56b11eeb446",
   "format_version": 1,
   "platforms": {
     "advertising": {
@@ -33810,7 +33810,7 @@
       ]
     },
     "tiktok": {
-      "digest": "54f12831cc324ce0534b40d7d0a4a1e0abdc531da8ede75a261107bb716f67d7",
+      "digest": "781a3d90de9dd072d388d238bb8c563f852cbccf2a262eaeb546264150d7dc30",
       "tool_count": 89,
       "tools": [
         {
@@ -47766,8 +47766,8 @@
             }
           ],
           "cancellation_mode": "cooperative",
-          "contract_hash": "15349276d6a053cab4fb1fe6dee610ead80e6c25f4f617860188a6115cd603f3",
-          "contract_version": "1.9.0",
+          "contract_hash": "edba8cda799ed8148fd11a9af00a36c4c872dd71adc50d01daf3a7e45bf3d4d1",
+          "contract_version": "2.0.0",
           "description": "使用 TikTok Upgraded Smart+ Ad API 创建广告和素材；支持 Spark 帖子、视频、图片等渠道素材引用，live 仅允许创建暂停状态。",
           "effect_class": "write",
           "idempotency_key_field": null,
@@ -47859,15 +47859,43 @@
                     ],
                     "type": "string"
                   },
-                  "catalog_creative_info": {
-                    "additionalProperties": false,
-                    "description": "Optional catalog creative configuration",
-                    "type": "object"
+                  "catalog_creative_toggle": {
+                    "description": "启用 Catalog 创意",
+                    "type": "boolean"
                   },
-                  "product_info": {
-                    "additionalProperties": false,
-                    "description": "Optional product information",
-                    "type": "object"
+                  "product_display_field_list": {
+                    "description": "商品展示字段",
+                    "items": {
+                      "maxLength": 200,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "manual_entry": {
+                      "instructions": "填写当前账户支持的展示字段标识；不将未知字段假定为已支持。",
+                      "source": "tiktok_product_display_fields",
+                      "title": "商品展示字段"
+                    },
+                    "maxItems": 20,
+                    "minItems": 1,
+                    "type": "array",
+                    "uniqueItems": true
+                  },
+                  "product_ids": {
+                    "description": "指定商品 ID",
+                    "items": {
+                      "maxLength": 200,
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "manual_entry": {
+                      "instructions": "填写已由渠道确认属于当前 Catalog 的商品 ID，每行一个。",
+                      "source": "tiktok_catalog_product_ids",
+                      "title": "商品 ID"
+                    },
+                    "maxItems": 100,
+                    "minItems": 1,
+                    "type": "array",
+                    "uniqueItems": true
                   },
                   "product_set_id": {
                     "description": "Optional product subset in the selected catalog",
@@ -47936,6 +47964,34 @@
                       }
                     },
                     "type": "object"
+                  },
+                  "utm_params": {
+                    "description": "UTM 参数",
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "key": {
+                          "description": "参数名",
+                          "maxLength": 200,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "value": {
+                          "description": "参数值",
+                          "maxLength": 2000,
+                          "minLength": 1,
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "key",
+                        "value"
+                      ],
+                      "type": "object"
+                    },
+                    "maxItems": 50,
+                    "presentation": "object_editor",
+                    "type": "array"
                   }
                 },
                 "type": "object"
@@ -48141,11 +48197,6 @@
                 ],
                 "type": "string"
               },
-              "catalog_creative_info": {
-                "additionalProperties": false,
-                "description": "Optional catalog creative configuration",
-                "type": "object"
-              },
               "click_tracking_url": {
                 "description": "Click tracking URL",
                 "manual_entry": {
@@ -48285,7 +48336,24 @@
                         },
                         "music_info": {
                           "additionalProperties": false,
-                          "description": "TikTok music configuration",
+                          "description": "音乐配置",
+                          "presentation": "object_editor",
+                          "properties": {
+                            "music_id": {
+                              "description": "已取得使用授权的 TikTok 音乐 ID",
+                              "manual_entry": {
+                                "instructions": "填写渠道提供且有使用权限的音乐 ID；当前不提供音乐目录查询。",
+                                "source": "tiktok_authorized_music",
+                                "title": "音乐 ID"
+                              },
+                              "maxLength": 200,
+                              "minLength": 1,
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "music_id"
+                          ],
                           "type": "object"
                         },
                         "tiktok_item_id": {
@@ -48521,7 +48589,24 @@
               },
               "music_info": {
                 "additionalProperties": false,
-                "description": "TikTok music configuration",
+                "description": "音乐配置",
+                "presentation": "object_editor",
+                "properties": {
+                  "music_id": {
+                    "description": "已取得使用授权的 TikTok 音乐 ID",
+                    "manual_entry": {
+                      "instructions": "填写渠道提供且有使用权限的音乐 ID；当前不提供音乐目录查询。",
+                      "source": "tiktok_authorized_music",
+                      "title": "音乐 ID"
+                    },
+                    "maxLength": 200,
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "music_id"
+                ],
                 "type": "object"
               },
               "objective_type": {
@@ -48578,11 +48663,6 @@
                 "maxItems": 3,
                 "minItems": 1,
                 "type": "array"
-              },
-              "product_info": {
-                "additionalProperties": false,
-                "description": "Optional product information",
-                "type": "object"
               },
               "product_set_id": {
                 "description": "Optional product subset in the selected catalog",
@@ -49886,7 +49966,7 @@
           "action": "update",
           "activation_rules": [],
           "cancellation_mode": "cooperative",
-          "contract_hash": "48788a10b06ac0581b224da74bea71dc03c099745657af08118d6385b7afe464",
+          "contract_hash": "72791cec9180c3e8fdce0f9c7ffc0b96c4ff86d76ee70d1692486ba4821016e8",
           "contract_version": "2",
           "description": "更新 TikTok Upgraded Smart+ ad；仅允许在测试账号和确认后执行。内容字段更新仅提交用户要求改动的字段。即使用户要求保持暂停，也不要把 DISABLE/status 塞入内容更新；只有用户明确要求改变投放状态时才单独提交 status/operation_status，且不得与内容字段同次更新。",
           "effect_class": "write",
@@ -50015,15 +50095,43 @@
                         "minLength": 1,
                         "type": "string"
                       },
-                      "catalog_creative_info": {
-                        "additionalProperties": false,
-                        "description": "Optional catalog creative configuration",
-                        "type": "object"
+                      "catalog_creative_toggle": {
+                        "description": "启用 Catalog 创意",
+                        "type": "boolean"
                       },
-                      "product_info": {
-                        "additionalProperties": false,
-                        "description": "Optional product information",
-                        "type": "object"
+                      "product_display_field_list": {
+                        "description": "商品展示字段",
+                        "items": {
+                          "maxLength": 200,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "manual_entry": {
+                          "instructions": "填写当前账户支持的展示字段标识；不将未知字段假定为已支持。",
+                          "source": "tiktok_product_display_fields",
+                          "title": "商品展示字段"
+                        },
+                        "maxItems": 20,
+                        "minItems": 1,
+                        "type": "array",
+                        "uniqueItems": true
+                      },
+                      "product_ids": {
+                        "description": "指定商品 ID",
+                        "items": {
+                          "maxLength": 200,
+                          "minLength": 1,
+                          "type": "string"
+                        },
+                        "manual_entry": {
+                          "instructions": "填写已由渠道确认属于当前 Catalog 的商品 ID，每行一个。",
+                          "source": "tiktok_catalog_product_ids",
+                          "title": "商品 ID"
+                        },
+                        "maxItems": 100,
+                        "minItems": 1,
+                        "type": "array",
+                        "uniqueItems": true
                       },
                       "product_set_id": {
                         "description": "Optional product subset in the selected catalog",
@@ -50092,6 +50200,34 @@
                           }
                         },
                         "type": "object"
+                      },
+                      "utm_params": {
+                        "description": "UTM 参数",
+                        "items": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "key": {
+                              "description": "参数名",
+                              "maxLength": 200,
+                              "minLength": 1,
+                              "type": "string"
+                            },
+                            "value": {
+                              "description": "参数值",
+                              "maxLength": 2000,
+                              "minLength": 1,
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "key",
+                            "value"
+                          ],
+                          "type": "object"
+                        },
+                        "maxItems": 50,
+                        "presentation": "object_editor",
+                        "type": "array"
                       }
                     },
                     "type": "object"
@@ -50296,7 +50432,24 @@
                             },
                             "music_info": {
                               "additionalProperties": false,
-                              "description": "TikTok music configuration",
+                              "description": "音乐配置",
+                              "presentation": "object_editor",
+                              "properties": {
+                                "music_id": {
+                                  "description": "已取得使用授权的 TikTok 音乐 ID",
+                                  "manual_entry": {
+                                    "instructions": "填写渠道提供且有使用权限的音乐 ID；当前不提供音乐目录查询。",
+                                    "source": "tiktok_authorized_music",
+                                    "title": "音乐 ID"
+                                  },
+                                  "maxLength": 200,
+                                  "minLength": 1,
+                                  "type": "string"
+                                }
+                              },
+                              "required": [
+                                "music_id"
+                              ],
                               "type": "object"
                             },
                             "tiktok_item_id": {

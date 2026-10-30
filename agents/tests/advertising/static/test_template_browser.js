@@ -182,3 +182,135 @@ test('template list fetches only saved records, shares in-flight reads and keeps
     await context.loadTemplateLibrary();
     assert.equal(context.blueprintState.templates[0].template_id,'saved');
 });
+
+test('verification view shows operation-level partial and historical evidence safely', () => {
+    const context = environment();
+    context.escapeHtml = value => String(value).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;');
+    const html = context.templateVerificationMarkup({
+        verification: {label:'当前版本待实测', match:'historical', verified_at:'',
+            operations:[], historical_operations:[
+                {scope:'campaign.create',state:'passed'}, {scope:'ad.create',state:'not_run'},
+            ], blockers:['<img src=x>'], notice:'历史记录不证明当前版本通过'},
+    });
+    assert.match(html,/历史/);
+    assert.match(html,/未执行|未验证/);
+    assert.match(html,/&lt;img/);
+    assert(!html.includes('<img'));
+});
+
+test('missing pinned blueprint never silently falls back to latest', async () => {
+    const context = editorEnvironment();
+    context.blueprintState.items = [{id:'meta.leads',version:'1.1.0'}];
+    context.blueprintState.templates = [{template_id:'old',blueprint_id:'meta.leads',
+        blueprint_version:'1.0.0',status:'active'}];
+    let selected = false;
+    context.selectBlueprint = () => { selected = true; };
+    context.loadTemplateBlueprint = async () => { throw new Error('旧版本不可用'); };
+    await context.selectCreationTemplate('old');
+    assert.equal(selected,false);
+    assert.match(context.notice,/旧版本不可用/);
+});
+
+test('selecting an old template uses exactly its pinned blueprint', async () => {
+    const context = editorEnvironment();
+    const pinned={id:'meta.leads',version:'1.0.0'};
+    context.blueprintState.items = [{id:'meta.leads',version:'1.1.0'}];
+    context.blueprintState.templates = [{template_id:'old',blueprint_id:'meta.leads',
+        blueprint_version:'1.0.0',status:'active'}];
+    context.loadTemplateBlueprint = async () => pinned;
+    let selected;
+    context.selectBlueprint = (id,selector,template,useDefault,blueprint) => {selected=blueprint};
+    await context.selectCreationTemplate('old');
+    assert.equal(selected.version,'1.0.0');
+});
+
+test('an evaluation cannot cancel selection but direct navigation cancels an old fetch', async () => {
+    const context = editorEnvironment();
+    const current={id:'meta.current',version:'1.0.0'};
+    const old={id:'meta.old',version:'1.0.0'};
+    context.blueprintState.items=[current];
+    context.blueprintState.templates=[{template_id:'old',blueprint_id:old.id,blueprint_version:old.version}];
+    context.document.querySelector=()=>null;
+    context.blueprintDefaultValues=()=>({});
+    context.setBlueprintStudioView=()=>{};
+    context.renderBlueprintList=()=>{};
+    context.renderBlueprintEditor=()=>{};
+    let release;
+    context.loadTemplateBlueprint=()=>new Promise(resolve=>{release=resolve});
+    const first=context.selectCreationTemplate('old');
+    vm.runInContext('blueprintEvaluationSequence++',context);
+    release(old);
+    await first;
+    assert.equal(context.blueprintState.selected.id,old.id);
+    const second=context.selectCreationTemplate('old');
+    context.selectBlueprint(current.id,null,null,false);
+    release(old);
+    await second;
+    assert.equal(context.blueprintState.selected.id,current.id);
+});
+
+test('an upgrade draft preserves proposed metadata when opening save-as-new', () => {
+    const context=editorEnvironment();
+    const controls=new Map();
+    context.document.getElementById=id=>{
+        if (!controls.has(id)) controls.set(id,{value:'',hidden:true});
+        return controls.get(id);
+    };
+    context.setBlueprintStudioView=()=>{};
+    context.blueprintState.templateDraftMetadata={
+        name:'搜索模板 · 升级副本',description:'原有说明',scope_type:'account',account_id:'test',
+    };
+    context.toggleCreationTemplatePanel(true,true);
+    assert.equal(controls.get('creationTemplateName').value,'搜索模板 · 升级副本');
+    assert.equal(controls.get('creationTemplateAccount').value,'test');
+    assert.equal(controls.get('creationTemplateSubmitButton').textContent,'保存模板');
+});
+
+test('wizard verification is collapsed and scoped to the saved preset', () => {
+    const context=environment();
+    context.escapeHtml=value=>String(value);
+    const html=context.templateVerificationDisclosure({
+        verification:{label:'部分操作已验证',match:'exact',operations:[{scope:'campaign.create',state:'passed'}]},
+    });
+    assert.match(html,/<details/);
+    assert(!html.includes('<details open'));
+    assert.match(html,/原模板|保存的参数/);
+});
+
+test('refreshing catalogs keeps the draft on its pinned blueprint version', async () => {
+    const context=editorEnvironment();
+    const old={id:'meta.leads',version:'1.0.0'};
+    const latest={...old,version:'1.1.0'};
+    context.blueprintState.mode='wizard';
+    context.blueprintState.selected=old;
+    context.blueprintState.items=[latest];
+    context.blueprintState.values={'ad.name':'User edit'};
+    context.apiFetch=async url=>url==='/creation-blueprints'?{blueprints:[latest]}:{};
+    context.renderBlueprintList=()=>{};
+    context.renderBlueprintEditor=()=>{};
+    await context.loadCreationBlueprints(null,true);
+    assert.equal(context.blueprintState.selected.version,'1.0.0');
+    assert.equal(context.blueprintState.values['ad.name'],'User edit');
+});
+
+test('successful editor catalog load clears its transient loading notice', async () => {
+    const context=environment();
+    context.showBlueprintNotice=value=>{context.notice=value};
+    context.loadCreationBlueprints=async()=>{context.blueprintState.catalogLoaded=true};
+    assert.equal(await context.ensureTemplateEditorCatalog(),true);
+    assert.equal(context.notice,'');
+});
+
+test('leaving the editor cancels a delayed template selection', async () => {
+    const context=editorEnvironment();
+    const old={template_id:'old',blueprint_id:'meta.leads',blueprint_version:'1.0.0'};
+    context.blueprintState.templates=[old];
+    let release, selected=false;
+    context.selectBlueprint=()=>{selected=true};
+    context.loadTemplateBlueprint=()=>new Promise(resolve=>{release=resolve});
+    const pending=context.selectCreationTemplate('old');
+    vm.runInContext('templateBrowser.navigationSequence++',context);
+    release({id:old.blueprint_id,version:old.blueprint_version});
+    await pending;
+    assert.equal(selected,false);
+});

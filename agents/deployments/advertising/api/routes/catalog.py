@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
 
 from fastapi import APIRouter, Header, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
@@ -17,6 +17,7 @@ from agents.deployments.advertising.api.models import (
     CreationTemplateDuplicateRequest,
     CreationTemplateRequest,
     CreationTemplateUpdateRequest,
+    CreationTemplateUpgradeRequest,
 )
 from agents.deployments.advertising.api.chat_documents import (
     read_chat_document_table,
@@ -215,6 +216,29 @@ def create_catalog_router(context: ApiContext) -> APIRouter:
         return JSONResponse(status_code=201, content=result)
 
     @router.post(
+        "/creation-templates/{template_id}/upgrade-preview",
+        tags=["creation-templates"],
+    )
+    async def preview_template_upgrade(
+        template_id: str,
+        body: CreationTemplateUpgradeRequest,
+        http_request: Request,
+        x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+    ):
+        principal = context.authorize_request(x_api_key, http_request)
+        context.require_permission(principal, "ads.plan")
+        try:
+            result = await run_in_threadpool(
+                creation_template_manager(principal).preview_upgrade,
+                principal.tenant_id, principal.user_id, template_id, body.target_version,
+            )
+        except ValueError as error:
+            raise HTTPException(status_code=422, detail=str(error)) from error
+        if result is None:
+            raise HTTPException(status_code=404, detail="创建模板不存在或无权访问")
+        return result
+
+    @router.post(
         "/creation-templates/{template_id}/apply",
         tags=["creation-templates"],
     )
@@ -388,6 +412,24 @@ def create_catalog_router(context: ApiContext) -> APIRouter:
                 detail="未找到匹配当前选择的广告创建蓝图",
             )
         return {"blueprint": blueprint}
+
+    @router.get("/creation-blueprints/{blueprint_id}", tags=["info"])
+    async def get_pinned_blueprint(
+        blueprint_id: str,
+        http_request: Request,
+        version: str = Query(..., min_length=1, max_length=80),
+        x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+    ):
+        principal = context.authorize_request(x_api_key, http_request)
+        context.require_permission(principal, "ads.read")
+        runtime = runtime_or_503()
+        blueprint = runtime.creation_blueprints.get(blueprint_id, version)
+        if blueprint is None:
+            raise HTTPException(status_code=404, detail="模板固定的蓝图版本不存在")
+        expanded = runtime.creation_card_builder.expand_blueprint(blueprint)
+        return {"blueprint": {
+            **expanded.to_dict(), "support": runtime._creation_blueprint_support(expanded),
+        }}
 
     @router.post("/creation-import/inspect", tags=["creation-import"])
     async def inspect_creation_import(

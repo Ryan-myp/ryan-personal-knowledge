@@ -643,7 +643,7 @@ class CreationCardBuilder:
                     "template_id", "name", "description", "provider",
                     "blueprint_id", "blueprint_version", "ad_format",
                     "scope_type", "account_id", "verification_status",
-                    "verified_scope", "required_inputs", "tags", "source",
+                    "verified_scope", "verification", "required_inputs", "tags", "source",
                     "template_kind", "is_default", "covered_fields",
                 )
                 if key in item

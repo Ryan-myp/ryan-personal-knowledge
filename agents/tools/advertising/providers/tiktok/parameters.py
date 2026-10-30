@@ -11,6 +11,9 @@ from typing import Any, Optional
 
 from agents.tools.advertising.clients.tiktok_client import TIKTOK_SMART_PLUS_CTA_VALUES
 from agents.tools.advertising.clients.tiktok_lead_contract import LEAD_DESTINATION_GOALS
+from agents.tools.advertising.clients.tiktok_smart_plus_contract import (
+    music_schema, product_configuration_fields,
+)
 
 
 TIKTOK_OBJECTIVE_TYPES = [
@@ -2304,7 +2307,7 @@ def tiktok_smart_plus_ad_schema() -> dict[str, Any]:
             "deeplink": _field("string", "App deep link"),
             "dark_post_status": _field("string", "Ads-only mode", enum=["ON", "OFF"]),
             "material_name": _field("string", "Creative material name"),
-            "music_info": _field("object", "TikTok music configuration", additionalProperties=False),
+            "music_info": music_schema(),
             "tracking_app_id": _field(
                 "string", "Tracking app ID returned by TikTok", minLength=1,
                 lookup_tool="tiktok_list_apps", lookup_result_key="apps",
@@ -2327,8 +2330,6 @@ def tiktok_smart_plus_ad_schema() -> dict[str, Any]:
                     "source": "provider_tracking_url",
                 },
             ),
-            "product_info": _field("object", "Optional product information", additionalProperties=False),
-            "catalog_creative_info": _field("object", "Optional catalog creative configuration", additionalProperties=False),
             "deeplink_type": _field("string", "Deeplink type", enum=["NORMAL", "DEFERRED"]),
             "creative_list": _field(
                 "array", "TikTok Smart+ creative list; each item contains creative_info",
@@ -2354,7 +2355,7 @@ def tiktok_smart_plus_ad_schema() -> dict[str, Any]:
                                 "identity_type": _field("string", "Identity type"),
                                 "identity_id": _field("string", "Identity ID"),
                                 "material_name": _field("string", "Creative material name"),
-                                "music_info": _field("object", "TikTok music configuration", additionalProperties=False),
+                                "music_info": music_schema(),
                             },
                         },
                     },
@@ -2400,8 +2401,7 @@ def tiktok_smart_plus_ad_schema() -> dict[str, Any]:
                         },
                         additionalProperties=False,
                     ),
-                    "product_info": _field("object", "Optional product information", additionalProperties=False),
-                    "catalog_creative_info": _field("object", "Optional catalog creative configuration", additionalProperties=False),
+                    **product_configuration_fields(),
                 },
                 additionalProperties=False,
             ),

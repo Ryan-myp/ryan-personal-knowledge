@@ -12,12 +12,15 @@ import hashlib
 import re
 import uuid
 from datetime import datetime, timezone
-from functools import lru_cache
+from functools import lru_cache, partial
 from pathlib import Path
 from typing import Any, Callable, Mapping, Optional
 
 from agents.applications.advertising.persistence.errors import PersistenceConflictError
 from agents.applications.advertising.persistence.models import CreationTemplateRecord
+from agents.tools.advertising.shared.domain.blueprint import _version_key
+from .template_upgrade import preview_template_upgrade, registered_field_schema
+from .verification import CreationVerificationCatalog, load_creation_verification
 
 
 class CreationTemplateError(ValueError):
@@ -178,10 +181,14 @@ class CreationTemplateManager:
         builtin_templates: Optional[list[Mapping[str, Any]]] = None,
         allowed_accounts: Optional[Mapping[str, Any]] = None,
         account_scope: Optional[Mapping[str, Any]] = None,
+        verification_catalog: Optional[CreationVerificationCatalog] = None,
+        field_schema_getter: Optional[Callable[[str], Mapping]] = None,
     ):
         self.store = store
         self.blueprint_getter = blueprint_getter
         self.builtin_templates = [dict(item) for item in (builtin_templates or [])]
+        self.verification_catalog = verification_catalog or CreationVerificationCatalog()
+        self.field_schema_getter = field_schema_getter
         self.allowed_accounts = {
             str(provider): {str(account) for account in (accounts or [])}
             for provider, accounts in (allowed_accounts or {}).items()
@@ -218,6 +225,9 @@ class CreationTemplateManager:
         value.setdefault("source", "user")
         value.setdefault("editable", value["source"] == "user")
         value.setdefault("template_kind", "builtin" if value["source"] == "builtin" else "user")
+        if value["source"] == "user":
+            value["verification"] = CreationVerificationCatalog().summarize(value)
+            value["verification_status"] = value["verification"]["status"]
         return value
 
     def _blueprint(self, blueprint_id: str, version: Optional[str] = None) -> dict[str, Any]:
@@ -349,6 +359,10 @@ class CreationTemplateManager:
                 definition.get("required_input_fields") or []
             ),
         }
+        verification = self.verification_catalog.summarize(value)
+        value["verification"] = verification
+        value["verification_status"] = verification["status"]
+        value["verified_scope"] = verification["notice"]
         return self._public(value)
 
     def _builtin_records(
@@ -620,6 +634,9 @@ class CreationTemplateManager:
             return None
         if payload.get("blueprint_id") and str(payload["blueprint_id"]) != existing.blueprint_id:
             raise CreationTemplateError("模板创建类型不可修改，请复制为新模板")
+        if (payload.get("blueprint_version")
+                and str(payload["blueprint_version"]) != existing.blueprint_version):
+            raise CreationTemplateError("蓝图版本升级必须先预览并另存新模板，不能覆盖旧版本")
         data, _ = self._payload({**existing.to_dict(), **dict(payload)}, existing=existing)
         updated = self.store.update_creation_template(
             template_id,
@@ -628,6 +645,23 @@ class CreationTemplateManager:
             data=data,
         )
         return self._public(updated) if updated else None
+
+    def preview_upgrade(
+        self, tenant_id: str, user_id: str, template_id: str,
+        target_version: Optional[str] = None,
+    ) -> Optional[dict[str, Any]]:
+        template = self.get(tenant_id, user_id, template_id)
+        if template is None:
+            return None
+        source = self._blueprint(template["blueprint_id"], template["blueprint_version"])
+        target = self._blueprint(template["blueprint_id"], target_version)
+        if _version_key(target["version"]) <= _version_key(source["version"]):
+            raise CreationTemplateError("没有可升级的新蓝图版本")
+        if source["provider"] != target["provider"] or source["ad_format"] != target["ad_format"]:
+            raise CreationTemplateError("升级不能改变渠道或广告类型")
+        return preview_template_upgrade(
+            template, source, target, field_schema_getter=self.field_schema_getter,
+        )
 
     def delete(self, tenant_id: str, user_id: str, template_id: str) -> Optional[dict[str, Any]]:
         if self._builtin_by_id(template_id):
@@ -710,10 +744,14 @@ def creation_template_manager_for_runtime(
         return blueprint if isinstance(blueprint, dict) else None
 
     validator = getattr(runtime, "whitelist_validator", None)
+    tools = getattr(runtime, "registry", None)
+
     return CreationTemplateManager(
         store,
         get_blueprint,
         builtin_templates=load_builtin_template_definitions(),
         allowed_accounts=getattr(validator, "allowed_accounts", {}) if validator else {},
         account_scope=account_scope,
+        verification_catalog=load_creation_verification(),
+        field_schema_getter=partial(registered_field_schema, tools) if tools else None,
     )

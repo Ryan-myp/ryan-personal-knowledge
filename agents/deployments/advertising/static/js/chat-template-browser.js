@@ -7,6 +7,42 @@ const templateBrowser = {
 
 let templateLibraryLoadPromise = null;
 let templateEditorLoadPromise = null;
+const templateBlueprintCache = new Map();
+
+async function loadTemplateBlueprint(template) {
+    const version = template.blueprint_version;
+    const current = blueprintState.items.find(item => item.id === template.blueprint_id && item.version === version);
+    if (current) return current;
+    const key = `${template.blueprint_id}@${version}`;
+    if (templateBlueprintCache.has(key)) return templateBlueprintCache.get(key);
+    const data = await apiFetch(`/creation-blueprints/${encodeURIComponent(template.blueprint_id)}?version=${encodeURIComponent(version)}`);
+    if (data.blueprint?.id !== template.blueprint_id || data.blueprint?.version !== version) {
+        throw new Error('返回的蓝图版本与模板不一致，已停止加载。');
+    }
+    if (templateBlueprintCache.size >= 64) templateBlueprintCache.delete(templateBlueprintCache.keys().next().value);
+    templateBlueprintCache.set(key, data.blueprint);
+    return data.blueprint;
+}
+
+function templateVerificationMarkup(template) {
+    const info = template.verification;
+    if (!info) return '<section class="template-verification"><h3>验证记录</h3><p>当前模板没有绑定版本与参数的实测记录。</p></section>';
+    const states = {passed:'已通过', failed:'未通过', partial:'部分通过', not_run:'未验证', unknown:'未知'};
+    const operations = info.match === 'historical' ? info.historical_operations : info.operations;
+    const rows = (operations || []).map(item => `<tr><td>${escapeHtml(item.scope)}</td><td>${escapeHtml(states[item.state] || '未知')}</td></tr>`).join('');
+    return `<section class="template-verification"><h3>${escapeHtml(info.label || '验证记录')}</h3>
+        ${info.verified_at ? `<p>记录日期：${escapeHtml(info.verified_at)}</p>` : ''}
+        ${info.match === 'historical' ? '<h4>历史版本操作记录</h4>' : ''}
+        ${rows ? `<table><thead><tr><th scope="col">操作范围</th><th scope="col">结果</th></tr></thead><tbody>${rows}</tbody></table>` : ''}
+        ${(info.blockers || []).map(item => `<p class="template-verification-warning">${escapeHtml(item)}</p>`).join('')}
+        <p>${escapeHtml(info.notice || '')}</p></section>`;
+}
+
+function templateVerificationDisclosure(template) {
+    return `<details class="template-verification-disclosure"><summary>模板验证记录 · ${escapeHtml(template.verification?.label || '待验证')}</summary>
+        <p>以下记录针对原模板保存的参数；本次修改及账户资源仍需重新校验。</p>
+        ${templateVerificationMarkup(template)}</details>`;
+}
 
 function loadTemplateLibrary() {
     if (templateLibraryLoadPromise) return templateLibraryLoadPromise;
@@ -35,7 +71,11 @@ async function ensureTemplateEditorCatalog() {
     if (!templateEditorLoadPromise) {
         showBlueprintNotice('正在读取模板字段定义…');
         templateEditorLoadPromise = loadCreationBlueprints(null, true)
-            .then(() => Boolean(blueprintState.catalogLoaded))
+            .then(() => {
+                const loaded = Boolean(blueprintState.catalogLoaded);
+                if (loaded) showBlueprintNotice('');
+                return loaded;
+            })
             .finally(() => { templateEditorLoadPromise = null; });
     }
     return templateEditorLoadPromise;
@@ -93,6 +133,7 @@ function setTemplateManagerView(view) {
 
 function showTemplateLibrary() {
     templateBrowser.navigationSequence++;
+    if (typeof blueprintSelectionSequence !== 'undefined') blueprintSelectionSequence++;
     setTemplateManagerView('list');
     renderTemplateLibrary();
 }
@@ -177,8 +218,9 @@ function renderTemplateLibrary() {
     document.getElementById('templateResumeDraft').hidden = !templateBrowser.hasDraft;
 }
 
-function templateParameterGroups(template) {
-    const blueprint = blueprintState.items.find(item => item.id === template.blueprint_id);
+function templateParameterGroups(template, pinnedBlueprint = null) {
+    const blueprint = pinnedBlueprint || blueprintState.items.find(item =>
+        item.id === template.blueprint_id && item.version === template.blueprint_version);
     const fields = new Map((blueprint?.fields || []).map(field => [field.path, field]));
     const groups = new Map();
     const values = template.values || {};
@@ -203,19 +245,72 @@ async function openTemplateDetail(id) {
     if (sequence !== templateBrowser.navigationSequence) return;
     const template = blueprintState.templates.find(item => item.template_id === id);
     if (!template) return;
+    let blueprint;
+    try { blueprint = await loadTemplateBlueprint(template); }
+    catch (error) { showBlueprintNotice(error.message || '固定蓝图读取失败。'); return; }
+    if (sequence !== templateBrowser.navigationSequence) return;
     templateBrowser.selectedId = id;
+    templateBrowser.upgradePreview = null;
     setTemplateManagerView('detail');
     const metadata = [
         ['渠道', creationProviderLabel(template.provider)], ['账号', template.account_id || '通用 · 不限账号'],
         ['广告类型', templateFormatLabel(template)], ['来源', template.source === 'builtin' ? '内置 · 只读' : '自建'],
         ['状态', template.status === 'active' ? '已启用' : '已停用'],
         ['验证', creationTemplateVerificationLabel(template.verification_status)],
+        ['蓝图版本', template.blueprint_version || '未固定'],
     ];
+    const latest = blueprintState.items.find(item => item.id === template.blueprint_id);
+    const upgrade = latest && latest.version !== template.blueprint_version;
     document.getElementById('templateDetail').innerHTML = `<header class="template-detail-heading"><div><h2>${escapeHtml(template.name || '未命名模板')}</h2><p>${escapeHtml(template.description || '')}</p></div>${templateRowActions(template, true)}</header>
         <dl class="template-detail-meta">${metadata.map(([label, value]) => `<div><dt>${label}</dt><dd>${escapeHtml(value)}</dd></div>`).join('')}</dl>
+        ${upgrade ? `<div class="template-version-row"><span>可升级至 ${escapeHtml(latest.version)}</span>
+            <button type="button" onclick="previewTemplateUpgrade()">预览升级</button></div>` : ''}
+        <div id="templateUpgradePreview" aria-live="polite"></div>
+        ${templateVerificationMarkup(template)}
         ${template.required_inputs?.length ? `<p class="template-required-note">使用时需补充：${escapeHtml(template.required_inputs.join('、'))}</p>` : ''}
-        ${templateParameterGroups(template)}`;
+        ${templateParameterGroups(template, blueprint)}`;
     document.getElementById('templateDetail').scrollTop = 0;
+}
+
+async function previewTemplateUpgrade() {
+    const id = templateBrowser.selectedId;
+    const sequence = templateBrowser.navigationSequence;
+    const target = document.getElementById('templateUpgradePreview');
+    if (!target || !id) return;
+    templateBrowser.upgradePreview = null;
+    target.textContent = '正在核对版本差异…';
+    try {
+        const preview = await apiFetch(`/creation-templates/${encodeURIComponent(id)}/upgrade-preview`, {
+            method:'POST', headers:{'Content-Type':'application/json'}, body:'{}',
+        });
+        if (sequence !== templateBrowser.navigationSequence || id !== templateBrowser.selectedId) return;
+        templateBrowser.upgradePreview = preview;
+        const groups = [
+            ['新增字段',preview.added_fields], ['不再支持的已存参数',preview.removed_fields],
+            ['约束或默认值变化',preview.changed_fields], ['需补充参数',preview.missing_fields],
+            ['需修正参数',preview.invalid_fields],
+        ];
+        target.innerHTML = `<section class="template-upgrade"><h3>${escapeHtml(preview.source_version)} → ${escapeHtml(preview.target_version)}</h3>
+            ${groups.filter(([,fields])=>fields?.length).map(([title,fields])=>`<details><summary>${escapeHtml(title)} · ${fields.length}</summary>
+                <ul>${fields.map(field=>`<li>${escapeHtml(typeof field === 'string' ? field : field.path || field.field || '')}</li>`).join('')}</ul></details>`).join('')}
+            <p>原模板保留。升级副本需重新选择账户资源并验证，历史实测状态不继承。</p>
+            <button type="button" onclick="beginTemplateUpgrade()">编辑升级副本</button></section>`;
+    } catch (error) {
+        if (sequence === templateBrowser.navigationSequence) target.textContent = error.message || '升级预览失败。';
+    }
+}
+
+function beginTemplateUpgrade() {
+    const preview = templateBrowser.upgradePreview;
+    if (!preview || preview.source_template_id !== templateBrowser.selectedId) return;
+    const draft = {...preview.draft, template_id:'', source:'user'};
+    templateBrowser.navigationSequence++;
+    templateBrowser.hasDraft = true;
+    blueprintState.creatingTemplate = true;
+    setTemplateManagerView('edit');
+    selectBlueprint(preview.blueprint.id, null, draft, false, preview.blueprint);
+    blueprintState.templateSaveAsNew = true;
+    showBlueprintNotice('升级副本尚未保存，原模板未改变。');
 }
 
 async function editTemplateFromLibrary(id) {
@@ -232,5 +327,5 @@ async function editTemplateFromLibrary(id) {
     templateBrowser.hasDraft = true;
     setTemplateManagerView('edit');
     blueprintState.accountId = template.account_id || '';
-    selectCreationTemplate(id);
+    await selectCreationTemplate(id);
 }

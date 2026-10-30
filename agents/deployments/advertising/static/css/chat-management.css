@@ -706,6 +706,18 @@ body.workspace-refresh .template-detail-heading p { margin-top: 8px; font-size: 
 body.workspace-refresh .template-detail-meta { display: flex; flex-wrap: wrap; gap: 20px 48px; padding: 24px 0; margin: 0; border-bottom: 1px solid var(--manage-line); font-size: 13px; }
 body.workspace-refresh .template-detail-meta dt { color: var(--manage-muted); font-size: 12px; }
 body.workspace-refresh .template-detail-meta dd { margin: 6px 0 0; }
+body.workspace-refresh :is(.template-verification, .template-upgrade) { padding: 16px 0; border-bottom: 1px solid var(--manage-line); font-size: 13px; overflow-wrap: anywhere; }
+body.workspace-refresh :is(.template-verification, .template-upgrade) h3 { margin: 0 0 10px; font-size: 14px; }
+body.workspace-refresh :is(.template-verification, .template-upgrade) p { color: var(--manage-muted); line-height: 1.6; margin: 8px 0; }
+body.workspace-refresh .template-verification table { width: 100%; table-layout: fixed; border-collapse: collapse; }
+body.workspace-refresh .template-verification :is(th,td) { padding: 7px 0; text-align: left; border-bottom: 1px solid var(--manage-line); }
+body.workspace-refresh .template-verification :is(th,td):last-child { width: 80px; text-align: right; }
+body.workspace-refresh .template-verification-warning { color: #a14b24; }
+body.workspace-refresh .template-version-row { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding-top: 16px; font-size: 13px; }
+body.workspace-refresh :is(.template-version-row, .template-upgrade) button { font: inherit; min-height: 32px; padding: 4px 10px; border: 1px solid var(--manage-line); border-radius: 6px; color: var(--manage-ink); background: var(--manage-surface); cursor: pointer; }
+body.workspace-refresh .template-upgrade details { padding: 6px 0; }
+body.workspace-refresh .template-upgrade summary { cursor: pointer; }
+body.workspace-refresh .template-upgrade ul { padding-left: 20px; max-height: 180px; overflow-y: auto; }
 body.workspace-refresh .template-required-note { padding: 14px 0; font-size: 13px; color: var(--manage-muted); }
 body.workspace-refresh .template-parameter-group { margin-top: 24px; }
 body.workspace-refresh .template-parameter-group h3 { font-size: 15px; margin-bottom: 12px; }

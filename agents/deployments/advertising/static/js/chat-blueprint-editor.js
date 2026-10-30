@@ -1,4 +1,5 @@
         let blueprintEvaluationSequence = 0;
+        let blueprintSelectionSequence = 0;
         const blueprintAdvancedState = new Map();
 
         function blueprintFieldIsPrimary(field, state) {
@@ -25,8 +26,8 @@
 
         function creationTemplateVerificationLabel(status) {
             return ({
-                live_verified: '已验证',
-                partial_live_verified: '部分验证',
+                live_verified: '所列操作已验证',
+                partial_live_verified: '部分操作已验证',
                 live_verified_with_provider_limits: '已验证 · 渠道限制',
                 provider_limited: '渠道限制',
                 dry_run_only: '草稿预设 · 未实测',
@@ -646,11 +647,9 @@
                 blueprintState.formats = results[0].value.formats || blueprintState.formats || [];
                 blueprintState.catalogLoaded = results.every(result => result.status === 'fulfilled');
                 renderBlueprintList();
-                const existing = blueprintState.items.find(item => item.id === blueprintState.selected?.id);
                 if (blueprintState.mode === 'templates' && templateBrowser.view !== 'edit') {
                     if (templateBrowser.view === 'detail') openTemplateDetail(templateBrowser.selectedId);
-                } else if (preserveDraft && existing) {
-                    blueprintState.selected = existing;
+                } else if (preserveDraft && blueprintState.selected) {
                     renderBlueprintEditor();
                 } else if (selectId) {
                     selectBlueprint(selectId);
@@ -865,9 +864,10 @@
             }
         }
 
-        function selectBlueprint(blueprintId, selectorValue = null, template = null, useDefaultTemplate = true) {
-            const item = blueprintState.items.find(value => value.id === blueprintId);
+        function selectBlueprint(blueprintId, selectorValue = null, template = null, useDefaultTemplate = true, pinnedBlueprint = null) {
+            const item = pinnedBlueprint || blueprintState.items.find(value => value.id === blueprintId);
             if (!item) return;
+            blueprintSelectionSequence++;
             if (
                 blueprintState.selected?.id
                 && (
@@ -899,6 +899,7 @@
             blueprintState.selectionTokenTools = {};
             blueprintState.lookupOptions = {};
             blueprintState.selectedTemplateId = template?.template_id || '';
+            blueprintState.templateDraftMetadata = template && !template.template_id ? template : null;
             const selector = item.selector;
             const initialValue = selectorValue || selector?.values?.[0];
             if (selector?.field && initialValue !== undefined) blueprintState.values[selector.field] = initialValue;
@@ -918,18 +919,23 @@
             if (selector?.field) evaluateBlueprintDraft(null);
         }
 
-        function selectCreationTemplate(templateId) {
+        async function selectCreationTemplate(templateId) {
             blueprintState.creatingTemplate = false;
             const template = blueprintState.templates.find(item => item.template_id === templateId);
             if (!template) return;
-            const blueprint = blueprintState.items.find(item => item.id === template.blueprint_id && (
-                !template.blueprint_version || item.version === template.blueprint_version
-            )) || blueprintState.items.find(item => item.id === template.blueprint_id);
-            if (!blueprint) {
-                showBlueprintNotice('模板依赖的系统蓝图已升级或下线，请复制模板后重新配置。');
+            const sequence = ++blueprintSelectionSequence;
+            const navigation = templateBrowser.navigationSequence;
+            const isCurrent = () => sequence === blueprintSelectionSequence
+                && navigation === templateBrowser.navigationSequence;
+            let blueprint;
+            try {
+                blueprint = await loadTemplateBlueprint(template);
+            } catch (error) {
+                if (isCurrent()) showBlueprintNotice(error.message || '固定蓝图版本读取失败。');
                 return;
             }
-            selectBlueprint(blueprint.id, null, template);
+            if (!isCurrent()) return;
+            selectBlueprint(blueprint.id, null, template, false, blueprint);
             if (blueprintState.mode === 'wizard' && template.status === 'active') {
                 apiFetch(`/creation-templates/${encodeURIComponent(templateId)}/apply`, { method: 'POST' }).catch(() => {});
             } else if (blueprintState.mode === 'wizard') {
@@ -949,13 +955,14 @@
             const template = !blueprintState.templateSaveAsNew
                 ? blueprintState.templates.find(item => item.template_id === blueprintState.selectedTemplateId)
                 : null;
+            const metadata = template || blueprintState.templateDraftMetadata;
             const fields = {
-                creationTemplateName: template?.name || '',
-                creationTemplateScope: template?.scope_type || 'general',
-                creationTemplateAccount: template?.account_id || blueprintState.accountId || '',
-                creationTemplateRegion: template?.region || '',
-                creationTemplateTags: Array.isArray(template?.tags) ? template.tags.join(', ') : '',
-                creationTemplateDescription: template?.description || '',
+                creationTemplateName: metadata?.name || '',
+                creationTemplateScope: metadata?.scope_type || 'general',
+                creationTemplateAccount: metadata?.account_id || blueprintState.accountId || '',
+                creationTemplateRegion: metadata?.region || '',
+                creationTemplateTags: Array.isArray(metadata?.tags) ? metadata.tags.join(', ') : '',
+                creationTemplateDescription: metadata?.description || '',
             };
             Object.entries(fields).forEach(([id, value]) => {
                 const control = document.getElementById(id);
@@ -1012,6 +1019,7 @@
                 if (index >= 0) blueprintState.templates[index] = result;
                 else blueprintState.templates.unshift(result);
                 blueprintState.selectedTemplateId = result.template_id;
+                blueprintState.templateDraftMetadata = null;
                 blueprintState.creatingTemplate = false;
                 toggleCreationTemplatePanel(false);
                 renderBlueprintList();
@@ -1219,6 +1227,11 @@
             const selectedTemplate = blueprintState.templates.find(item =>
                 item.template_id === blueprintState.selectedTemplateId
             );
+            if (selectedTemplate && typeof templateVerificationDisclosure === 'function') {
+                const verification = document.createElement('div');
+                verification.innerHTML = templateVerificationDisclosure(selectedTemplate);
+                container.appendChild(verification);
+            }
             if (selectedTemplate?.source === 'builtin' && Array.isArray(selectedTemplate.required_inputs)
                 && selectedTemplate.required_inputs.length) {
                 const requirements = document.createElement('div');

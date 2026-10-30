@@ -1862,7 +1862,7 @@ class TikTokToolSource(BaseProviderToolSource):
                 "图片等渠道素材引用，live 仅允许创建暂停状态。"
             ),
             method_name="create_smart_plus_ad", result_key="ad",
-            contract_version="1.9.0",
+            contract_version="2.0.0",
             properties={"account_id": {"type": "string"}, **smart_plus_ad["properties"]},
             required=["account_id"] + smart_plus_ad["required"],
             requires=smart_plus_ad["requires"],
