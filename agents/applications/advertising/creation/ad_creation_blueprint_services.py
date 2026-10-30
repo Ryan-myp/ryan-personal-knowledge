@@ -50,6 +50,7 @@ class AdCreationBlueprintServicesMixin:
             )
         blueprint = self.creation_card_builder.expand_blueprint(blueprint)
         option_sources: dict[str, list[Any]] = {}
+        field_schemas: dict[str, Mapping[str, Any]] = {}
         for field in blueprint.fields:
             tool_name, schema_path = str(field["tool_ref"]).split(".", 1)
             try:
@@ -60,6 +61,7 @@ class AdCreationBlueprintServicesMixin:
                 getattr(definition, "input_schema", None), "properties", {}
             ) or {}
             schema = _schema_at_path(properties, schema_path) or {}
+            field_schemas[str(field["path"])] = schema
             enum = schema.get("enum") if isinstance(schema, Mapping) else None
             if (
                 not isinstance(enum, list)
@@ -75,6 +77,7 @@ class AdCreationBlueprintServicesMixin:
             previous_values=previous_values,
             changed_fields=changed_fields,
             option_sources=option_sources,
+            field_schemas=field_schemas,
         )
 
     def build_creation_ui(

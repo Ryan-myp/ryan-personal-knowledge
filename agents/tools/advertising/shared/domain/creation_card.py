@@ -332,11 +332,25 @@ def _safe_default(
     Account-owned resources, geography, URLs and assets deliberately have no
     fallback here. Their absence must remain visible as a user/context input.
     """
-    if "default" in field:
+    conditional_options: Optional[list[Any]] = None
+    if field.get("option_rules"):
+        if options_override is None or not options_override:
+            return None, None, None
+        conditional_options = list(options_override)
+
+    def allowed_by_current_options(value: Any) -> bool:
+        if conditional_options is None:
+            return True
+        candidates = value if isinstance(value, (list, tuple, set)) else [value]
+        return bool(candidates) and all(
+            candidate in conditional_options for candidate in candidates
+        )
+
+    if "default" in field and allowed_by_current_options(field["default"]):
         return _copy_json(field["default"]), "blueprint", str(
             field.get("default_reason") or "按当前广告蓝图预设，可在高级设置中修改。"
         )
-    if "default" in schema:
+    if "default" in schema and allowed_by_current_options(schema["default"]):
         return _copy_json(schema["default"]), "tool_schema", str(
             field.get("default_reason") or "按渠道 Tool Schema 默认值填充，可修改。"
         )
@@ -345,7 +359,11 @@ def _safe_default(
     if strategy == "generated_name" or field_name in {"name", "campaign_name", "campaignname", "adgroup_name", "ad_name"}:
         return _generated_name(intent, provider_values, field), "generated", "系统按推广目标、广告层级和日期生成，可修改。"
 
-    options = list(options_override) if options_override else _options(field, schema)
+    options = conditional_options or (
+        list(options_override)
+        if options_override is not None
+        else _options(field, schema)
+    )
     if not options:
         return None, None, None
     if field.get("presentation") == "derived_readonly" and len(options) == 1:
@@ -408,7 +426,7 @@ def _safe_default(
         age_options = [value for value in options if str(value).upper().startswith("AGE_")]
         if age_options:
             return _copy_json(age_options), "policy", "默认覆盖全部年龄段，避免系统替你缩窄受众。"
-    if len(options) == 1 and field.get("source") != "lookup":
+    if len(options) == 1 and not is_array and field.get("source") != "lookup":
         return _copy_json(options[0]), "derived", "当前创建类型只有一个合法选项，系统自动匹配。"
     return None, None, None
 
@@ -1940,8 +1958,10 @@ class CreationCardBuilder:
                     value = False
             values[str(field["path"])] = value
         option_sources: dict[str, list[Any]] = {}
+        field_schemas: dict[str, Mapping[str, Any]] = {}
         for field in blueprint.fields[:_MAX_FIELDS]:
             _tool_name, _schema_path, schema = _schema_for_ref(self.tools, field["tool_ref"])
+            field_schemas[str(field["path"])] = schema
             schema_options = _options(field, schema)
             if schema_options:
                 option_sources[str(field["path"])] = schema_options
@@ -1956,27 +1976,38 @@ class CreationCardBuilder:
                 and len(schema_options) == 1
             ):
                 values[path] = schema_options[0]
-        evaluation = self.cascade.evaluate(blueprint, values, option_sources=option_sources)
-        # Some safe defaults depend on a parent selection (for example Meta's
-        # optimization goal depends on the campaign objective). Resolve those
-        # after the first cascade pass, then evaluate once more so readiness
-        # and conditional fields use the same materialized draft.
-        dependent_defaults_changed = False
-        initial_states = {item["path"]: item for item in evaluation.get("fields", [])}
-        for field in blueprint.fields[:_MAX_FIELDS]:
-            path = str(field["path"])
-            if values.get(path) is not None:
-                continue
-            _tool_name, _schema_path, schema = _schema_for_ref(self.tools, field["tool_ref"])
-            candidate, _source, _reason = _safe_default(
-                intent, provider_values, field, schema,
-                options_override=list(initial_states.get(path, {}).get("options") or []),
+        # Conditional defaults can form a chain: selecting the objective may
+        # unlock an optimization goal, which in turn unlocks a billing event.
+        # Re-evaluate between passes so every default is based on current
+        # dependencies, while the field bound guarantees finite work.
+        bounded_fields = blueprint.fields[:_MAX_FIELDS]
+        evaluation: dict[str, Any] = {}
+        for _ in range(len(bounded_fields) + 1):
+            evaluation = self.cascade.evaluate(
+                blueprint, values, option_sources=option_sources, field_schemas=field_schemas,
             )
-            if candidate is not None:
-                values[path] = candidate
-                dependent_defaults_changed = True
-        if dependent_defaults_changed:
-            evaluation = self.cascade.evaluate(blueprint, values, option_sources=option_sources)
+            states = {item["path"]: item for item in evaluation.get("fields", [])}
+            defaults_changed = False
+            for field in bounded_fields:
+                path = str(field["path"])
+                if values.get(path) is not None:
+                    continue
+                _tool_name, _schema_path, schema = _schema_for_ref(self.tools, field["tool_ref"])
+                state = states.get(path, {})
+                options_override = (
+                    list(state["options"])
+                    if "options" in state
+                    else None
+                )
+                candidate, _source, _reason = _safe_default(
+                    intent, provider_values, field, schema,
+                    options_override=options_override,
+                )
+                if candidate is not None:
+                    values[path] = candidate
+                    defaults_changed = True
+            if not defaults_changed:
+                break
         state_by_path = {item["path"]: item for item in evaluation.get("fields", [])}
         fields: list[dict[str, Any]] = []
         for field in blueprint.fields[:_MAX_FIELDS]:
@@ -2018,6 +2049,7 @@ class CreationCardBuilder:
                 "required": bool(state.get("required", field.get("required", False))),
                 "visible": bool(state.get("visible", True)),
                 "state": state.get("state", "optional"),
+                "validation_errors": list(state.get("validation_errors") or []),
                 "value": value,
                 "source": field.get("source", "tool_schema"),
             }

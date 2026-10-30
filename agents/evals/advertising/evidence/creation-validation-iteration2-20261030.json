@@ -1,0 +1,105 @@
+{
+  "schema_version": "1.0",
+  "date": "2026-10-30",
+  "scope": "creation_field_validation_template_scope_conditional_defaults",
+  "evidence_type": "offline_regression_and_local_service_restart",
+  "real_provider_calls": 0,
+  "real_model_calls": 0,
+  "live_campaign_mutations": 0,
+  "checks": {
+    "ad_agent_check": {
+      "command": "make ad-agent-check",
+      "exit_code": 0,
+      "python_tests_passed": 3805,
+      "frontend_tests_passed": 283,
+      "tool_snapshot_tools": 329,
+      "provider_contract_audit": "passed",
+      "creation_contract_audit": "passed",
+      "knowledge_quality_audit": {
+        "pages": 86,
+        "errors": 0,
+        "warnings": 0
+      },
+      "semantic_retrieval": {
+        "hit_at_3": 0.952,
+        "leakage": 0
+      },
+      "hybrid_retrieval": {
+        "hit_at_3": 1.0,
+        "leakage": 0
+      },
+      "git_diff_check": "passed",
+      "warnings": [
+        "Starlette TestClient emits an httpx deprecation warning"
+      ]
+    },
+    "focused_regressions": {
+      "preset_and_blueprint_tests_passed": 116,
+      "field_validation_tests_passed": 26,
+      "verification_ledger_tests_passed": 24,
+      "blueprint_field_validation_coverage_percent": 95
+    },
+    "quality_delta": {
+      "command": "make ad-agent-quality-delta",
+      "baseline_findings": 75,
+      "current_findings": 75,
+      "new_findings": 0,
+      "gate_passed": true
+    },
+    "whole_repository_qguard": {
+      "run_in_this_iteration": false,
+      "last_recorded_historical_findings": 4988
+    }
+  },
+  "service": {
+    "managed_by": "com.ryan.ad-agent",
+    "host": "0.0.0.0",
+    "port": 8766,
+    "configuration": "agents/ad_agent/config.test-live.yaml",
+    "database": "agents/ad_agent/ad_agent.db",
+    "health": "ready",
+    "execution_mode": "dry_run",
+    "registered_tools": 355,
+    "pre_restart": {
+      "sessions": {
+        "count": 516,
+        "id_sha256": "80711c5800adf043997b887b5af0bafae5ab54c5194d1ba1d45982311a33e60a"
+      },
+      "creation_templates": {
+        "count": 14,
+        "id_sha256": "0f96ad627e53a1e24cc620edf2d77db763a3c389d2eb781ce8c8c6d19e1619e5"
+      },
+      "scheduled_tasks": {
+        "count": 5,
+        "id_sha256": "3029013a93953107cf6eb79ee22130cc9cb72fa584077c7bb5d2f350be183646"
+      },
+      "active_runs": 0,
+      "active_tasks": 0
+    },
+    "post_restart": {
+      "sessions": {
+        "count": 516,
+        "id_sha256": "80711c5800adf043997b887b5af0bafae5ab54c5194d1ba1d45982311a33e60a"
+      },
+      "creation_templates": {
+        "count": 14,
+        "id_sha256": "0f96ad627e53a1e24cc620edf2d77db763a3c389d2eb781ce8c8c6d19e1619e5"
+      },
+      "scheduled_tasks": {
+        "count": 5,
+        "id_sha256": "3029013a93953107cf6eb79ee22130cc9cb72fa584077c7bb5d2f350be183646"
+      },
+      "active_runs": 0,
+      "active_tasks": 0
+    },
+    "sqlite_backup": "/tmp/pre-ad-agent-creation-validation-final-20261030-1793360351994590000.db",
+    "schedule_statuses": {
+      "paused": 5
+    }
+  },
+  "limitations": [
+    "All new provider and template behavior is covered by offline contracts; no live ad creation was attempted.",
+    "The whole-repository qguard gate was not rerun; only the changed-source quality delta passed in this iteration.",
+    "Provider-specific account permissions, asset eligibility and real campaign acceptance are not established by this evidence."
+  ]
+}

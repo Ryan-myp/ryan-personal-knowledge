@@ -131,3 +131,51 @@ def test_catalog_does_not_mutate_input_or_echo_untrusted_evidence_text():
     assert row == original
     assert "must-not-appear" not in str(result)
     assert "<script>" not in str(result)
+
+
+@pytest.mark.parametrize("coverage", [[], "passed", 1, [{"campaign": "live_pass"}]])
+def test_malformed_coverage_fails_closed_without_breaking_template_listing(coverage):
+    result = CreationVerificationCatalog([memory(coverage=coverage)]).summarize(template())
+    assert result["status"] != "live_verified"
+
+
+def test_bounded_display_cannot_hide_a_later_failed_operation():
+    coverage = {f"operation_{index}": "live_pass" for index in range(90)}
+    coverage["last_operation"] = "failed"
+    result = CreationVerificationCatalog([memory(coverage=coverage)]).summarize(template())
+    assert result["status"] != "live_verified"
+    assert len(result["operations"]) <= 80
+
+
+@pytest.mark.parametrize("field", ["provider", "test_account", "template_key"])
+def test_invalid_evidence_identity_does_not_raise_or_match(field):
+    result = CreationVerificationCatalog([memory(**{field: ["invalid"]})]).summarize(template())
+    assert result["status"] == "pending_live_verification"
+
+
+def test_malformed_legacy_resources_remain_unverified():
+    row = {"provider": "meta", "test_account": "123", "campaign_type": "TRAFFIC", "resources": ["bad"]}
+    result = CreationVerificationCatalog(legacy_runs=[row]).summarize(template(campaign_type="TRAFFIC"))
+    assert result["status"] == "pending_live_verification"
+
+
+def test_malformed_legacy_resource_entries_remain_visible_as_unknown():
+    row = {
+        "provider": "meta", "test_account": "123", "campaign_type": "TRAFFIC",
+        "resources": {
+            "campaign": {"create": "passed"},
+            "<script>": {"ad": {"create": "passed"}},
+            "ad": {"unexpected_operation": "passed"},
+        },
+    }
+    result = CreationVerificationCatalog(legacy_runs=[row]).summarize(
+        template(campaign_type="TRAFFIC")
+    )
+    states = [item["state"] for item in result["historical_operations"]]
+    assert states.count("unknown") == 2
+    assert "<script>" not in str(result)
+
+
+def test_evidence_date_cannot_echo_arbitrary_text():
+    result = CreationVerificationCatalog([memory(last_verified_at="access_token=must-not-echo")]).summarize(template())
+    assert "must-not-echo" not in str(result)

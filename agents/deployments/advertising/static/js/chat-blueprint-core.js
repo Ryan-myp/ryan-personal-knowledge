@@ -93,13 +93,21 @@ function reconcileLookupSelection(selectedValue, options, multiple) {
             const parts = String(toolRef || '').split('.');
             const toolName = parts.shift();
             const fieldPath = parts.join('.');
-            const tool = blueprintState.tools.find(item => item.name === toolName);
-            let schema = tool?.input_schema?.properties || {};
-            for (const part of fieldPath.split('.')) {
-                if (!part) continue;
-                schema = schema?.[part] || {};
+            const tool = (blueprintState.tools || []).find(item => item.name === toolName);
+            const missing = { toolName, fieldPath, schema: {}, required: false };
+            if (!parts.length || parts.some(part => !part)) return missing;
+            let parent = tool?.input_schema;
+            let schema;
+            let required = false;
+            for (const part of parts) {
+                const properties = parent?.properties;
+                if (!properties || !Object.prototype.hasOwnProperty.call(properties, part)) return missing;
+                schema = properties[part];
+                if (!schema || typeof schema !== 'object' || Array.isArray(schema)) return missing;
+                required = schema.required === true || (Array.isArray(parent.required) && parent.required.includes(part));
+                parent = schema;
             }
-            return { toolName, fieldPath, schema: schema || {} };
+            return { toolName, fieldPath, schema, required };
         }
 
         function blueprintFieldDefault(field) {
@@ -169,8 +177,18 @@ function reconcileLookupSelection(selectedValue, options, multiple) {
             }).filter(Boolean).join('\n');
         }
 
+        function blueprintFieldPresentation(field, schema = {}) {
+            if (field?.presentation || schema.presentation) return field?.presentation || schema.presentation;
+            const lookup = field?.source === 'lookup' || field?.lookup_tool
+                || schema.lookup_tool || schema.lookup?.tool;
+            const choices = field?.options?.length || field?.option_rules?.length
+                || schema.enum?.length || schema.items?.enum?.length;
+            if (!lookup && !choices && schema.type === 'array' && schema.items?.type === 'string') return 'text_list';
+            return undefined;
+        }
+
         function parsePresentedValue(field, rawValue, schema) {
-            if (field.presentation === 'text_list') {
+            if (blueprintFieldPresentation(field, schema) === 'text_list') {
                 const lines = String(rawValue || '').split(/\r?\n/).map(item => item.trim()).filter(Boolean);
                 return field.value_shape === 'object_text' ? lines.map(text => ({ text })) : lines;
             }

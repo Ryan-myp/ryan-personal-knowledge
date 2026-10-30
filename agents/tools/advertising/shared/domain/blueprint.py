@@ -15,6 +15,8 @@ import re
 import threading
 from typing import Any, Iterable, Mapping, Optional
 
+from .blueprint_field_validation import blueprint_field_errors
+
 
 class BlueprintValidationError(ValueError):
     """Raised when a blueprint is malformed or references an invalid Tool."""
@@ -806,6 +808,7 @@ class BlueprintCascadeEngine:
         previous_values: Optional[Mapping[str, Any]] = None,
         changed_fields: Optional[Iterable[str]] = None,
         option_sources: Optional[Mapping[str, Iterable[Any]]] = None,
+        field_schemas: Optional[Mapping[str, Mapping[str, Any]]] = None,
     ) -> dict[str, Any]:
         current = dict(values) if isinstance(values, Mapping) else {}
         # Materialize declarative derived values into an evaluation-only copy
@@ -818,6 +821,8 @@ class BlueprintCascadeEngine:
                 and field.get("presentation") == "derived_readonly"
             ):
                 derived = _derived_value(field, current)
+                if derived is None and len(field.get("options") or []) == 1:
+                    derived = field["options"][0]
                 if derived is not None:
                     current[path] = derived
         previous = previous_values if isinstance(previous_values, Mapping) else {}
@@ -908,6 +913,12 @@ class BlueprintCascadeEngine:
             )
             if visible and _has_submittable_value(value) and options_state in {"awaiting_dependency", "no_matching_rule"}:
                 is_invalid = True
+            validation_errors = (
+                blueprint_field_errors(field_schemas.get(path), value)
+                if field_schemas is not None and visible and _has_submittable_value(value)
+                else []
+            )
+            is_invalid = is_invalid or bool(validation_errors)
             if is_invalid:
                 invalid.append(path)
             is_missing = visible and required and not _has_submittable_value(value)
@@ -925,6 +936,8 @@ class BlueprintCascadeEngine:
                 "value": _copy_json(value),
                 "source": field.get("source", "tool_schema"),
             }
+            if validation_errors:
+                item["validation_errors"] = validation_errors
             if "options" in field or "option_rules" in field:
                 item["options"] = _copy_json(options)
             elif options:

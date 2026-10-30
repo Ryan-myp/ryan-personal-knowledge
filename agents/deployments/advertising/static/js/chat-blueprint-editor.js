@@ -1316,18 +1316,14 @@
                 for (const field of group.fields) {
                 const fieldRef = blueprintToolFieldSchema(field.tool_ref);
                 const schema = fieldRef.schema || {};
-                const sourceTool = (blueprintState.tools || []).find(item => item.name === fieldRef.toolName);
-                const schemaRequired = Boolean(
-                    schema.required ||
-                    sourceTool?.input_schema?.required?.includes?.(fieldRef.fieldPath)
-                );
+                const schemaRequired = fieldRef.required === true;
                 const fieldSource = schema.lookup_tool || schema.lookup?.tool
                     ? 'lookup'
                     : field.source || (schema.enum || schema.items?.enum ? 'enum' : 'tool_schema');
                 const fieldView = {
                     ...field,
                     source: fieldSource,
-                    presentation: field.presentation || schema.presentation,
+                    presentation: blueprintFieldPresentation(field, schema),
                     accept: field.accept || schema.accept,
                     lookup_tool: field.lookup_tool || schema.lookup_tool,
                     lookup_result_key: field.lookup_result_key || schema.lookup_result_key,
@@ -1494,7 +1490,7 @@
                             },
                         },
                     );
-                } else if (field.presentation === 'text_list') {
+                } else if (fieldView.presentation === 'text_list') {
                     control = document.createElement('textarea');
                     control.className = 'asset-text-list';
                     control.placeholder = '每行填写一条';
@@ -1524,8 +1520,8 @@
                     control = document.createElement('input');
                     control.type = schema.type === 'number' || schema.type === 'integer' ? 'number' : 'text';
                 }
-                if (!control.dataset.customChoice && field.presentation !== 'asset_picker' && field.presentation !== 'file_reference' && field.presentation !== 'derived_readonly' && schema.type !== 'object') {
-                    control.value = field.presentation === 'text_list'
+                if (!control.dataset.customChoice && fieldView.presentation !== 'asset_picker' && fieldView.presentation !== 'file_reference' && fieldView.presentation !== 'derived_readonly' && schema.type !== 'object') {
+                    control.value = fieldView.presentation === 'text_list'
                         ? presentedLines(displayValue)
                         : displayValue === undefined
                             ? ''
@@ -1533,6 +1529,18 @@
                     control.onchange = () => updateBlueprintField(field, control.value);
                 }
                 wrapper.appendChild(control);
+                if (state.validation_errors?.length) {
+                    const error = document.createElement('div');
+                    error.className = 'creation-card-field-error';
+                    error.id = `blueprint-error-${field.path}`;
+                    error.setAttribute('aria-live', 'polite');
+                    error.textContent = state.validation_errors.join(' ');
+                    wrapper.appendChild(error);
+                    wrapper.querySelectorAll('input, select, textarea, [role="combobox"]').forEach(input => {
+                        input.setAttribute('aria-invalid', 'true');
+                        input.setAttribute('aria-describedby', error.id);
+                    });
+                }
                 const source = document.createElement('div');
                 source.className = 'blueprint-field-source';
                 const dependencyLabels = (state.missing_option_dependencies || []).map(path =>
@@ -1540,14 +1548,14 @@
                 );
                 source.textContent = state.options_state === 'awaiting_dependency'
                     ? `请先完成：${dependencyLabels.join('、') || '上游选择'}`
-                    : field.presentation === 'derived_readonly'
+                    : fieldView.presentation === 'derived_readonly'
                     ? '已根据当前入口自动匹配'
                     : field.source === 'lookup' || field.control === 'lookup'
                         ? '需要从指定账户中选择'
-                        : (field.presentation === 'asset_picker' || field.presentation === 'file_reference')
+                        : (fieldView.presentation === 'asset_picker' || fieldView.presentation === 'file_reference')
                             ? '本地素材草稿，不会自动上传'
                             : schema.type === 'object' ? '按字段填写，系统会按 Tool Schema 组装'
-                            : field.presentation === 'text_list' ? '每行填写一条' : '可直接填写';
+                            : fieldView.presentation === 'text_list' ? '每行填写一条' : '可直接填写';
                 wrapper.appendChild(source);
                 if (blueprintFieldIsPrimary(fieldView, state)) sectionFields.appendChild(wrapper);
                 else { advancedFields.appendChild(wrapper); advancedCount++; }

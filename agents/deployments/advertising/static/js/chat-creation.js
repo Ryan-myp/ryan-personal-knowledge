@@ -245,6 +245,7 @@
                         field.visible = state.visible;
                         field.required = state.required;
                         field.state = state.state;
+                        field.validation_errors = state.validation_errors || [];
                         field.options = evaluatedCreationFieldOptions(field, state);
                         if (state.options_state !== undefined) field.options_state = state.options_state;
                     }
@@ -1032,17 +1033,30 @@
                 item.classList.toggle('missing', state.status === 'missing');
                 item.classList.toggle('invalid', invalid);
                 item.classList.toggle('hidden', !state.visible);
+                const message = field.local_error || (field.validation_errors || []).join(' ');
+                const errorId = `creation-error-${card.id}-${field.path}`;
                 let error = item.querySelector('.creation-card-field-error');
-                if (field.local_error) {
+                if (message) {
                     if (!error) {
                         error = document.createElement('div');
                         error.className = 'creation-card-field-error';
                         item.appendChild(error);
                     }
-                    error.textContent = field.local_error;
+                    error.id = errorId;
+                    error.setAttribute('aria-live', 'polite');
+                    error.textContent = message;
                 } else if (error) {
                     error.remove();
                 }
+                item.querySelectorAll('input, select, textarea, [role="combobox"]').forEach(control => {
+                    if (invalid) control.setAttribute('aria-invalid', 'true');
+                    else control.removeAttribute('aria-invalid');
+                    const describedBy = (control.getAttribute('aria-describedby') || '').split(/\s+/)
+                        .filter(id => id && id !== errorId);
+                    if (message) describedBy.push(errorId);
+                    if (describedBy.length) control.setAttribute('aria-describedby', describedBy.join(' '));
+                    else control.removeAttribute('aria-describedby');
+                });
             });
         }
 
@@ -1573,6 +1587,7 @@
             renderCreationCardSummary(card, wrapper);
             renderCreationCardAutomation(card, wrapper);
             if (typeof updateCreationCardLauncher === 'function') updateCreationCardLauncher(card);
+            updateCreationCardFieldStates(wrapper, card);
             return wrapper;
         }
 

@@ -195,3 +195,36 @@ def test_upgrade_checks_nested_target_contract_without_discarding_original_value
     )
     assert "campaign.name" in preview["invalid_fields"]
     assert preview["values"]["campaign.name"] == {"old_shape": True}
+
+
+@pytest.mark.parametrize(("method", "suffix", "body"), [
+    ("GET", "", None),
+    ("PATCH", "", {"name": "Denied", "account_id": "other-account"}),
+    ("DELETE", "", None),
+    ("POST", "/duplicate", {}),
+    ("POST", "/apply", None),
+])
+def test_template_api_mutations_cannot_bypass_account_scope(manager, http, method, suffix, body):
+    saved = manager.create("tenant", "user", {
+        "name": "Scoped", "blueprint_id": "demo.traffic", "blueprint_version": "1.0.0",
+        "scope_type": "account", "account_id": "test-account", "values": {},
+    })
+    client, _ = http
+    manager.account_scope = {"meta": {"other-account"}}
+    response = client.request(method, f"/creation-templates/{saved['template_id']}{suffix}", json=body)
+    assert response.status_code == 404
+    original = manager.store.get_creation_template(saved["template_id"], tenant_id="tenant", user_id="user")
+    assert original.name == "Scoped"
+    assert original.account_id == "test-account"
+    assert original.usage_count == 0
+
+
+def test_template_api_rejects_binding_an_inaccessible_account(manager, http):
+    client, _ = http
+    manager.account_scope = {"meta": {"other-account"}}
+    response = client.post("/creation-templates", json={
+        "name": "Denied", "blueprint_id": "demo.traffic", "blueprint_version": "1.0.0",
+        "scope_type": "account", "account_id": "test-account", "values": {},
+    })
+    assert response.status_code == 422
+    assert manager.store.list_creation_templates("tenant", "user") == []

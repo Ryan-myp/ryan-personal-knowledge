@@ -478,6 +478,7 @@ class CreationTemplateManager:
 
     def create(self, tenant_id: str, user_id: str, payload: Mapping[str, Any]) -> dict[str, Any]:
         data, _ = self._payload(payload)
+        self._require_payload_account(data)
         now = datetime.now(timezone.utc).isoformat()
         record = CreationTemplateRecord(
             template_id=uuid.uuid4().hex,
@@ -489,6 +490,10 @@ class CreationTemplateManager:
         except PersistenceConflictError as exc:
             raise CreationTemplateError("模板保存冲突，请稍后重试") from exc
         return self._public(saved)
+
+    def _require_payload_account(self, data: Mapping[str, Any]) -> None:
+        if not self._account_is_visible(data["provider"], data["account_id"]):
+            raise CreationTemplateError("模板绑定的账户不在当前访问范围内")
 
     def _visible_user_records(
         self,
@@ -630,7 +635,7 @@ class CreationTemplateManager:
             tenant_id=str(tenant_id),
             user_id=str(user_id),
         )
-        if not existing:
+        if not existing or not self._account_is_visible(existing.provider, existing.account_id):
             return None
         if payload.get("blueprint_id") and str(payload["blueprint_id"]) != existing.blueprint_id:
             raise CreationTemplateError("模板创建类型不可修改，请复制为新模板")
@@ -638,6 +643,7 @@ class CreationTemplateManager:
                 and str(payload["blueprint_version"]) != existing.blueprint_version):
             raise CreationTemplateError("蓝图版本升级必须先预览并另存新模板，不能覆盖旧版本")
         data, _ = self._payload({**existing.to_dict(), **dict(payload)}, existing=existing)
+        self._require_payload_account(data)
         updated = self.store.update_creation_template(
             template_id,
             tenant_id=str(tenant_id),
@@ -666,6 +672,8 @@ class CreationTemplateManager:
     def delete(self, tenant_id: str, user_id: str, template_id: str) -> Optional[dict[str, Any]]:
         if self._builtin_by_id(template_id):
             raise CreationTemplateError("内置模板不可删除，请先复制为个人模板")
+        if self.get(tenant_id, user_id, template_id) is None:
+            return None
         record = self.store.delete_creation_template(
             template_id,
             tenant_id=str(tenant_id),
@@ -680,20 +688,10 @@ class CreationTemplateManager:
         template_id: str,
         name: Optional[str] = None,
     ) -> Optional[dict[str, Any]]:
-        record = self.store.get_creation_template(
-            template_id,
-            tenant_id=str(tenant_id),
-            user_id=str(user_id),
-        )
-        builtin = self._builtin_by_id(template_id)
-        if record:
-            payload = record.to_dict()
-        elif builtin:
-            payload = dict(builtin)
-        else:
+        payload = self.get(tenant_id, user_id, template_id)
+        if payload is None:
             return None
-        source_name = record.name if record else builtin["name"]
-        payload["name"] = name or f"{source_name} · 副本"
+        payload["name"] = name or f"{payload['name']} · 副本"
         payload["status"] = "active"
         payload["is_default"] = False
         return self.create(tenant_id, user_id, payload)
@@ -702,6 +700,8 @@ class CreationTemplateManager:
         builtin = self._builtin_by_id(template_id)
         if builtin:
             return builtin
+        if self.get(tenant_id, user_id, template_id) is None:
+            return None
         record = self.store.record_creation_template_usage(
             template_id, tenant_id=str(tenant_id), user_id=str(user_id)
         )

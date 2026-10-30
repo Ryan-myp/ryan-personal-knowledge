@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from datetime import datetime
 from functools import lru_cache
 import hashlib
 import json
@@ -20,6 +21,8 @@ _STATES = {
     "not_run": "not_run", "not_verified": "not_run", "skipped": "not_run",
     "live_partial": "partial", "partial": "partial",
 }
+_LEGACY_OPERATION_KEYS = {"create", "update", "delete", "readback"}
+_LEGACY_METADATA_KEYS = {"tool", "id", "status"}
 _LABELS = {
     "live_verified": "已验证所列操作",
     "partial_live_verified": "部分操作已验证",
@@ -37,25 +40,52 @@ def template_values_digest(values: Any) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
-def _operations(coverage: Mapping[str, Any]) -> list[dict[str, str]]:
-    return [
-        {"scope": scope, "state": _STATES.get(str(state), "unknown")}
-        for scope, state in coverage.items()
-        if isinstance(scope, str) and _SAFE_SCOPE.fullmatch(scope)
-    ][:80]
+def _unknown_operation() -> dict[str, str]:
+    return {"scope": "unconfirmed_evidence", "state": "unknown"}
 
 
-def _legacy_operations(resources: Mapping[str, Any], prefix: str = "") -> list[dict]:
+def _operations(coverage: Any) -> list[dict[str, str]]:
+    if not isinstance(coverage, Mapping):
+        return [_unknown_operation()]
+    result = []
+    for scope, state in coverage.items():
+        if len(result) == 79 and len(coverage) > 80:
+            return [*result, _unknown_operation()]
+        if not isinstance(scope, str) or not _SAFE_SCOPE.fullmatch(scope):
+            result.append(_unknown_operation())
+            continue
+        result.append({"scope": scope, "state": _STATES.get(str(state), "unknown")})
+    return result
+
+
+def _legacy_operations(resources: Any, prefix: str = "", depth: int = 0) -> list[dict]:
+    if not isinstance(resources, Mapping) or depth > 8:
+        return [_unknown_operation()]
     result = []
     for key, value in resources.items():
         if not isinstance(key, str) or not _SAFE_SCOPE.fullmatch(key):
-            continue
-        scope = f"{prefix}.{key}" if prefix else key
-        if isinstance(value, Mapping):
-            result.extend(_legacy_operations(value, scope))
-        elif key in {"create", "update", "readback"}:
-            result.extend(_operations({scope: value}))
-    return result[:80]
+            result.append(_unknown_operation())
+        else:
+            scope = f"{prefix}.{key}" if prefix else key
+            if isinstance(value, Mapping):
+                result.extend(_legacy_operations(value, scope, depth + 1))
+            elif key in _LEGACY_OPERATION_KEYS:
+                result.extend(_operations({scope: value}))
+            elif key not in _LEGACY_METADATA_KEYS:
+                result.append(_unknown_operation())
+        if len(result) > 79:
+            return [*result[:79], _unknown_operation()]
+    return result
+
+
+def _verified_at(value: Any) -> str:
+    if not isinstance(value, str) or len(value) > 40:
+        return ""
+    try:
+        datetime.fromisoformat(value)
+    except ValueError:
+        return ""
+    return value
 
 
 class CreationVerificationCatalog:
@@ -69,6 +99,8 @@ class CreationVerificationCatalog:
                 continue
             key = (row.get("provider", ""), row.get("test_account", ""),
                    row.get("template_key", ""))
+            if not all(isinstance(item, str) and _SAFE_SCOPE.fullmatch(item) for item in key):
+                continue
             self._entries.setdefault(key, []).append(deepcopy(dict(row)))
         self._legacy_runs = deepcopy(list(legacy_runs))
 
@@ -130,7 +162,7 @@ class CreationVerificationCatalog:
             status = "partial_live_verified"
         return {
             "status": status, "match": "exact", "operations": operations,
-            "verified_at": str(row.get("last_verified_at") or "")[:40],
+            "verified_at": _verified_at(row.get("last_verified_at")),
             "blockers": ["上次验证存在渠道拒绝，未完成的层级不能视为成功。"] if blocked else [],
         }
 
