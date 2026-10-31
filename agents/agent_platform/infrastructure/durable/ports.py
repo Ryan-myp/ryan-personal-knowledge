@@ -54,6 +54,7 @@ class TaskQueueStore(WorkerLeaseStore, Protocol):
     def cancel_task(self, task_id: str, tenant_id: Optional[str] = None, user_id: Optional[str] = None) -> Optional[Any]: ...
     def requeue_recovery_task(
         self, task_id: str, *, recovery_reference: str,
+        recovery_actor: str,
         tenant_id: Optional[str] = None, user_id: Optional[str] = None,
     ) -> Optional[Any]: ...
 

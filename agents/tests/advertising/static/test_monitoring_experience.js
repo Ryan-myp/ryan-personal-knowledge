@@ -54,6 +54,21 @@ test('recovery detail is read only and retains a visible error on failure', asyn
     assert.equal(elements.get('monitoringRecoveryDetail').hidden, false);
 });
 
+test('workflow recovery is listed and opens its scoped read-only detail', async () => {
+    const calls = [];
+    const {context, elements} = environment(async endpoint => {
+        calls.push(endpoint);
+        return {workflow_id: 'w/1', status: 'recovery_required'};
+    });
+    context.renderMonitoringExperience({}, {
+        total: 1, items: [{kind: 'workflow', id: 'w/1', reason: '需核验'}],
+    });
+    assert.match(elements.get('monitoringRecoveryRows').innerHTML, /工作流/);
+    await context.inspectMonitoringRecovery('workflow', 'w/1');
+    assert.deepEqual(calls, ['/workflows/w%2F1']);
+    assert.match(elements.get('monitoringRecoveryDetail').textContent, /recovery_required/);
+});
+
 test('late recovery detail cannot replace a newer selection', async () => {
     let resolveFirst;
     const pending = new Promise(resolve => {resolveFirst = resolve;});

@@ -82,7 +82,7 @@ class RunRecoveryRepository:
 
     def inbox(self, *, tenant_id=None, user_id=None, limit=30):
         limit = min(100, max(1, int(limit)))
-        values = [tenant_id, tenant_id, user_id, user_id] * 2
+        values = [tenant_id, tenant_id, user_id, user_id] * 3
         query = """SELECT run_id AS id, 'run' AS kind, updated_at, metadata FROM execution_runs
                    WHERE status = 'recovery_required'
                    AND (? IS NULL OR tenant_id = ?) AND (? IS NULL OR user_id = ?)
@@ -90,19 +90,27 @@ class RunRecoveryRepository:
                    SELECT task_id AS id, 'task' AS kind, updated_at, metadata FROM tasks
                    WHERE status = 'recovery_required'
                    AND (? IS NULL OR tenant_id = ?) AND (? IS NULL OR user_id = ?)
+                   UNION ALL
+                   SELECT w.workflow_id AS id, 'workflow' AS kind, w.updated_at, w.metadata
+                   FROM workflows w JOIN sessions s ON s.session_id = w.session_id
+                   WHERE w.status = 'recovery_required'
+                   AND (? IS NULL OR w.tenant_id = ?) AND (? IS NULL OR s.user_id = ?)
                    ORDER BY updated_at, kind, id LIMIT ?"""
         count_query = """SELECT
             (SELECT COUNT(*) FROM execution_runs WHERE status = 'recovery_required'
              AND (? IS NULL OR tenant_id = ?) AND (? IS NULL OR user_id = ?)) +
             (SELECT COUNT(*) FROM tasks WHERE status = 'recovery_required'
-             AND (? IS NULL OR tenant_id = ?) AND (? IS NULL OR user_id = ?))"""
+             AND (? IS NULL OR tenant_id = ?) AND (? IS NULL OR user_id = ?)) +
+            (SELECT COUNT(*) FROM workflows w JOIN sessions s ON s.session_id = w.session_id
+             WHERE w.status = 'recovery_required'
+             AND (? IS NULL OR w.tenant_id = ?) AND (? IS NULL OR s.user_id = ?))"""
         with self._lock:
             conn = self._get_conn()
             total = conn.execute(count_query, values).fetchone()[0]
             rows = conn.execute(query, [*values, limit]).fetchall()
         items = [self._project(row) for row in rows]
         return {"items": items, "total": total, "has_more": total > limit,
-                "scope": "runs_and_tasks"}
+                "scope": "runs_tasks_and_workflows"}
 
     @staticmethod
     def _project(row):
@@ -113,6 +121,8 @@ class RunRecoveryRepository:
         metadata = metadata if isinstance(metadata, dict) else {}
         reasons = {
             "stale_execution_run": "执行中断且租约已失效，需核验已有操作结果。",
+            "stale_running_workflow": "工作流中断且租约已失效，需核验各项操作结果。",
+            "stale_task": "任务中断且租约已失效，需核验工作流和已有操作结果。",
             "unreadable_evidence": "执行记录格式异常，需人工检查原始审计。",
         }
         code = metadata.get("recovery_reason")
@@ -120,7 +130,9 @@ class RunRecoveryRepository:
         return {
             "id": row["id"], "kind": row["kind"], "updated_at": row["updated_at"],
             "next_action": (
-                "inspect_run_evidence" if row["kind"] == "run" else "verify_effect_before_requeue"
+                "inspect_run_evidence" if row["kind"] == "run"
+                else "inspect_workflow_evidence" if row["kind"] == "workflow"
+                else "verify_effect_before_requeue"
             ),
             "automatic_replay_allowed": False, "reason_code": code,
             "reason": reasons.get(code, "执行结果尚未确认，需核验已有操作和回读证据。"),

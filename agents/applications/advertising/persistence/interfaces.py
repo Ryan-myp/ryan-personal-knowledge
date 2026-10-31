@@ -433,6 +433,7 @@ class PersistenceBackend(KnowledgeStorePort, Protocol):
     def recover_stale_tasks(self, stale_after_seconds: float = 300.0) -> int: ...
     def requeue_recovery_task(
         self, task_id: str, *, recovery_reference: str,
+        recovery_actor: str,
         tenant_id: Optional[str] = None, user_id: Optional[str] = None,
     ) -> Optional[Any]: ...
 

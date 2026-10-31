@@ -128,9 +128,11 @@ def test_stale_task_requires_explicit_recovery_and_reference(tmp_path):
         assert store.get_task("task-1").status == "recovery_required"
         assert store.requeue_recovery_task(
             "task-1", recovery_reference="provider-state-checked",
+            recovery_actor="operator-1",
             tenant_id="tenant-a", user_id="user-a",
         ).status == "queued"
         assert store.get_task("task-1").metadata["recovery_reference"] == "provider-state-checked"
+        assert store.get_task("task-1").metadata["recovery_attestation"]["actor"] == "operator-1"
     finally:
         store.close()
 

@@ -10,6 +10,8 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Iterator, Mapping, Optional
 
+from agents.agent_harness.redaction import redact_for_persistence
+
 from .task import TaskSubmission
 
 
@@ -390,11 +392,17 @@ class SQLiteTaskQueueStore:
 
     def requeue_recovery_task(
         self, task_id: str, *, recovery_reference: str,
+        recovery_actor: str,
         tenant_id: Optional[str] = None, user_id: Optional[str] = None,
     ) -> Optional[TaskSubmission]:
-        reference = str(recovery_reference or "").strip()[:255]
+        reference = str(redact_for_persistence(
+            str(recovery_reference or "").strip()
+        ))[:255]
         if not reference:
             raise ValueError("recovery_reference is required")
+        actor = str(recovery_actor or "").strip()[:200]
+        if not actor:
+            raise ValueError("recovery_actor is required")
         query = (
             "SELECT metadata FROM agent_tasks "
             "WHERE task_id = ? AND status = 'recovery_required'"
@@ -413,9 +421,15 @@ class SQLiteTaskQueueStore:
                 return None
             metadata = _load(row["metadata"], {})
             metadata.update({
-                "recovery_action": "operator_requeue",
+                "recovery_action": "operator_attested_requeue",
                 "recovery_reference": reference,
                 "requeued_at": now,
+                "recovery_attestation": {
+                    "method": "operator_attestation",
+                    "actor": actor,
+                    "reference": reference,
+                    "attested_at": now,
+                },
             })
             connection.execute(
                 """UPDATE agent_tasks SET status = 'queued', error = NULL, result = NULL,

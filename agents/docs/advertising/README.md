@@ -256,9 +256,11 @@ Outbox 投递采用有界重试（默认 10 次）；超过上限的事件进入
 必须按 `event_id` 做幂等处理。
 
 当任务已经进入 `recovery_required` 时，HTTP 只能通过
-`POST /tasks/{task_id}/recover` 显式提交 `provider_verified=true`、回查记录
-`recovery_reference` 以及 `ads.reconcile`（或 `ads.write`）权限；接口随后重新进入统一的
-`agent.turn` 队列，不会绕过 Runtime 的 Skill、Tool、账户、确认和审计门禁。事件落库失败会
+`POST /tasks/{task_id}/recover` 提交 `operator_attested=true`、回查记录
+`recovery_reference` 以及 `ads.reconcile` 权限；这是有身份和时间戳记录的人工核验声明，
+不是系统自动完成的 Provider 回查。接口随后重新进入统一的 `agent.turn` 队列，不会绕过
+Runtime 的 Skill、Tool、账户、确认和审计门禁。恢复记录会保存操作人、引用和声明时间。
+事件落库失败会
 进入 `execution_event_repairs` 补偿队列，避免一次短暂数据库异常让前端永久丢失 Run Event。
 Worker 注册与心跳则写入 `worker_instances`，运行监控可区分共享队列状态和当前进程状态。
 

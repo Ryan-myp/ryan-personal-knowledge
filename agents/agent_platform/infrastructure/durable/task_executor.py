@@ -699,14 +699,16 @@ class TaskExecutor:
 
     def requeue_recovery(
         self, task_id: str, *, recovery_reference: str,
+        recovery_actor: str,
         tenant_id: Optional[str] = None, user_id: Optional[str] = None,
     ) -> Optional[Any]:
-        """Requeue only after an explicit, externally verified recovery."""
+        """Requeue after an authorized operator attests to reviewed evidence."""
         requeue = getattr(self.store, "requeue_recovery_task", None)
         if not callable(requeue):
             return None
         record = requeue(
             str(task_id), recovery_reference=str(recovery_reference),
+            recovery_actor=str(recovery_actor),
             tenant_id=tenant_id, user_id=user_id,
         )
         if record is None or record.status != "queued":

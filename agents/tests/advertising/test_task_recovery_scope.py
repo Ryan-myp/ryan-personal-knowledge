@@ -24,12 +24,14 @@ def store():
 ])
 def test_recovery_requeues_with_optional_identity_scope(store, scope):
     record = store.requeue_recovery_task(
-        "recover", recovery_reference="offline-readback", **scope,
+        "recover", recovery_reference="offline-readback",
+        recovery_actor="operator-1", **scope,
     )
     assert record.status == "queued"
     assert record.error is None and record.result is None
     assert record.lease_owner is None
     assert record.metadata["recovery_reference"] == "offline-readback"
+    assert record.metadata["recovery_attestation"]["actor"] == "operator-1"
 
 
 @pytest.mark.parametrize("scope", [
@@ -39,7 +41,8 @@ def test_recovery_requeues_with_optional_identity_scope(store, scope):
 def test_recovery_rejects_another_identity(store, scope):
     before = store.get_task("recover").to_dict()
     assert store.requeue_recovery_task(
-        "recover", recovery_reference="offline-readback", **scope,
+        "recover", recovery_reference="offline-readback",
+        recovery_actor="operator-1", **scope,
     ) is None
     assert store.get_task("recover").to_dict() == before
 
@@ -77,9 +80,23 @@ def test_recovery_update_rechecks_scope_after_read(store):
     try:
         assert store.requeue_recovery_task(
             "recover", recovery_reference="offline-readback",
+            recovery_actor="operator-1",
             tenant_id="tenant", user_id="user",
         ) is None
     finally:
         store._get_conn = original
     assert store.get_task("recover").status == "recovery_required"
     assert store.get_task("recover").user_id == "new-user"
+
+
+def test_recovery_attestation_redacts_secret_shaped_references(store):
+    record = store.requeue_recovery_task(
+        "recover",
+        recovery_reference="ticket-1 access_token=do-not-store",
+        recovery_actor="operator-1",
+        tenant_id="tenant",
+        user_id="user",
+    )
+    serialized = str(record.metadata)
+    assert "do-not-store" not in serialized
+    assert "<redacted>" in serialized

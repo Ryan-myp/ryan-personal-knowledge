@@ -1079,8 +1079,8 @@ class FakeRuntime:
         self.recovery_calls.append((task_id, kwargs))
         if kwargs["tenant_id"] != "tenant-a":
             return None
-        if not kwargs["provider_verified"]:
-            raise ValueError("provider_verified=true is required before task recovery")
+        if not kwargs["operator_attested"]:
+            raise ValueError("operator_attested=true is required before task recovery")
         return {"task_id": task_id, "status": "queued"}
 
 
@@ -1272,7 +1272,7 @@ def test_task_recovery_api_enforces_proof_permission_and_tenant_scope(
     with TestClient(api_server.app) as client:
         denied = client.post(
             "/tasks/task-1/recover", headers={"X-API-Key": "read-key"},
-            json={"recovery_reference": "provider-readback-1", "provider_verified": True},
+            json={"recovery_reference": "provider-readback-1", "operator_attested": True},
         )
         unverified = client.post(
             "/tasks/task-1/recover", headers={"X-API-Key": "reconcile-key"},
@@ -1280,23 +1280,32 @@ def test_task_recovery_api_enforces_proof_permission_and_tenant_scope(
         )
         missing_reference = client.post(
             "/tasks/task-1/recover", headers={"X-API-Key": "reconcile-key"},
-            json={"provider_verified": True},
+            json={"operator_attested": True},
+        )
+        legacy_provider_claim = client.post(
+            "/tasks/task-1/recover", headers={"X-API-Key": "reconcile-key"},
+            json={
+                "recovery_reference": "provider-readback-1",
+                "provider_verified": True,
+            },
         )
         recovered = client.post(
             "/tasks/task-1/recover", headers={"X-API-Key": "reconcile-key"},
-            json={"recovery_reference": "provider-readback-1", "provider_verified": True},
+            json={"recovery_reference": "provider-readback-1", "operator_attested": True},
         )
         hidden = client.post(
             "/tasks/task-1/recover", headers={"X-API-Key": "other-key"},
-            json={"recovery_reference": "provider-readback-1", "provider_verified": True},
+            json={"recovery_reference": "provider-readback-1", "operator_attested": True},
         )
     assert denied.status_code == 403
     assert unverified.status_code == 422
     assert missing_reference.status_code == 422
+    assert legacy_provider_claim.status_code == 422
     assert recovered.status_code == 200
     assert recovered.json()["status"] == "queued"
     assert hidden.status_code == 404
     assert fake_server.recovery_calls[-1][1]["tenant_id"] == "tenant-b"
+    assert fake_server.recovery_calls[-2][1]["user_id"] == "operator"
 
 
 def test_execution_mode_switch_does_not_grant_live_write_permission(

@@ -35,13 +35,31 @@ def test_recovery_inbox_is_scoped_bounded_and_actionable():
     try:
         make_run(store, "visible")
         make_run(store, "hidden", user="other")
+        store.create_workflow(
+            "visible-workflow", "visible", "update_campaign", "live",
+            status="recovery_required",
+        )
+        store.create_workflow(
+            "hidden-workflow", "hidden", "update_campaign", "live",
+            status="recovery_required",
+        )
         store.recover_stale_execution_runs(300)
         snapshot = store.get_monitoring_snapshot(tenant_id="t", user_id="u")
         inbox = snapshot["recovery"]
-        assert [row["id"] for row in inbox["items"]] == ["visible"]
-        assert inbox["items"][0]["next_action"] == "inspect_run_evidence"
-        assert inbox["items"][0]["automatic_replay_allowed"] is False
-        assert inbox["total"] == 1
+        assert {row["id"] for row in inbox["items"]} == {
+            "visible", "visible-workflow",
+        }
+        assert {
+            row["kind"]: row["next_action"] for row in inbox["items"]
+        } == {
+            "run": "inspect_run_evidence",
+            "workflow": "inspect_workflow_evidence",
+        }
+        assert all(
+            row["automatic_replay_allowed"] is False for row in inbox["items"]
+        )
+        assert inbox["total"] == 2
+        assert inbox["scope"] == "runs_tasks_and_workflows"
         assert "hidden" not in str(inbox)
     finally:
         store.close()

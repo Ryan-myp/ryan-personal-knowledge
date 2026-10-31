@@ -460,7 +460,7 @@ def test_execution_event_repair_is_idempotent():
     store.close()
 
 
-def test_recovery_task_requires_provider_proof_before_requeue():
+def test_recovery_task_persists_operator_attestation_before_requeue():
     store = AdAgentStore(":memory:")
     store.create_task(TaskRecord(
         task_id="recovery-task", tenant_id="tenant", user_id="user",
@@ -472,17 +472,26 @@ def test_recovery_task_requires_provider_proof_before_requeue():
     executor = TaskExecutor(store, max_workers=1, max_queue=0)
     executor.register_handler("local", lambda _ctx: {"ok": True})
     with pytest.raises(ValueError):
-        executor.requeue_recovery("recovery-task", recovery_reference="")
+        executor.requeue_recovery(
+            "recovery-task", recovery_reference="", recovery_actor="operator-1",
+        )
     record = executor.requeue_recovery(
         "recovery-task", recovery_reference="provider-readback-1",
+        recovery_actor="operator-1",
     )
     assert record is not None
     assert record.status in {"queued", "running", "succeeded"}
+    assert record.metadata["recovery_attestation"] == {
+        "method": "operator_attestation",
+        "actor": "operator-1",
+        "reference": "provider-readback-1",
+        "attested_at": record.metadata["recovery_attestation"]["attested_at"],
+    }
     executor.shutdown(wait=True)
     store.close()
 
 
-def test_runtime_recovery_checks_permission_and_provider_verification():
+def test_runtime_recovery_checks_permission_and_operator_attestation():
     store = AdAgentStore(":memory:")
     store.create_task(TaskRecord(
         task_id="runtime-recovery", tenant_id="tenant", user_id="user",
@@ -494,15 +503,40 @@ def test_runtime_recovery_checks_permission_and_provider_verification():
     with pytest.raises(PermissionError):
         runtime.recover_task(
             "runtime-recovery", user_id="user", tenant_id="tenant",
-            recovery_reference="readback-1", provider_verified=True,
+            recovery_reference="readback-1", operator_attested=True,
             permissions={"ads.read"},
         )
     with pytest.raises(ValueError):
         runtime.recover_task(
             "runtime-recovery", user_id="user", tenant_id="tenant",
-            recovery_reference="readback-1", provider_verified=False,
+            recovery_reference="readback-1", operator_attested=False,
             permissions={"ads.reconcile"},
         )
+    runtime.close(wait=True)
+    store.close()
+
+
+def test_empty_principal_permissions_do_not_fall_back_to_runtime_grants():
+    from unittest.mock import Mock
+
+    store = AdAgentStore(":memory:")
+    store.create_task(TaskRecord(
+        task_id="runtime-recovery", tenant_id="tenant", user_id="user",
+        kind="agent.turn", status="recovery_required", payload={"user_input": "hello"},
+        created_at=datetime.now(timezone.utc).isoformat(),
+        updated_at=datetime.now(timezone.utc).isoformat(),
+    ))
+    runtime = AdvertisingComposition(require_llm=False, persistence_store=store, features=[])
+    runtime._granted_permissions = frozenset({"ads.reconcile"})
+    requeue = Mock(return_value=None)
+    runtime.task_executor.requeue_recovery = requeue
+    with pytest.raises(PermissionError):
+        runtime.recover_task(
+            "runtime-recovery", user_id="user", tenant_id="tenant",
+            recovery_reference="readback-1", operator_attested=True,
+            permissions=set(),
+        )
+    requeue.assert_not_called()
     runtime.close(wait=True)
     store.close()
 

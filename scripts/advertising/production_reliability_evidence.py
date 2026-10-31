@@ -768,11 +768,24 @@ def _worker_recovery_evidence(
     recovered_status = recovered.status if recovered is not None else None
     empty_reference_rejected = False
     try:
-        store.requeue_recovery_task(task_id, recovery_reference="")
+        store.requeue_recovery_task(
+            task_id, recovery_reference="", recovery_actor="evidence-operator",
+        )
     except ValueError:
         empty_reference_rejected = True
     requeued = store.requeue_recovery_task(
-        task_id, recovery_reference="controlled-readback",
+        task_id, recovery_reference="controlled-evidence-reference",
+        recovery_actor="evidence-operator",
+    )
+    attestation = (
+        requeued.metadata.get("recovery_attestation", {})
+        if requeued is not None else {}
+    )
+    attestation_recorded = (
+        attestation.get("method") == "operator_attestation"
+        and attestation.get("actor") == "evidence-operator"
+        and attestation.get("reference") == "controlled-evidence-reference"
+        and bool(attestation.get("attested_at"))
     )
     restart_timeout = _remaining_seconds(deadline, 8.0)
     restarted = _child_process(
@@ -793,6 +806,7 @@ def _worker_recovery_evidence(
             and empty_reference_rejected
             and requeued is not None
             and requeued.status in {"queued", "running", "succeeded"}
+            and attestation_recorded
             and restart_code == 0
             and bool((restart_payload or {}).get("runtime_entry_called"))
             and (restart_payload or {}).get("run_store_status") == "succeeded"
@@ -803,6 +817,7 @@ def _worker_recovery_evidence(
         "recovered_count": recovered_count,
         "recovered_status": recovered_status,
         "empty_reference_rejected": empty_reference_rejected,
+        "operator_attestation_recorded": attestation_recorded,
         "final_status": final_status,
         "restart_runtime_entry": "AdvertisingComposition.run",
         "restart_run_id_present": bool(

@@ -266,7 +266,7 @@
             const list = document.getElementById('monitoringRecoveryRows');
             if (list) {
                 list.innerHTML = items.length ? items.map(item => `<tr>
-                    <td>${item.kind === 'task' ? '任务' : '回合'}</td>
+                    <td>${item.kind === 'task' ? '任务' : item.kind === 'workflow' ? '工作流' : '回合'}</td>
                     <td title="${escapeHtml(item.id || '')}">${escapeHtml(String(item.id || '—').slice(0, 8))}</td>
                     <td>${escapeHtml(item.reason || '执行结果待核验')}</td>
                     <td><div class="template-row-actions"><button type="button" data-recovery-kind="${escapeHtml(item.kind || '')}" data-recovery-id="${escapeHtml(item.id || '')}">查看记录</button></div></td>
@@ -283,14 +283,17 @@
         }
 
         async function inspectMonitoringRecovery(kind, id) {
-            if (!['run', 'task'].includes(kind) || typeof id !== 'string' || !id) return;
+            if (!['run', 'task', 'workflow'].includes(kind) || typeof id !== 'string' || !id) return;
             const target = document.getElementById('monitoringRecoveryDetail');
             if (!target) return;
             const selection = ++monitoringRecoverySelection;
             target.hidden = false;
             target.textContent = '正在读取执行记录…';
             const endpoint = kind === 'run'
-                ? `/runs/${encodeURIComponent(id)}/events?limit=100` : `/tasks/${encodeURIComponent(id)}`;
+                ? `/runs/${encodeURIComponent(id)}/events?limit=100`
+                : kind === 'workflow'
+                    ? `/workflows/${encodeURIComponent(id)}`
+                    : `/tasks/${encodeURIComponent(id)}`;
             try {
                 const detail = await apiFetch(endpoint);
                 if (selection !== monitoringRecoverySelection) return;

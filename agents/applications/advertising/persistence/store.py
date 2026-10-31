@@ -49,6 +49,7 @@ from .run_recovery import RunRecoveryRepository
 from .errors import PersistenceConflictError
 from .schedule_pages import SchedulePageQuery, read_schedule_page
 from agents.agent_harness.core.memory import MemoryRecord
+from agents.agent_harness.redaction import redact_for_persistence
 
 logger = logging.getLogger(__name__)
 
@@ -1039,17 +1040,22 @@ class AdAgentStore:
 
     def requeue_recovery_task(
         self, task_id: str, *, recovery_reference: str,
+        recovery_actor: str,
         tenant_id: Optional[str] = None, user_id: Optional[str] = None,
     ) -> Optional[TaskRecord]:
-        """Move an uncertain task back to the queue after operator recovery.
+        """Requeue after an authorized operator attests to reviewed evidence.
 
-        This is intentionally separate from ``resume_task``.  A recovery task
-        may have produced an external side effect, so callers must first
-        reconcile the provider and provide an auditable reference.
+        The persistence layer records the attestation provenance; it does not
+        claim that it independently queried an external provider.
         """
-        reference = str(recovery_reference or "").strip()[:255]
+        reference = str(redact_for_persistence(
+            str(recovery_reference or "").strip()
+        ))[:255]
         if not reference:
             raise ValueError("recovery_reference is required")
+        actor = str(recovery_actor or "").strip()[:200]
+        if not actor:
+            raise ValueError("recovery_actor is required")
         now = datetime.now(timezone.utc).isoformat()
         with self._lock:
             conn = self._get_conn()
@@ -1072,9 +1078,15 @@ class AdAgentStore:
             except (TypeError, ValueError):
                 metadata = {}
             metadata.update({
-                "recovery_action": "operator_requeue",
+                "recovery_action": "operator_attested_requeue",
                 "recovery_reference": reference,
                 "requeued_at": now,
+                "recovery_attestation": {
+                    "method": "operator_attestation",
+                    "actor": actor,
+                    "reference": reference,
+                    "attested_at": now,
+                },
             })
             cursor = conn.execute(
                 """UPDATE tasks SET status = 'queued', error = NULL, result = NULL,

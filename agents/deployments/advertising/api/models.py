@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from agents.agent_platform.evals.regression import RegressionAssertions
 from agents.agent_harness.core.timeouts import DEFAULT_EXECUTION_TIMEOUT_SECONDS
 
@@ -67,8 +67,15 @@ class TaskSubmitRequest(BaseModel):
 
 
 class TaskRecoveryRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     recovery_reference: str = Field(min_length=1, max_length=255)
-    provider_verified: bool = False
+    operator_attested: Literal[True] = Field(
+        description=(
+            "Operator confirms they reviewed the external state and authorize "
+            "requeue; this is not an automatic Provider verification."
+        )
+    )
 
 
 class ScheduleCreateRequest(BaseModel):

@@ -178,7 +178,7 @@ def create_tasks_router(context: ApiContext) -> APIRouter:
                 user_id=principal.user_id,
                 tenant_id=principal.tenant_id,
                 recovery_reference=body.recovery_reference,
-                provider_verified=body.provider_verified,
+                operator_attested=body.operator_attested,
                 permissions=principal.permissions,
             )
         except PermissionError as error:

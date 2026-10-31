@@ -20,7 +20,10 @@ def store(request):
 
 def take_over(store, task_id):
     assert store.update_task(task_id, 'recovery_required', expected_statuses=['running'])
-    assert store.requeue_recovery_task(task_id, recovery_reference='offline-verified')
+    assert store.requeue_recovery_task(
+        task_id, recovery_reference='offline-verified',
+        recovery_actor='test-operator',
+    )
     assert store.claim_task(task_id, 'replacement', 60)
 
 

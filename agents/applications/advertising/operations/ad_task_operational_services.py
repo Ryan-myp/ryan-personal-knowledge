@@ -110,10 +110,10 @@ class AdTaskOperationalServicesMixin:
         user_id: str,
         tenant_id: str,
         recovery_reference: str,
-        provider_verified: bool = False,
+        operator_attested: bool = False,
         permissions: Optional[Iterable[str]] = None,
     ) -> Optional[dict[str, Any]]:
-        """Requeue an uncertain task only after verified provider read-back."""
+        """Requeue only after an authorized operator attests to reviewed evidence."""
         if self.runtime.task_executor is None:
             return None
         task = self.runtime.task_executor.get(
@@ -121,16 +121,22 @@ class AdTaskOperationalServicesMixin:
         )
         if task is None:
             return None
-        granted = set(permissions or self.runtime._granted_permissions)
+        granted = set(
+            permissions
+            if permissions is not None else self.runtime._granted_permissions
+        )
         if "ads.reconcile" not in granted and "ads.write" not in granted:
             raise PermissionError("task recovery requires ads.reconcile or ads.write")
-        if not provider_verified:
-            raise ValueError("provider_verified=true is required before task recovery")
+        if not operator_attested:
+            raise ValueError("operator_attested=true is required before task recovery")
         if not str(recovery_reference or "").strip():
             raise ValueError("recovery_reference is required")
+        if not str(user_id or "").strip():
+            raise ValueError("recovery requires an authenticated operator identity")
         recovered = self.runtime.task_executor.requeue_recovery(
             task_id,
             recovery_reference=str(recovery_reference),
+            recovery_actor=str(user_id),
             tenant_id=tenant_id,
             user_id=user_id,
         )

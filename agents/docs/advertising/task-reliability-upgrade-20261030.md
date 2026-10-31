@@ -23,9 +23,12 @@ Run Kernel 与既有注册 Tool 执行链路，不增加渠道 Router，也不�
   当前只核验单个资源的一行直接指标；同资源多行分段、截断列表和相对日期需要先补足数据。
 - 复盘保留 `baseline_provenance`、`outcome_provenance` 和 `context_gaps`。当前报表没有完全
   规范化单位、币种、时区、归因窗，不能将模型填写的口径提升为可信事实。
-- `/monitoring/overview` 增加 `recovery`：当前身份的 Run/Task 待核验列表、总数和下一步动作。
-  列表最多30项；`has_more` 标记剩余记录。Workflow 继续沿用原有独立恢复机制。
+- `/monitoring/overview` 增加 `recovery`：当前身份的 Run/Task/Workflow 待核验列表、总数和下一步动作。
+  列表最多30项；`has_more` 标记剩余记录。详情沿用各自受权限和租户隔离保护的读取 API。
 - 运维页面增加响应耗时表和待核验记录表，详情只读，切换记录时拒绝旧请求覆盖新选择。
+- Task 恢复 API 使用 `operator_attested=true`，不再接受名为 `provider_verified` 的客户端声明。
+  `ads.reconcile` 操作员确认已核对外部状态后才能重新排队；持久化审计记录操作人、引用和时间，
+  明确区分人工核验与系统通过只读 Tool 完成的 Provider 回查。
 - 原生对话 Tool 执行现在同步保存脱敏调用审计，使用本次调用实际解析的账户；不从会话的
   旧账户反推执行目标。审计保存失败会使调用明确失败，未知写入仍沿用统一恢复门禁。
 - `/monitoring/agent-runtime` 的 `metrics.experience` 提供最近最多256个已结束 Run 的 P50/P95，
@@ -58,7 +61,8 @@ release 仍保留其他原有门禁；通过 task_quality 不意味着广告 Pro
   无有效 Run 的过期 Session 租约可以释放，新的调用仍通过 Run Kernel 重新获得租约。
 - 报表证据只能读取当前 principal 拥有的会话，且账户仍须位于其 scope 中；新增逻辑不会调用
   Provider client，真实执行与回读继续使用既有权限、live、确认和幂等链路。
-- 无数据库 schema 迁移。新增 JSON 字段是兼容扩展。回滚时还原本轮代码及 Tool snapshot；
+- 无数据库 schema 迁移。新增 JSON 字段是兼容扩展。Task 恢复 API 请求字段有调整，旧字段
+  `provider_verified` 会被拒绝，调用方需改用 `operator_attested`。回滚时还原本轮代码及 Tool snapshot；
   已记录的真实审计和恢复状态应保留，不恢复旧数据库覆盖新对话。
 - 当前数值指标为进程内窗口，重启清空。后续可通过既有 MetricsSink 接入持久化时序系统，
   不需要修改 Tool 契约。
@@ -77,5 +81,20 @@ release 仍保留其他原有门禁；通过 task_quality 不意味着广告 Pro
 - 本地 readiness 通过；任务真实模型证据明确为 `not_verified`。
 - 原8766服务使用原配置与数据库重启，保留515个会话、14个模板、5个定时任务。失联运行数和
   过期 Session 租约均为0；12项历史未知执行保留待核验，运营总览仍为 critical。
+
+## 2026-10-31 恢复闭环跟进
+
+- 监控恢复列表现在统一包含 Run、Task、Workflow；总数和列表使用相同的租户/用户范围。
+  Workflow 详情通过现有只读 API 加载，不自动回查或重放 Provider 操作。
+- Task 恢复请求从 `provider_verified` 改为必填 `operator_attested=true`。它表示有
+  `ads.reconcile` 权限的操作员确认已核对外部状态，不表示系统已自动验证 Provider。
+  审计记录保留操作人、引用和声明时间；引用在持久化前做凭证形态脱敏。旧请求字段被拒绝。
+- 无 schema 迁移、无历史任务重排，也没有调用任何真实渠道 API。回滚只需回滚代码；
+  已写入的 `recovery_attestation` JSON 会保留，不应覆盖运行数据库。
+- 最终 `make ad-agent-check`：3807 项 Python 测试、284 项前端测试及工具、创建契约、
+  知识库审计全部通过；`make ad-agent-quality-delta` 无新增静态问题。
+- 全仓 qguard 仍有历史质量债务：797 个文件、4988 项既有发现；本次增量门禁未发现新增项。
+- 真实模型完整三次长任务评测仍未验证；Google/TikTok/DV360 部分广告格式或资源仍处于
+  部分/计划状态。本次离线补齐不能替代模型验收或渠道实测。
 
 结构化证据见 `agents/evals/advertising/evidence/task-reliability-upgrade-20261030.json`。
